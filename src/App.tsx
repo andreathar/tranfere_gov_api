@@ -122,6 +122,35 @@ export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [driveLoading, setDriveLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "success" } | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    if (payloadType === "BM") {
+      for (const ms of payload.macroservicos) {
+        for (const s of ms.servicos) {
+          if (s.parcelas) {
+            const total = s.parcelas.reduce((acc, p) => acc + (p.percentualParcela || 0), 0);
+            if (total > 100) {
+              setToast({
+                message: language === "pt" 
+                  ? `Aviso: Serviço ${s.codigo} possui soma de parcelas superior a 100% (${total}%)`
+                  : `Warning: Service ${s.codigo} has parcel sum exceeding 100% (${total}%)`,
+                type: "warning"
+              });
+              return;
+            }
+          }
+        }
+      }
+    }
+  }, [payload, payloadType, language]);
 
   useEffect(() => {
     initAuth(
@@ -547,6 +576,25 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-800 flex flex-col font-sans antialiased selection:bg-blue-100 selection:text-blue-900">
       
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg border flex items-center gap-3 min-w-[300px] ${
+              toast.type === "warning" ? "bg-amber-50 border-amber-200 text-amber-800" :
+              toast.type === "error" ? "bg-red-50 border-red-200 text-red-800" :
+              "bg-green-50 border-green-200 text-green-800"
+            }`}
+          >
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <span className="text-sm font-semibold">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Header - Sleek Interface Style */}
       <header className="bg-white border-b border-slate-200 flex flex-col md:flex-row items-center justify-between px-8 py-4 shrink-0 gap-4 shadow-sm z-10">
         <div className="flex items-center gap-3">
