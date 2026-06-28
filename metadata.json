@@ -1,0 +1,6 @@
+{
+  "name": "Transferegov API Integration Assistant",
+  "description": "An interactive full-stack helper, payload builder, and smart AI advisor for integrating private systems with the Brazilian government's Transferegov API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

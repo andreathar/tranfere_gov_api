@@ -1,0 +1,207 @@
+openapi: 3.0.3
+info:
+  title: TransfereGov API CLI Integration
+  description: API specifications for interacting with Transferegov endpoints for Private Systems. Designed for Agentic CLI usage.
+  version: 1.0.0
+servers:
+  - url: https://hom4.mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1
+    description: Homologation Environment (hom4)
+  - url: https://mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1
+    description: Production Environment
+components:
+  securitySchemes:
+    SystemToken:
+      type: http
+      scheme: bearer
+      description: EP-CAD JWT System Token (Header 'Authorization')
+    UserToken:
+      type: apiKey
+      in: header
+      name: X-User-Token
+      description: IDP User Token representing the CPF of the operator
+  schemas:
+    FrenteDeObra:
+      type: object
+      properties:
+        nomeFrenteObra:
+          type: string
+          example: "Rua Principal 1"
+        numeroMesConclusao:
+          type: integer
+          example: 1
+        numero:
+          type: integer
+          example: 1
+        quantidadeItens:
+          type: number
+          example: 1.5
+    Parcela:
+      type: object
+      properties:
+        numeroParcela:
+          type: integer
+          example: 1
+        percentualParcela:
+          type: number
+          example: 100
+    Servico:
+      type: object
+      properties:
+        bdi:
+          type: number
+          example: 24.03
+        codigo:
+          type: string
+          example: "74209/1"
+        custoUnitario:
+          type: number
+          example: 281.61
+        custoUnitarioReferencia:
+          type: number
+          example: 281.61
+        descricao:
+          type: string
+          example: "PLACA DE OBRA EM CHAPA DE ACO GALVANIZADO"
+        evento:
+          type: object
+          properties:
+            numeroEvento:
+              type: integer
+              example: 1
+            titulo:
+              type: string
+              example: "SERVIÇOS PRELIMINARES"
+        fonte:
+          type: string
+          example: "SINAPI"
+        frentesDeObra:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrenteDeObra'
+        numeroServico:
+          type: integer
+          example: 1
+        observacao:
+          type: string
+          example: ""
+        parcelas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Parcela'
+        unidade:
+          type: string
+          example: "M2"
+    Macroservico:
+      type: object
+      properties:
+        descricao:
+          type: string
+          example: "SERVIÇOS PRELIMINARES"
+        numeroMacroservico:
+          type: integer
+          example: 1
+        servicos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Servico'
+    PlanilhaPayload:
+      type: object
+      properties:
+        macroservicos:
+          type: array
+          items:
+            $ref: '#/components/schemas/Macroservico'
+
+security:
+  - SystemToken: []
+  - UserToken: []
+
+paths:
+  /po:
+    post:
+      summary: Send Budget Worksheet (Planilha Orçamentária)
+      description: Submits a new budget worksheet (PLE or BM) to a specific subgoal.
+      parameters:
+        - in: query
+          name: nrproposta
+          required: true
+          schema:
+            type: integer
+            example: 28206
+        - in: query
+          name: anoproposta
+          required: true
+          schema:
+            type: integer
+            example: 2018
+        - in: query
+          name: nrmeta
+          required: true
+          schema:
+            type: integer
+            example: 1
+        - in: query
+          name: nrsubmeta
+          required: true
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanilhaPayload'
+      responses:
+        '201':
+          description: Worksheet successfully created
+        '400':
+          description: Bad request (validation errors)
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (insufficient permissions)
+
+  /submetas:
+    get:
+      summary: Consult Subgoals
+      description: Retrieves the list of subgoals for a given proposal.
+      parameters:
+        - in: query
+          name: nrproposta
+          required: true
+          schema:
+            type: integer
+            example: 28206
+        - in: query
+          name: anoproposta
+          required: true
+          schema:
+            type: integer
+            example: 2018
+      responses:
+        '200':
+          description: Subgoals retrieved successfully
+        '401':
+          description: Unauthorized
+
+  /voluntarias/proposta/ConsultarProposta/ConsultarProposta.do:
+    get:
+      summary: Consult Proposals (CSV)
+      description: Queries the Transferegov portal to return an open CSV list of proposals linked to an amendment author / politician ID.
+      parameters:
+        - in: query
+          name: autorDaEmenda
+          required: true
+          schema:
+            type: string
+            example: "1234"
+          description: ID of the politician / amendment author
+      responses:
+        '200':
+          description: Successful response returning a CSV file with proposals
+          content:
+            text/csv:
+              schema:
+                type: string
+                example: "Proposta,Status,Órgão Concedente,Convenente,Emenda Parlamentar?,CNPJ do Convenente\n023366/2026,Em execução,..."
