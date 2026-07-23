@@ -1,0 +1,1568 @@
+Manual de Integração
+API Transferegov – Módulo
+Projeto Básico – Planilha
+Orçamentária
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+Histórico de Versões
+Data
+
+Versão
+
+Descrição
+
+Autor
+
+Revisor
+
+Aprovado por
+
+30/05/2023
+
+1.0
+
+Versão Inicial
+
+Thaise Dantas
+
+13/06/2023
+
+1.1
+
+Atualização dos serviços de Consulta
+
+Thaise Dantas
+
+16/06/2023
+
+1.2
+
+Atualização da consulta
+
+Thaise Dantas
+
+Daniel Augusto
+
+Neyliane Moreno
+
+23/10/2024
+
+1.3
+
+Atualização para o envio da Po sem
+eventos (formato BM)
+
+Thaise Dantas
+
+Daniel Augusto
+
+Neyliane Moreno
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+Sumário
+1. Objetivo ............................................................................................................................................ 4
+2. Protocolo de Comunicação.............................................................................................................. 4
+3. Autenticação e validação ................................................................................................................. 4
+3.1 Autenticação do sistema ............................................................................................................ 5
+4. Ambiente e Endereço ...................................................................................................................... 6
+4.1 Ambiente de Homologação/ Testes........................................................................................... 6
+4.2 Ambiente de Produção............................................................................................................... 6
+5. Catálogo de Serviços ....................................................................................................................... 7
+5.1. Consultas Submetas do Projeto Básico ................................................................................... 7
+5.1.1. Parâmetros de entrada - Consultas Submetas do Projeto Básico .................................... 7
+5.1.1.1 Interface ........................................................................................................................ 7
+5.1.2. Retorno do Serviço - Consultas Submetas do Projeto Básico .......................................... 7
+5.1.2.1 Exemplo de resposta do serviço: ................................................................................. 7
+5.1.2.2 Detalhamento dos campos do retorno da consulta: .................................................... 8
+5.1.2.3 Mensagens retornadas - Consulta ............................................................................. 10
+5.2. Enviar Planilha Orçamentária de uma Submeta .................................................................... 11
+5.2.1. Parâmetros de entrada – Enviar Planilha Orçamentária ................................................. 12
+5.2.1.1 Interface – Enviar Planilha Orçamentária .................................................................. 12
+5.2.1.2 Planilha Orçamentária acompanhada por PLE .......................................................... 12
+5.2.1.3 Planilha Orçamentária acompanhada por BM ........................................................... 16
+5.2.1.3.1 Detalhes dos campos da Planilha Orçamentária acompanhada por BM ............... 17
+5.2.2. Retorno do Serviço – Enviar Planilha Orçamentária ....................................................... 19
+5.2.2.1 Arquivo json retornado: .............................................................................................. 19
+5.2.2.2 Mensagens de Validação retornadas ......................................................................... 20
+6. Suporte ........................................................................................................................................... 22
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+1. Objetivo
+Este documento tem por objetivo fornecer as orientações técnicas necessárias
+para integração de sistemas externos de obras a Planilha Orçamentária do
+módulo de Projeto Básico da plataforma Transferegov.
+A API foi criada com o intuito de possibilitar a integração de sistemas externos
+diminuindo assim o esforço e retrabalho na elaboração do orçamento e
+cronograma na etapa de elaboração do Projeto Básico, buscando evitar as
+inconsistências que podem ocorrer ao se registrar de forma manual os mesmos
+dados em vários meios. Uma vez que o sistema externo esteja integrado ao
+Transferegov.br, não haverá necessidade de replicação dos dados de forma
+manualmente.
+
+2. Protocolo de Comunicação
+O protocolo de comunicação utilizado é o REST - Representational State Transfer/ HTTP 1.1 e
+os dados trafegados utilizam a notação JSON - JavaScript Object Notation.
+
+Componente
+
+Especificação
+
+Observação
+
+Tipo de comunicação
+
+Síncrona
+
+Protocolo
+
+HTTP v1.1
+
+RFC 2616
+
+Formato de dados
+
+JSON
+
+RFC 7159
+
+3. Autenticação e validação
+Para utilização da API do Transferegov.br é necessário que o usuário Convenente esteja
+autenticado e que o sistema externo esteja habilitado com token ativo.
+
+3.1 Autenticação do usuário
+O usuário da aplicação deverá estar autenticado e possuir um dos seguintes perfis:
+Operador Financeiro do Convenente, Gestor de Convênio do Convenente,
+Gestor Financeiro do Convenente. A autenticação bem-sucedida retorna um Token JWT
+(JSON Web Token) com os dados do usuário criptografados, esse token servirá como
+parâmetro do Authorization Header de cada requisição. Nas consultas, o usuário pode
+logar com qualquer perfil do Transferegov.br. Na inserção, será validado se o usuário é
+proponente/convenente da proposta do respectivo Projeto Básico que pretende
+atualizar.
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+A partir deste serviço o sistema obterá um token de Authorization a ser anexado a cada
+solicitação do sistema.
+
+Método: POST
+
+URL – Ambiente de Homologação/ Testes:
+https://hom4.idp.transferegov.sistema.gov.br/idp/jwt?usuario={{CPF_USUARIO}}&senha=
+{{senha_USUARIO}}
+
+URL – Ambiente de Produção:
+https://idp.transferegov.sistema.gov.br/idp/jwt?usuario={{CPF_USUARIO}}&senha={{senh
+a_USUARIO}}
+
+Parâmetros:
+CPF_USUARIO – CPF do usuário
+senha_USUARIO – senha usada pelo usuário Convenente para logar no sistema
+
+Abaixo exemplo do retorno do login do usuário:
+
+STATUS CODE:
+200 – Sucesso – Autenticação realizada com sucesso
+401 – Não autorizado – Usuário não possui credenciais de autenticação válidas para
+acessar o recurso.
+500 – Erro interno no servidor
+
+3.1 Autenticação do sistema
+O sistema externo deve solicitar sua habilitação para uso da API do Projeto Básico por
+meio das orientações presentes no endereço: https://www.gov.br/transferegov/ptbr/sobre/apis-integracao/sistemas-de-obras. No momento do cadastro e habilitação do
+sistema externo, será enviado um e-mail para os responsáveis técnicos do sistema
+externo com o Token JWT de acesso que identificará unicamente o sistema externo e
+permitirá a confirmar a habilitação no acesso aos serviços desejados. Este deve ser
+adicionado como parâmetro EP-CAD no Header da solicitação.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+O token do sistema externo deve ser informado no parâmetro no Header do cabeçalho
+HTTP.
+Exemplo:
+
+4. Ambiente e Endereço
+4.1 Ambiente de Homologação/ Testes
+O ambiente de Homologação/ Testes pode ser acessado no endereço (URL):
+• Interface Consultar Submetas:
+‘https://hom4.mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1/po?nrproposta={{NR_PROPOSTA}}&anoproposta={{ANO_PROPOSTA}}'
+header 'EP-CAD: {{TOKEN_SISTEMA_EXTERNO_HOMOLOCACAO}}
+
+•
+
+Interface Enviar Planilhas Orçamentárias (URL):
+' https://hom4.mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1/po?nrproposta={{NR_PROPOSTA}}&anoproposta={{ANO_PROPOSTA}}&nrmeta={{NR_META}}&nrsubmeta={{NR_SUBMETA}}'
+header 'EP-CAD: {{TOKEN_SISTEMA_EXTERNO}}
+
+4.2 Ambiente de Produção
+O ambiente de Produção pode ser acessado no endereço (URL):
+• Interface Consultar Submetas:
+‘https://mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1/po?nrproposta={{NR_PROPOSTA}}&anoproposta={{ANO_PROPOSTA}}'
+header 'EP-CAD: {{TOKEN_SISTEMA_EXTERNO_PRODUCAO}}
+
+•
+
+Interface Enviar Planilhas Orçamentárias (URL):
+'https://mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1/po?nrproposta={{NR_PROPOSTA}}&anoproposta={{ANO_PROPOSTA}}&nrmeta={{NR_META}}&nrsubmeta={{NR_SUBMETA}}'
+header 'EP-CAD: {{TOKEN_SISTEMA_EXTERNO}}
+
+NR_PROPOSTA: número da proposta no TransfereGov.br
+ANO_PROPOSTA: número da proposta no TransfereGov.br
+NR_META: número da meta do Quadro de Composição da Investimento (QCI) na qual se deseja enviar os dados da Planilha Orçamentária. Uma meta pode ter uma ou mais submetas.
+NR_SUBMETA: número da submeta do Quadro de Composição da Investimento (QCI) que se deseja enviar os dados da Planilha Orçamentária, a submeta está contida dentro de uma meta.
+header 'EP-CAD: {{TOKEN_SISTEMA_EXTERNO}}: parâmetro enviado no header da solicitação, com o token de autorização do
+sistema externo.
+
+Esses ambientes requerem um token de acesso específico que deve ser solicitado por meio de
+ofício cuja orientações estão no portal: https://www.gov.br/transferegov/pt-br/sobre/apisintegracao/sistemas-de-obras
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+5. Catálogo de Serviços
+5.1. Consultas Submetas do Projeto Básico
+Este serviço retorna as submetas aptas a receberem uma Planilha Orçamentária do módulo de
+Projeto Básico do Transferegov. Para indicar que uma submeta irá receber os dados via API, é
+necessário que o Proponente/ Convenente marque, na respectiva submeta do módulo Projeto
+Básico na aba PO/CFF na sub aba Dados Gerais, a opção “Receber dados da PO/CFF via API?”.
+
+5.1.1. Parâmetros de entrada - Consultas Submetas do Projeto Básico
+5.1.1.1 Interface
+Métod
+o
+HTTP
+
+GET
+
+Endpoint
+
+projetobasico/ap
+i
+/v1/PO?
+
+Parâmetros
+
+nrproposta,
+anoproposta
+
+Endereço completo
+
+Exemplo de chamada usando CURL
+
+<<URL_API_PB>>/proj
+eto-basico/api
+/v1/PO?nrproposta=nr
+_proposta
+&anoproposta=ano_pr
+oposta
+
+curl –location
+'<<URL_API_PB>>/projetobasico/api/v1/po?nrproposta=nr_p
+roposta&anoproposta=ano_propo
+sta' \
+--header 'EP-CAD: valor_token
+do_sistema_externo'\
+--header 'Authorization: Bearer
+valor_token_do_usuario'
+
+Onde:
+nrproposta: Número da proposta do Transferegov
+anoproposta: Ano da proposta do Transferegov
+header 'EP-CAD:': O Token do sistema externo.
+header 'Authorization:' Token IDP gerado quando o usuário loga na aplicação.
+
+5.1.2. Retorno do Serviço - Consultas Submetas do Projeto Básico
+5.1.2.1 Exemplo de resposta do serviço:
+{
+"proposta": {
+"ano": 2018,
+"numero": 28206
+},
+"sistemaOrigem": "Sistema externo de obras",
+"qci": {
+"metas": [
+{
+"submetas": [
+{
+"regimeExecucaoObra": "Empreitada por Preço Global",
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+"numLote": 1,
+"valorContrapartida": 0,
+"po": {
+"indSubmetaViaAPI": false,
+"duracaoObra": 6,
+"dataBase": "03/2019",
+"localidade": "SP",
+"indDesonerado": true,
+"previsaoInicioObra": "03/2019",
+"indAcompanhamentoEventos": true
+},
+"descricao": "SERVIÇOS PRELIMINARES",
+"valorRepasse": 7740.18,
+"numero": 1
+}
+],
+"descricao": "Reforma da sede da 2ª Companhia do 41º BPM/I.",
+"numero": 1
+}
+]
+}
+}
+
+5.1.2.2 Detalhamento dos campos do retorno da consulta:
+
+Nome do Campo
+Proposta
+numero
+
+Seção pai
+
+ano
+
+proposta
+
+proposta
+
+sistemaOrigem
+qci
+metas
+numero
+
+qci
+qci/ metas
+
+descricao
+
+qci/ metas
+
+submetas
+numero
+
+qci/ metas
+qci/ metas/
+submetas
+
+Descrição / Observação
+Agrupador dos dados básicos da proposta
+Número da proposta.
+Valor natural com até 9 dígitos.
+Ano da proposta.
+Valor mínimo: 1900
+Valor máximo: 2099
+Nome do sistema que está comunicando, conforme informado no Cadastro da Esteira de Parcerias.
+Agrupador das metas e submetas
+Agrupador das metas
+Número da meta
+Valor mínimo: 1
+Valor máximo: 999
+Descrição da meta
+Texto com no máximo 100 caracteres.
+Agrupador das submetas de uma meta
+Número da submeta
+Valor mínimo: 1
+Valor máximo: 999
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+descricao
+
+regimeExecucaoObra qci/ metas/
+submetas
+
+Descrição da submeta.
+Texto com no máximo 100 caracteres.
+Número do Lote da submeta.
+Valor mínimo: 1
+Valor máximo: 999
+Valor de repasse para a submeta.
+Os dígitos decimais devem ser separados por ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Valor da contrapartida para a submeta.
+Os dígitos decimais devem ser separados por ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Valor de outras verbas para a submeta
+Os dígitos decimais devem ser separados por ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Tipo de regime de execução da obra.
+Valores possíveis estão listados a seguir:
+
+po
+
+qci/ metas/
+submetas
+qci/ metas/
+submetas/ po
+qci/ metas/
+submetas/ po
+
+Agrupador para as informações de Dados Gerais da PO
+
+indDesonerado
+
+qci/ metas/
+submetas/ po
+
+previsaoInicioObra
+
+qci/ metas/
+submetas/ po
+
+Campo indicador de desoneração SINAPI para os preços informados.
+Domínio do indicador:
+true: utilizar o valor desonerado
+false: utilizar o valor não desonerado
+Mês/ano de previsão de início da obra
+Data prevista para início da obra.
+Máscara numeral: MM/YYYY
+
+numLote
+
+qci/ metas/
+submetas
+qci/ metas/
+submetas
+
+valorRepasse
+
+qci/ metas/
+submetas
+
+valorContrapartida
+
+qci/ metas/
+submetas
+
+valorOutros
+
+qci/ metas/
+submetas
+
+dataBase
+localidade
+
+• A_DEFINIR
+• CONTRATACAO_INTEGRADA
+• CONTRATACAO_SEMI_INTEGRADA
+• EMPREITADA_INTEGRAL
+• EMPREITADA_PRECO_GLOBAL
+• EMPREITADA_PRECO_UNITARIO
+• FORNECIMENTO_E_PRESTACAO_DE_SERVICO_ASSOCIADO
+• TAREFA
+
+Data base utilizada como referência para os preços informados.
+Estado utilizada como referência para os preços informados.
+Sigla do estado ou DF.
+Tamanho 2 dígitos.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+duracaoObra
+
+qci/ metas/
+submetas/ po
+
+indAcompanhamento- qci/ metas/
+Eventos
+submetas/ po
+
+Quantidade de meses de duração da obra.
+Quando a obra for acompanhada por evento (PLE), o mês de
+conclusão do macrosserviço não pode ultrapassar este valor.
+Quando a obra não for acompanhada por evento (BM), os
+meses das parcelas do macrosserviço não podem ultrapassar
+este valor.
+Valor mínimo: 1
+Valor máximo: 999
+Indicador do tipo de acompanhamento da obra.
+Domínio para o tipo de acompanhamento:
+true: quando é acompanhada por eventos e a submeta com a
+respectiva PO (Planilha Orçamentária) e o CFF(Cronograma
+Físico-Financeiro) será acompanhada no formato da Planilha de Levantamento de Eventos (PLE). Neste caso, os
+eventos da PO devem ser necessariamente indicados.
+
+indReceberPOCFFviaAPI
+
+qci/ metas/
+submetas/ po
+
+false: quando não é acompanhada por eventos e a submeta
+com a respectiva PO e CFF será acompanhada no formato
+do Boletim de Medição (BM). Neste caso, não existe indicação de eventos na PO.
+Indica se a submeta com a respectiva PO, Frente de Obras,
+CFF e eventos, se houver, podem ter seus dados informados
+via API.
+Domínio:
+true: apto a receber a PO/CFF via API
+false: não está apto receber a PO/CFF via API
+
+5.1.2.3 Mensagens retornadas - Consulta
+Códi
+go
+HTTP
+200
+
+Proposta encontrada
+
+401
+
+Acesso negado por falta de autenticação
+
+401
+
+JBWEB000065: HTTP Status 401
+…
+JBWEB000121: This request requires
+HTTP authentication.
+
+401
+
+The token was expected to have 3 parts, but
+got 1.
+
+400
+
+Token não encontrado ou inativo
+
+Mensagem retornada
+
+Possível correção
+
+Classificação
+
+Verificar se o parâmetro EP-CAD
+está configurado no head da
+solicitação,
+
+Sucesso
+Falha
+autenticação
+
+Incluir o parâmetro EP-CAD no
+HEAD da solicitação
+
+Falha
+autenticação
+
+Falta fornecer o token de
+autenticação do usuário.
+O parâmetro EP-CAD está no
+header da solicitação, mas pode
+
+Falha
+autenticação
+Falha
+autenticação
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+400
+
+Token sem autorização
+API_PROJETO_BASICO
+
+para
+
+a
+
+API
+
+400
+
+Não foi possível encontrar a Proposta
+<nrproposta>/<ano>.
+
+400
+
+Número da Proposta e Ano da Proposta
+são numéricos."
+
+400
+
+Número da Proposta e Ano da Proposta
+são numéricos.
+
+400
+
+Não foi encontrada submeta no projeto
+básico da Proposta <nrproposta>/<ano>
+
+estar com o token errado ou
+inativo.
+Não possui autorização para
+utilizar a API do Projeto Básico.
+Analisar se a proposta informada
+no parâmetro nrproposta e
+anoproposta.
+Pode acontecer que mesmo a
+proposta existindo no sistema,
+ela não esteja com as
+informações básicas do projeto
+Básico de Engenharia
+cadastradas na Ada Dados
+Básicos.
+Os parâmetros podem ter sido
+informados errados, como por
+exemplo: nrProposta. Pode
+ocorrer o erro pois os caracteres
+são sensíveis a caixa alta/baixa.
+Os parâmetros devem ser
+numéricos e não vazios.
+Provavelmente, a meta ou
+submeta ainda não foi
+cadastrada no QCI do Projeto
+Básico.
+
+Falha
+autorização
+
+Erro (Estrutura)
+
+Erro (Estrutura)
+
+Erro (Estrutura)
+
+Erro (Negócio)
+
+As mensagens de erro são enviadas em formato de lista simples. Exemplo:
+{
+"errorMessage": "<<Mensagem de erro retornada>>"
+}
+Quando se trata de erro na estrutura da solicitação, a seguinte expressão antecede a mensagem do
+ocorrido:
+{
+"errorMessage": "Informações enviadas não estão com estrutura adequada. Erros encontrados em:
+<<Mensagem de erro retornada>>."
+}
+
+5.2. Enviar Planilha Orçamentária de uma Submeta
+Este serviço permite enviar os dados da submeta do Projeto Básico no que se refere a
+Planilha Orçamentária, Frente de Obra, Eventos, quando houver, e CFF. A depender se a
+submeta será acompanhada por eventos ou não, o layout de envio do json pode ser no
+formato da Planilha de Levantamentos de Eventos (PLE) quando acompanhada por eventos
+ou no formato do Boletim de Medição (BM) quando não acompanhada por eventos.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+ATENÇÃO: Os dados anteriores da Planilha Orçamentária são sobrepostos com os novos
+informados, ou seja, novos envios sobrepõem os dados anteriores.
+
+5.2.1. Parâmetros de entrada – Enviar Planilha Orçamentária
+5.2.1.1 Interface – Enviar Planilha Orçamentária
+Método
+HTTP
+
+Endpoint
+
+projetobasico/a
+pi/v1/po
+?
+
+POST
+
+Parâmetros
+
+nrproposta,
+anoproposta,
+nrmeta, nrsubmeta
+
+Endereço completo
+
+Exemplo de chamada usando CURL
+
+<<URL_API_PB>>/proj
+eto-basico/api
+/v1/PO?nrproposta=nr
+_proposta&anopropost
+a=ano_proposta&nrmet
+a=nr_meta&nrsubmeta
+=nr_submeta
+
+curl --location
+'<<URL_API_PB>>/projetobasico/api/v1/po?nrproposta=nr_p
+roposta&anoproposta=ano_propo
+sta&nrmeta=nr_meta&nrsubmeta
+=nr_submeta' \
+--header 'EP-CAD:
+valor_token_do_sistema_extern
+o'\
+--header 'Content-Type:
+application/json' \
+--header 'Authorization: Bearer
+valor_token_do_usuário'
+--data 'JSON_PO_PLE ou
+JSON_PO_BM'
+
+No qual:
+nrproposta: Número da proposta do Transferegov
+anoproposta: Ano da proposta do Transferegov
+nrmeta: Número da meta do QCI do Projeto Básico
+nrsubmeta: Número da submeta do QCI do Projeto Básico
+header 'EP-CAD': token do sistema externo.
+header 'Authorization:' Token IDP gerado quando o usuário loga na aplicação.
+Observação: na tabela acima onde encontra-se JSON_PO_PLE ou JSON_PO_BM, deve-se incluir
+todo o JSON com os dados a serem submetidos a depender do tipo de acompanhamento se
+será por eventos (PLE) ou sem eventos (BM). Apenas para fins de organização do layout do
+documento esta referência não consta no exemplo acima apresentado.
+5.2.1.2 Planilha Orçamentária acompanhada por PLE
+O trecho a seguir deve ser enviado no formato JSON. Acima no exemplo ele é chamado de
+JSON_PO_PLE:
+{ "macroservicos": [
+{
+"numeroMacroservico": 1,
+"descricao": "SERVIÇOS PRELIMINARES",
+"servicos": [
+{
+"numeroServico": 1,
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+"fonte": "Outros",
+"codigo": "74209/1",
+"descricao": "PLACA DE OBRA EM CHAPA DE ACO GALVANIZADO",
+"unidade": "M2",
+"custoUnitarioReferencia": 473.77,
+"custoUnitario": 473.77,
+"bdi": 26.83,
+"observacao": "",
+"evento": {
+"numeroEvento": 1,
+"titulo": "SERVIÇOS PRELIMINARES"
+},
+"frentesDeObra": [
+{
+"numero": 1,
+"nomeFrenteObra": "Rua João Reis E0 a E6+0",
+"quantidadeItens": 19.19,
+"numeroMesConclusao": 1
+},
+{
+"numero": 2,
+"nomeFrenteObra": "Rua Maria Eulália",
+"quantidadeItens": 30,
+"numeroMesConclusao": 2
+}
+]
+},
+{
+"numeroServico": 2,
+"fonte": "SINAPI",
+"codigo": "4153",
+"descricao": "ENTRADA PROVISORIA DE ENERGIA ELETRICA AEREA TRIFASICA 40A EM POSTE MADEIRA",
+"unidade": "UN",
+"custoUnitarioReferencia": 100.0,
+"custoUnitario": 20.0,
+"bdi": 10.0,
+"observacao": "",
+"evento": {
+"numeroEvento": 2,
+"titulo": "CANTEIRO DE OBRAS"
+},
+"frentesDeObra": [
+{
+"numero": 2,
+"nomeFrenteObra": "Rua Maria Eulália",
+"quantidadeItens": 30,
+"numeroMesConclusao": 2
+}
+]
+}
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+]
+}
+]
+}
+
+5.2.1.2.1 Detalhes dos campos da Planilha Orçamentária acompanhada por PLE
+
+Nome do Campo
+macroservicos
+
+Seção pai
+
+numeroMacroservico
+
+macrosservicos
+
+descricao
+
+macrosservicos
+
+servicos
+numeroServico
+
+macrosservicos
+macrosservicos/
+servicos
+
+fonte
+
+macrosservicos/
+servicos
+
+codigo
+
+macrosservicos/
+servicos
+
+descricao
+
+macrosservicos/
+servicos
+
+unidade
+
+macrosservicos/
+servicos
+custoUnitarioReferencia macrosservicos/
+servicos
+
+custoUnitario
+
+macrosservicos/
+servicos
+
+Descrição / Observação
+Agrupador dos serviços da Planilha
+Orçamentária.
+Número atribuído ao macrosserviço na árvore
+de exibição.
+Valor mínimo: 1
+Valor máximo: 999
+Descrição do macrosserviço.
+Texto com no máximo 100 caracteres.
+Agrupador dos serviços.
+Número atribuído ao serviço na árvore de
+exibição.
+Valor mínimo: 1
+Valor máximo: 999
+Fonte de dados utilizada no cálculo do valor
+unitário do item.
+Domínio de fonte:
+• Composição
+• Cotação
+• SINAPI
+• Outros
+Código do serviço, de acordo com a fonte.
+Valor com no máximo 13 caracteres.
+Ex.: 74209/1 (código Sinapi)
+Descrição do serviço selecionado para fonte
+escolhida.
+Texto com no máximo 500 caracteres.
+Unidade característica para cada item.
+Exemplos: UN, m2, m, KG, T, MES, H, KM.
+Valor correspondente ao custo de cada serviço
+na fonte de referência utilizada.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Custo unitário informado pelo usuário para cada
+unidade de serviço.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+bdi
+
+macrosservicos/
+servicos
+
+observacao
+
+macrosservicos/
+servicos
+macrosservicos/
+servicos
+
+evento
+
+numeroEvento
+
+titulo
+
+frentesDeObra
+
+numero
+
+nomeFrenteObra
+
+macrosservicos/
+servicos/ evento
+
+Valor percentual correspondente ao elemento
+orçamentário "Benefícios e Despesas
+Indiretas”.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Observação associada ao serviço.
+Texto com no máximo 500 caracteres.
+Agrupador para dos eventos.
+Este campo é obrigatório para Planilhas
+Orçamentárias que serão acompanhadas pela
+Planilha de Levantamento de Eventos (PLE).
+Valor associado à ordem de exibição do
+evento.
+Este campo é obrigatório para Planilhas
+Orçamentárias que serão acompanhadas pela
+Planilha de Levantamento de Eventos (PLE).
+
+Valor mínimo: 1
+Valor máximo: 999
+macrosservicos/
+Título do evento cadastrado.
+servicos/ evento
+Este campo é obrigatório para Planilhas
+Orçamentárias que serão acompanhadas pela
+Planilha de Levantamento de Eventos (PLE).
+Texto com no máximo 100 caracteres.
+macrosservicos/
+Agrupador para lista das frentes de
+servicos
+obras, quantidades do item/serviço por frente de
+obra e mês de conclusão da frente de obra.
+macrosservicos/
+Valor associado à ordem de exibição de uma
+servicos/
+frente de obra.
+frentesDeObra
+Valor mínimo: 1
+Valor máximo: 999
+submetamacrosservicos/ Nome da frente de obra.
+servicos/
+Texto com no máximo 100 caracteres.
+frentesDeObra
+
+quantidadeItens
+
+macrosservicos/
+servicos/
+frentesDeObra
+
+numeroMesConclusao
+
+macrosservicos/
+servicos/
+frentesDeObra
+
+Quantidade de itens na frente de obra.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Número do mês de conclusão do evento.
+Este campo é obrigatório para Planilhas
+Orçamentárias sem evento, ou seja, serão
+acompanhadas por Boletim de Medição (BM) e
+deve ser menor ou igual a quantidade de meses
+informada nos dados gerais da planilha
+orçamentária.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+5.2.1.3 Planilha Orçamentária acompanhada por BM
+O trecho a seguir deve ser enviado no formato JSON. Acima no exemplo ele é chamado de JSON_PO_BM:
+{
+"macroservicos": [
+{
+"numeroMacroservico": 1,
+"descricao": "SERVIÇOS PRELIMINARES",
+"servicos": [
+{
+"numeroServico": 1,
+"fonte": "SINAPI",
+"codigo": "74209/1",
+"descricao": "PLACA DE OBRA EM CHAPA DE ACO GALVANIZADO",
+"unidade": "M2",
+"custoUnitarioReferencia": 281.61,
+"custoUnitario": 281.61,
+"bdi": 24.03,
+"precoUnitario": 349.28,
+"precoTotal": 2794.24,
+"quantidadeTotal": 8,
+"observacao": "",
+"frentesDeObra": [
+{
+"numero": 1,
+"nomeFrenteObra": "Rua João Reis E0 a E6+0",
+"quantidadeItens": 8
+}
+]
+},
+{
+"numeroServico": 2,
+"fonte": "SINAPI",
+"codigo": "78472",
+"descricao": "SERVICOS TOPOGRAFICOS PARA PAVIMENTACAO, INCLUSIVE NOTA DE SERVICOS, ACOMPANHAMENTO E GREIDE",
+"unidade": "M2",
+"custoUnitarioReferencia": 0.4,
+"custoUnitario": 0.4,
+"bdi": 24.03,
+"precoUnitario": 0.5,
+"precoTotal": 1397.9,
+"quantidadeTotal": 2795.8,
+"observacao": "",
+"frentesDeObra": [
+{
+"numero": 1,
+"nomeFrenteObra": "Rua João Reis E0 a E6+0",
+"quantidadeItens": 720
+},
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+{
+"numero": 2,
+"nomeFrenteObra": "Rua João Reis E6+0 a E12+0",
+"quantidadeItens": 720
+},
+{
+"numero": 3,
+"nomeFrenteObra": "Praça Polivalente",
+"quantidadeItens": 863.04
+},
+{
+"numero": 4,
+"nomeFrenteObra": "Rua Tiradentes",
+"quantidadeItens": 134.8
+},
+{
+"numero": 5,
+"nomeFrenteObra": "Travessa João Reis",
+"quantidadeItens": 357.96
+}
+]
+}
+],
+"parcelas": [
+{
+"numeroParcela": 1,
+"percentualParcela": 50
+},
+{
+"numeroParcela": 2,
+"percentualParcela": 50
+}
+]
+}
+]
+}
+
+5.2.1.3.1 Detalhes dos campos da Planilha Orçamentária acompanhada por BM
+
+Nome do Campo
+macroservicos
+
+Seção pai
+
+numeroMacroservico
+
+macrosservicos
+
+Descrição / Observação
+Agrupador dos serviços da Planilha
+Orçamentária.
+Número atribuído ao macrosserviço na árvore
+de exibição.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+descricao
+
+macrosservicos
+
+servicos
+numeroServico
+
+macrosservicos
+macrosservicos/
+servicos
+
+fonte
+
+macrosservicos/
+servicos
+
+codigo
+
+macrosservicos/
+servicos
+
+descricao
+
+macrosservicos/
+servicos
+
+unidade
+
+macrosservicos/
+servicos
+custoUnitarioReferencia macrosservicos/
+servicos
+
+custoUnitario
+
+macrosservicos/
+servicos
+
+bdi
+
+macrosservicos/
+servicos
+
+observacao
+
+macrosservicos/
+servicos
+macrosservicos/
+servicos
+
+frentesDeObra
+
+numero
+
+macrosservicos/
+servicos/
+frentesDeObra
+
+Valor mínimo: 1
+Valor máximo: 999
+Descrição do macrosserviço.
+Texto com no máximo 100 caracteres.
+Agrupador dos serviços.
+Número atribuído ao serviço na árvore de
+exibição.
+Valor mínimo: 1
+Valor máximo: 999
+Fonte de dados utilizada no cálculo do valor
+unitário do item.
+Domínio de fonte:
+• Composição
+• Cotação
+• SINAPI
+• Outros
+Código do serviço, de acordo com a fonte.
+Valor com no máximo 13 caracteres.
+Ex.: 74209/1 (código Sinapi)
+Descrição do serviço selecionado para fonte
+escolhida.
+Texto com no máximo 500 caracteres.
+Unidade característica para cada item.
+Exemplos: UN, m2, m, KG, T, MES, H, KM.
+Valor correspondente ao custo de cada serviço
+na fonte de referência utilizada.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Custo unitário informado pelo usuário para cada
+unidade de serviço.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Valor percentual correspondente ao elemento
+orçamentário "Benefícios e Despesas
+Indiretas”.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Observação associada ao serviço.
+Texto com no máximo 500 caracteres.
+Agrupador para lista das frentes de
+obras, quantidades do item/serviço por frente de
+obra e mês de conclusão da frente de obra.
+Valor associado à ordem de exibição de uma
+frente de obra.
+Valor mínimo: 1
+Valor máximo: 999
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+nomeFrenteObra
+
+submetamacrosservicos/ Nome da frente de obra.
+servicos/
+Texto com no máximo 100 caracteres.
+frentesDeObra
+
+quantidadeItens
+
+macrosservicos/
+servicos/
+frentesDeObra
+
+numeroMesConclusao
+
+macrosservicos/
+servicos/
+frentesDeObra
+
+Parcelas
+
+macrosservicos
+
+numeroParcela
+
+macrosservicos/
+parcelas/
+
+percentualParcela
+
+macrosservicos/
+parcelas/
+
+Quantidade de itens na frente de obra.
+Com 2 (dois) dígitos decimais separados por
+ponto.
+Valor mínimo: 0.00
+Valor máximo: 9999999999.99
+Número do mês de conclusão do evento.
+Este campo é obrigatório para Planilhas
+Orçamentárias sem evento, ou seja, serão
+acompanhadas por Boletim de Medição (BM) e
+deve ser menor ou igual a quantidade de meses
+informada nos dados gerais da planilha
+orçamentária.
+Agrupador das parcelas.
+Seção obrigatória, para PO acompanhada por
+Boletim de Medição.
+
+Valor entre 1 e 100, de acordo com regra a
+seguir:
+Valor mínimo: 1
+Valor máximo: quantidade de meses da obra
+informadas nos dados gerais da planilha
+orçamentária.
+O somatório do percentual das parcelas não
+pode ultrapassar 100.00 em um
+macrosserviço.
+Valor mínimo: 0.00
+Valor máximo: 100.00
+
+5.2.2. Retorno do Serviço – Enviar Planilha Orçamentária
+5.2.2.1 Arquivo json retornado:
+Em caso do sucesso o sistema realiza o seguinte retorno (exemplo):
+Sucesso
+Status 201 Created
+{
+"proposta": "28206/2018",
+"submeta": "1.12",
+"mensagem": "A Planilha Orçamentária da Submeta 1.12 da Proposta 28206/2018 foi atualizada com sucesso"
+}
+
+Falha
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+Status 400 Bad Request
+{
+"errorMessage":"Informações enviadas não estão com estrutura adequada. Erros encontrados em: Número da
+Proposta e Ano da Proposta são numéricos."
+}
+
+5.2.2.2 Mensagens de Validação retornadas
+Código
+HTTP
+
+Mensagem
+
+Possível correção
+
+Classificação
+
+{
+
+201
+
+401
+
+401
+
+401
+401
+
+"proposta": "28206/2018",
+"submeta": "1.12",
+"mensagem": "A Planilha
+Orçamentária da Submeta
+1.12 da Proposta 28206/2018
+foi atualizada com sucesso"
+}
+Acesso negado por falta de
+autenticação
+JBWEB000065: HTTP Status
+401
+…
+JBWEB000121: This request
+requires HTTP authentication.
+The token was expected to
+have 3 parts, but got 1.
+The
+provided
+Algorithm
+doesn't match the one defined
+in the JWT's Header.
+
+400
+
+Token não encontrado
+inativo
+
+400
+
+Token sem autorização para a
+API API_PROJETO_BASICO
+
+400
+
+400
+
+400
+
+ou
+
+-
+
+Verificar se o parâmetro EPCAD está configurado no
+head da solicitação,
+
+Sucesso
+
+Falha autenticação
+
+Incluir o parâmetro EP-CAD no
+HEAD da solicitação
+
+Falha autenticação
+
+Falta fornecer o token de
+autenticação do usuário.
+
+Falha autenticação
+
+Login do usuário inválido ou
+expirado
+
+Falha autenticação
+
+O parâmetro EP-CAD está no
+header da solicitação, mas
+pode estar com o token errado
+ou inativo.
+Não possui autorização para
+utilizar a API do Projeto
+Básico.
+
+Falha autenticação
+
+Falha autorização
+
+Não é possível adicionar a
+Planilha Orçamentaria via API
+pois a opção Receber dados
+da “PO/CFF via API?” não está
+selecionada.
+{
+
+Marcar o campo “Receber
+dados da PO/CFF via API?” na
+aba Projeto Básico > CFF/PO
+> Dados Gerais.
+
+Erro (Negócio)
+
+"errorMessage": "Submeta
+não encontrada."
+
+Meta ou submeta informada na
+URL não encontrada para a
+Proposta.
+
+Erro (Negócio)
+
+Analisar a primeira ocorrência
+do numeroServico do arquivo
+json.
+
+Erro (Estrutura)
+
+}
+Informações enviadas não
+estão
+com
+estrutura
+adequada. Erros encontrados
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+em:
+[macroservicos[0].servicos[0].
+numeroServico - O valor deve
+ser menor ou igual a 999.
+400
+
+[macroservicos[0].servicos[0].
+numeroServico – O valor deve
+ser maior ou igual a 1.
+
+400
+
+Dados Gerais
+Orçamentária
+encontrados
+
+da
+
+Planilha
+não
+
+Analisar a primeira ocorrência
+do numeroServico do arquivo
+json, se no valor está zero ou
+negativo.
+Convenente/ Proponente deve
+informar os Dados Gerias da
+submeta na aba Projeto
+Básico > CFF/PO > Dados
+Gerais
+
+Erro (Estrutura)
+
+Erro (Negócio)
+
+{
+
+400
+
+"errorMessage": "Usuário
+não tem permissão para
+executar ação"
+
+Usuário sem permissão de
+envio dos dados da PO.
+
+Erro (Negócio)
+
+O mesmo número foi atribuído
+a eventos diferentes.
+
+Erro (Negócio
+
+PO acompanhada por BM com
+somatório
+das
+parcelas
+ultrapassando 100 porcento.
+
+Erro (Negócio)
+
+Meta ou submeta informada na
+URL não encontrada para a
+Proposta.
+
+Erro (Negócio)
+
+Erro Geral Detectado pelo
+Sistema
+
+-
+
+}
+{
+
+400
+
+"errorMessage": "Eventos
+diferentes
+com
+mesmo
+número.
+Evento
+[titulo=SERVIÇOS
+PRELIMINARES, numero=1]
+Evento [titulo=CANTEIRO DE
+OBRAS, numero=1]"
+}
+{
+
+400
+
+"mensagem": "O somatório
+dos percentuais das parcelas
+de um macrosserviço tem que
+ser maior que zero e menor ou
+igual a 100.",
+}
+{
+
+400
+
+"errorMessage": "Submeta
+não encontrada."
+}
+Erro ao registrar informações
+da Planilha Orçamentária.
+
+400
+O número do Ticket gerado
+é <<Número do Ticket>>.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+Manual da Integração da API Transferegov – Planilha Orçamentária de Obras
+
+6. Suporte
+Em caso de problemas, dúvidas ou sugestões durante o processo de integração do seu sistema
+externo com a API Transferegov.br, por favor entre em contato com o Ministério da Gestão e
+da Inovação em Serviços Públicos através do seguinte canal de comunicação: E-mail: seges.apimodulodeobras@gestao.gov.br.
+
+https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
+
+

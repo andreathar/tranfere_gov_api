@@ -1,8 +1,24 @@
+# Dependencies
 node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Build
 build/
 dist/
 coverage/
-.DS_Store
+
+# Outputs (gerados por scripts)
+output/
+*.xlsx
+*.csv
 *.log
-.env*
+
+# Environment
+.env
 !.env.example
+
+# IDE
+.DS_Store
+.vscode/
