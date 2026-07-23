@@ -30,6 +30,11 @@ Comandos:
   negados            Extrair negados/perdidos (objeto 301) — aceita args extras
   import             Importar JSONs para o banco PostgreSQL
   report             Relatórios do banco (resumo|estado|objeto|negados|emenda|top|sql)
+  dashboard          Dashboard interativo HTML com gráficos Plotly
+  enrich             Pipeline de enriquecimento (CNPJ + IBGE + Câmara)
+  validate           Validar CNPJs via BrasilAPI
+  ibge               Enriquecer municípios via IBGE
+  camara             Perfil de parlamentares via Câmara
   all                Extrair TODOS os objetos de 2026
   help               Mostrar esta ajuda
 
@@ -70,6 +75,21 @@ case "${1:-help}" in
         ;;
     report)
         $PYTHON "$SRC/db_report.py" "${@:2}"
+        ;;
+    dashboard)
+        $PYTHON "$SRC/dashboard.py" "${@:2}"
+        ;;
+    enrich)
+        $PYTHON -m src.enrichers.pipeline "${@:2}"
+        ;;
+    validate)
+        $PYTHON -m src.enrichers.validacao "${@:2}"
+        ;;
+    ibge)
+        $PYTHON -m src.enrichers.ibge "${@:2}"
+        ;;
+    camara)
+        $PYTHON -m src.enrichers.camara "${@:2}"
         ;;
     all)
         $PYTHON "$SRC/transferegov_extract.py" --objeto all --ano 2026 --csv

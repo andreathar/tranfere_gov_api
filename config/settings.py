@@ -116,3 +116,16 @@ PG_USER = os.environ.get("PGUSER", "cognee")
 PG_PASS = os.environ.get("PGPASSWORD", "cognee")
 
 DATABASE_URL = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
+
+# ---------------------------------------------------------------------------
+# Enriquecimento (mcp-brasil como biblioteca Python)
+# ---------------------------------------------------------------------------
+ENRICH_ENABLED = os.getenv("ENRICH_ENABLED", "true").lower() == "true"
+ENRICH_CACHE_TTL = int(os.getenv("ENRICH_CACHE_TTL", "3600"))  # 1 hora
+ENRICH_RATE_LIMIT = float(os.getenv("ENRICH_RATE_LIMIT", "0.2"))  # 5s entre reqs
+ENRICH_BATCH_SIZE = int(os.getenv("ENRICH_BATCH_SIZE", "50"))
+
+# APIs externas
+BRASILAPI_BASE = "https://brasilapi.com.br/api"
+IBGE_API_BASE = "https://servicodados.ibge.gov.br/api/v1"
+CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"

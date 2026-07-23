@@ -15,6 +15,9 @@ lxml>=5.0
 # Database
 psycopg2-binary>=2.9
 
+# Dashboard
+plotly>=5.18
+
 # MCP Server (opcional)
 fastmcp[code-mode]>=3.2.3
 anthropic>=0.40
