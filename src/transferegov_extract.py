@@ -5,12 +5,13 @@ Transferegov Genérico — Extração de Planos de Ação por Objeto.
 Uso (da raiz do projeto):
   python3 src/transferegov_extract.py --discover --ano 2026
   python3 src/transferegov_extract.py --objeto 301 --ano 2026
+  python3 src/transferegov_extract.py --objeto 301 --ano 2026 --db
   python3 src/transferegov_extract.py --objeto 301 --ano 2026 --negados
-  python3 src/transferegov_extract.py --objeto all --ano 2026 --csv
+  python3 src/transferegov_extract.py --objeto all --ano 2026 --csv --db
   python3 src/transferegov_extract.py --objeto 662 --ano 2026 --situacao REPROVADO CANCELADO
 
 Dependências:
-    pip install requests pandas openpyxl
+    pip install -r requirements.txt
 """
 
 import argparse
@@ -41,7 +42,11 @@ from config.settings import (
     OUTPUT_XLSX,
     OUTPUT_CSV,
     OUTPUT_JSON,
+    DATABASE_URL,
 )
+
+from src.schemas import PlanoAcaoSchema, validate_records
+from src.http_cache import cache_get, cache_set
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -50,14 +55,37 @@ logger = logging.getLogger("transferegov")
 
 
 # ---------------------------------------------------------------------------
+# Formatação brasileira
+# ---------------------------------------------------------------------------
+def format_brl(value) -> str:
+    """Formata valor como R$ brasileiro."""
+    if value is None or pd.isna(value):
+        return "—"
+    try:
+        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        return "—"
+
+
+# ---------------------------------------------------------------------------
 # Request com retry
 # ---------------------------------------------------------------------------
-def make_request(session, params):
+def make_request(session, params, use_cache=True):
+    # Cache hit
+    if use_cache:
+        cached = cache_get(API_URL, params, ttl=SLEEP * 30)  # cache por ~30 páginas
+        if cached is not None:
+            logger.debug("Cache hit página %s", params["pageNumber"])
+            return cached  # retorna dict em vez de Response
+
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = session.get(API_URL, params=params, headers=HEADERS, timeout=TIMEOUT)
             resp.raise_for_status()
-            return resp
+            data = resp.json()
+            if use_cache:
+                cache_set(API_URL, params, data)
+            return data
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response else "?"
             logger.warning(
@@ -87,10 +115,9 @@ def make_request(session, params):
 # ---------------------------------------------------------------------------
 # Parse response
 # ---------------------------------------------------------------------------
-def parse_page(resp):
-    try:
-        body = resp.json()
-    except (json.JSONDecodeError, ValueError):
+def parse_page(body):
+    """Parseia o body JSON da resposta da API."""
+    if body is None:
         return [], 0
     if isinstance(body, list):
         return body, len(body)
@@ -105,8 +132,8 @@ def parse_page(resp):
 # ---------------------------------------------------------------------------
 # Paginação genérica
 # ---------------------------------------------------------------------------
-def extract_all(objeto, ano, politicas_publicas=""):
-    """Extrai todos os planos de ação com paginação."""
+def extract_all(objeto, ano, politicas_publicas="", uf=None, programa_id=None, situacao_api=None):
+    """Extrai todos os planos de ação com paginação e filtros de API."""
     session = requests.Session()
     all_records = []
     page = 1
@@ -121,6 +148,14 @@ def extract_all(objeto, ano, politicas_publicas=""):
             "pageSize": str(DEFAULT_PAGE_SIZE),
             "pageNumber": str(page),
         }
+
+        # Filtros opcionais de API (descobertos via URL real)
+        if uf:
+            params["uf"] = uf
+        if programa_id:
+            params["programaId"] = str(programa_id)
+        if situacao_api:
+            params["planoAcaoSituacao"] = situacao_api
 
         logger.info("--- Página %d ---", page)
 
@@ -143,7 +178,7 @@ def extract_all(objeto, ano, politicas_publicas=""):
         all_records.extend(records)
         logger.info(
             "Página %d: +%d | Acumulado: %d / %s",
-            page, len(records), all_records.__len__(), total,
+            page, len(records), len(all_records), total,
         )
 
         if len(records) < DEFAULT_PAGE_SIZE:
@@ -204,6 +239,19 @@ def discover_objects(ano):
 
 
 # ---------------------------------------------------------------------------
+# Deduplicação
+# ---------------------------------------------------------------------------
+def deduplicate(records: list[dict]) -> list[dict]:
+    """Remove duplicatas por planoAcaoId, mantendo o último registro."""
+    seen = {}
+    for rec in records:
+        pid = rec.get("planoAcaoId")
+        if pid is not None:
+            seen[pid] = rec
+    return list(seen.values())
+
+
+# ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 def export_excel(df, filepath):
@@ -231,6 +279,118 @@ def export_csv(df, filepath):
 
 
 # ---------------------------------------------------------------------------
+# Database import (Fase 2)
+# ---------------------------------------------------------------------------
+def import_to_db(records: list[dict]) -> tuple[int, int]:
+    """Importa registros validados para o PostgreSQL. Retorna (importados, erros)."""
+    import psycopg2
+    from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
+
+    conn = psycopg2.connect(
+        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
+        user=PG_USER, password=PG_PASS,
+    )
+
+    cur = conn.cursor()
+    imported = 0
+    errors = 0
+
+    UPSERT_SQL = """
+    SELECT upsert_plano_acao(
+        %(plano_acao_id)s, %(plano_acao_codigo)s,
+        %(objeto_id)s, %(objeto_descricao)s,
+        %(programa_id)s, %(programa_codigo)s,
+        %(beneficiario_id)s, %(beneficiario_nome)s, %(beneficiario_cnpj)s,
+        %(uf)s, %(ente_id)s,
+        %(plano_acao_situacao)s, %(plano_trabalho_situacao)s,
+        %(codigo_emenda_formatado)s,
+        %(valor_custeio)s, %(valor_investimento)s, %(valor_total)s,
+        %(politicas_publicas)s, %(motivo_impedimento)s, %(numero_parceria)s,
+        %(data_atualizacao_plano_acao)s, %(data_atualizacao_plano_trabalho)s
+    );
+    """
+
+    for rec in records:
+        params = {
+            "plano_acao_id": rec.get("planoAcaoId"),
+            "plano_acao_codigo": rec.get("planoAcaoCodigo", ""),
+            "objeto_id": rec.get("objetoId"),
+            "objeto_descricao": rec.get("objetoDescricao", ""),
+            "programa_id": rec.get("programaId"),
+            "programa_codigo": rec.get("programaCodigo", ""),
+            "beneficiario_id": rec.get("beneficiarioId"),
+            "beneficiario_nome": rec.get("beneficiarioNome", ""),
+            "beneficiario_cnpj": rec.get("beneficiarioCnpj", ""),
+            "uf": rec.get("uf", ""),
+            "ente_id": rec.get("enteId"),
+            "plano_acao_situacao": rec.get("planoAcaoSituacao", ""),
+            "plano_trabalho_situacao": rec.get("planoTrabalhoSituacao"),
+            "codigo_emenda_formatado": rec.get("codigoEmendaFormatado", ""),
+            "valor_custeio": rec.get("valorCusteio", 0),
+            "valor_investimento": rec.get("valorInvestimento", 0),
+            "valor_total": rec.get("valorTotal", 0),
+            "politicas_publicas": rec.get("politicasPublicas", ""),
+            "motivo_impedimento": rec.get("motivoImpedimento"),
+            "numero_parceria": rec.get("numeroParceria"),
+            "data_atualizacao_plano_acao": rec.get("dataAtualizacaoPlanoAcao"),
+            "data_atualizacao_plano_trabalho": rec.get("dataAtualizacaoPlanoTrabalho"),
+        }
+        try:
+            cur.execute(UPSERT_SQL, params)
+            imported += 1
+        except Exception as e:
+            logger.warning("Erro DB plano %s: %s", params["plano_acao_id"], e)
+            errors += 1
+            conn.rollback()
+            continue
+
+    # Parsear codigo_emenda_formatado → emenda_codigo + parlamentar_nome
+    try:
+        cur.execute("""
+            UPDATE planos_acao SET
+                emenda_codigo = split_part(codigo_emenda_formatado, '-', 1),
+                parlamentar_nome = TRIM(split_part(codigo_emenda_formatado, '-', 2)),
+                emenda_ano = CASE
+                    WHEN length(split_part(codigo_emenda_formatado, '-', 1)) >= 4
+                    THEN SUBSTRING(split_part(codigo_emenda_formatado, '-', 1) FROM 1 FOR 4)::INTEGER
+                    ELSE NULL
+                END
+            WHERE codigo_emenda_formatado IS NOT NULL AND codigo_emenda_formatado != ''
+              AND (emenda_codigo IS NULL OR emenda_codigo = '')
+        """)
+        parsed = cur.rowcount
+        if parsed:
+            logger.info("Emendas parseadas: %d registros", parsed)
+    except Exception as e:
+        logger.warning("Erro parseando emendas: %s", e)
+
+    # Log de extração
+    try:
+        ano = None
+        if records:
+            codigo = records[0].get("planoAcaoCodigo", "")
+            if len(codigo) >= 4:
+                try:
+                    ano = int(codigo[:4])
+                except ValueError:
+                    pass
+        cur.execute(
+            "INSERT INTO extract_log (objeto_id, ano, total_registros, source, notes) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (records[0].get("objetoId") if records else None,
+             ano, imported, "cli_extract", f"via transferegov_extract.py"),
+        )
+    except Exception:
+        pass
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return imported, errors
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -241,8 +401,9 @@ def main():
 Exemplos:
   %(prog)s --discover --ano 2026
   %(prog)s --objeto 301 --ano 2026
+  %(prog)s --objeto 301 --ano 2026 --db
   %(prog)s --objeto 301 --ano 2026 --negados
-  %(prog)s --objeto all --ano 2026 --csv
+  %(prog)s --objeto all --ano 2026 --csv --db
   %(prog)s --objeto 662 --ano 2026 --situacao REPROVADO CANCELADO
         """,
     )
@@ -253,14 +414,24 @@ Exemplos:
                         help="Código do objeto (default: 301). Use 'all' para todos.")
     parser.add_argument("--ano", type=str, default="2026",
                         help="Ano exercício (default: 2026)")
+    parser.add_argument("--uf", type=str, default=None,
+                        help="Filtrar por UF (ex: SP, AL, PI)")
+    parser.add_argument("--programa", type=str, default=None,
+                        help="Filtrar por programaId (25 = Transferências Especiais)")
+    parser.add_argument("--situacao-api", type=str, default=None,
+                        help="Filtrar por situação na API (underscores). Ex: IMPEDIDO_RESTRICAO_TECNICA")
     parser.add_argument("--situacao", nargs="+", default=None,
-                        help="Filtrar por situação(ões). Ex: REPROVADO IMPEDIDO")
+                        help="Filtrar por situação(ões) local. Ex: REPROVADO IMPEDIDO")
     parser.add_argument("--negados", action="store_true",
                         help="Atalho: filtra REPROVADO IMPEDIDO CANCELADO NAO_CUMPROU")
+    parser.add_argument("--db", action="store_true",
+                        help="Importar direto para o PostgreSQL (transferegov_db)")
     parser.add_argument("--csv", action="store_true",
                         help="Também exportar CSV")
     parser.add_argument("--output", type=str, default=None,
                         help="Nome base do arquivo de saída (sem extensão)")
+    parser.add_argument("--no-dedup", action="store_true",
+                        help="Não deduplicar registros")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Logging verboso")
 
@@ -314,13 +485,38 @@ Exemplos:
 
     logger.info("Objeto: %s | Ano: %s | Filtro situação: %s", objeto, ano, situacao_filter)
 
-    records = extract_all(objeto, ano)
+    records = extract_all(
+        objeto, ano,
+        uf=args.uf,
+        programa_id=args.programa,
+        situacao_api=args.situacao_api,
+    )
 
     if not records:
         logger.warning("Nenhum registro encontrado.")
         return 1
 
-    df = pd.DataFrame(records)
+    # Deduplicação (Fase 3)
+    before_dedup = len(records)
+    if not args.no_dedup:
+        records = deduplicate(records)
+        if before_dedup != len(records):
+            logger.info("Deduplicação: %d → %d registros únicos", before_dedup, len(records))
+
+    # Validação Pydantic (Fase 1)
+    validos, erros = validate_records(records, strict=False)
+    if erros:
+        logger.warning("Validação: %d registros com warnings:", len(erros))
+        for e in erros[:5]:
+            logger.warning("  %s", e)
+        if len(erros) > 5:
+            logger.warning("  ... e mais %d erros", len(erros) - 5)
+    logger.info("Validação: %d registros válidos", len(validos))
+
+    # Converter para dicts para DataFrame
+    records_for_df = [p.model_dump() for p in validos]
+
+    df = pd.DataFrame(records_for_df)
 
     # Converter valores monetários
     for col in df.columns:
@@ -341,6 +537,14 @@ Exemplos:
         if df.empty:
             logger.info("Nenhum registro com situação %s para objeto %s/%s.",
                         situacao_filter, objeto, ano)
+
+    # ---- Flag --db (Fase 2) ----
+    db_imported = 0
+    db_errors = 0
+    if args.db:
+        logger.info("Importando %d registros para PostgreSQL...", len(df))
+        db_imported, db_errors = import_to_db(records_for_df)
+        logger.info("DB: %d importados, %d erros", db_imported, db_errors)
 
     # Nome de saída
     if args.output:
@@ -365,7 +569,7 @@ Exemplos:
         json.dump(df.to_dict("records"), f, ensure_ascii=False, indent=2)
     logger.info("JSON: %s", json_path)
 
-    # Resumo
+    # Resumo (Fase 3: formatação BRL)
     print("\n" + "=" * 70)
     print("RESUMO")
     print("=" * 70)
@@ -374,8 +578,15 @@ Exemplos:
     print(f"Registros:        {len(df)}")
     print(f"Colunas:          {len(df.columns)}")
     print(f"Arquivo:          {xlsx_path}")
+    if "valorTotal" in df.columns:
+        total_valor = df["valorTotal"].sum()
+        print(f"Valor total:      {format_brl(total_valor)}")
     if "planoAcaoSituacao" in df.columns:
         print(f"Situações:        {df['planoAcaoSituacao'].value_counts().to_dict()}")
+    if args.db:
+        print(f"DB importados:    {db_imported}")
+        if db_errors:
+            print(f"DB erros:         {db_errors}")
     print("=" * 70 + "\n")
 
     return 0

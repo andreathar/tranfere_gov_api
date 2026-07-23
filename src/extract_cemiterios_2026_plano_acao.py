@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Extração dos Planos de Ação de 2026 - Objeto 301 (Reforma de Cemitérios)
-via API pública do Transferegov (especiais).
+[DEPRECATED] Extração dos Planos de Ação de 2026 - Objeto 301 (Reforma de Cemitérios)
 
-Uso: python3 src/extract_cemiterios_2026_plano_acao.py
+DEPRECATED: Use o script genérico:
+  python3 src/transferegov_extract.py --objeto 301 --ano 2026
+  python3 src/transferegov_extract.py --objeto 301 --ano 2026 --db
+
+Este script será removido em versão futura.
 """
 
 import sys
@@ -27,6 +30,7 @@ from config.settings import (
     RETRY_BACKOFF,
     DEFAULT_PAGE_SIZE,
     OUTPUT_LOGS,
+    OUTPUT_XLSX,
     OUTPUT_JSON,
 )
 
@@ -174,8 +178,8 @@ def export_to_excel(records, filepath):
 # ---------------------------------------------------------------------------
 def main():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_xlsx = "cemiterios_2026.xlsx"
-    output_backup = f"cemiterios_2026_{ts}.xlsx"
+    output_xlsx = str(OUTPUT_XLSX / "cemiterios_2026.xlsx")
+    output_backup = str(OUTPUT_XLSX / f"cemiterios_2026_{ts}.xlsx")
 
     logger.info("=" * 70)
     logger.info("EXTRAÇÃO — Planos de Ação 2026 | Objeto 301 (Cemitérios)")

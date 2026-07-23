@@ -1,207 +1,292 @@
 openapi: 3.0.3
 info:
-  title: TransfereGov API CLI Integration
-  description: API specifications for interacting with Transferegov endpoints for Private Systems. Designed for Agentic CLI usage.
-  version: 1.0.0
-servers:
-  - url: https://hom4.mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1
-    description: Homologation Environment (hom4)
-  - url: https://mandatarias.transferegov.sistema.gov.br/projeto-basico/api/v1
-    description: Production Environment
-components:
-  securitySchemes:
-    SystemToken:
-      type: http
-      scheme: bearer
-      description: EP-CAD JWT System Token (Header 'Authorization')
-    UserToken:
-      type: apiKey
-      in: header
-      name: X-User-Token
-      description: IDP User Token representing the CPF of the operator
-  schemas:
-    FrenteDeObra:
-      type: object
-      properties:
-        nomeFrenteObra:
-          type: string
-          example: "Rua Principal 1"
-        numeroMesConclusao:
-          type: integer
-          example: 1
-        numero:
-          type: integer
-          example: 1
-        quantidadeItens:
-          type: number
-          example: 1.5
-    Parcela:
-      type: object
-      properties:
-        numeroParcela:
-          type: integer
-          example: 1
-        percentualParcela:
-          type: number
-          example: 100
-    Servico:
-      type: object
-      properties:
-        bdi:
-          type: number
-          example: 24.03
-        codigo:
-          type: string
-          example: "74209/1"
-        custoUnitario:
-          type: number
-          example: 281.61
-        custoUnitarioReferencia:
-          type: number
-          example: 281.61
-        descricao:
-          type: string
-          example: "PLACA DE OBRA EM CHAPA DE ACO GALVANIZADO"
-        evento:
-          type: object
-          properties:
-            numeroEvento:
-              type: integer
-              example: 1
-            titulo:
-              type: string
-              example: "SERVIÇOS PRELIMINARES"
-        fonte:
-          type: string
-          example: "SINAPI"
-        frentesDeObra:
-          type: array
-          items:
-            $ref: '#/components/schemas/FrenteDeObra'
-        numeroServico:
-          type: integer
-          example: 1
-        observacao:
-          type: string
-          example: ""
-        parcelas:
-          type: array
-          items:
-            $ref: '#/components/schemas/Parcela'
-        unidade:
-          type: string
-          example: "M2"
-    Macroservico:
-      type: object
-      properties:
-        descricao:
-          type: string
-          example: "SERVIÇOS PRELIMINARES"
-        numeroMacroservico:
-          type: integer
-          example: 1
-        servicos:
-          type: array
-          items:
-            $ref: '#/components/schemas/Servico'
-    PlanilhaPayload:
-      type: object
-      properties:
-        macroservicos:
-          type: array
-          items:
-            $ref: '#/components/schemas/Macroservico'
+  title: TransfereGov — API Pública de Planos de Ação
+  description: |
+    API pública para listagem de Planos de Ação do Transferegov
+    (Transferências Especiais / Emendas Pix).
 
-security:
-  - SystemToken: []
-  - UserToken: []
+    Baseada em respostas reais observadas em 2026-07-23.
+    Esta spec foi gerada por engenharia reversa — o swagger oficial
+    do servidor retorna 403 para IPs fora da rede gov.br.
+
+    Endpoint funcional confirmado:
+    GET /api/public/plano-acao/listagem
+  version: 1.0.0
+  contact:
+    name: TransfereGov
+    url: https://especiais.transferegov.sistema.gov.br
+
+servers:
+  - url: https://especiais.transferegov.sistema.gov.br/maisbrasil-transferencia-especial-backend
+    description: Produção (público, sem autenticação)
 
 paths:
-  /po:
-    post:
-      summary: Send Budget Worksheet (Planilha Orçamentária)
-      description: Submits a new budget worksheet (PLE or BM) to a specific subgoal.
-      parameters:
-        - in: query
-          name: nrproposta
-          required: true
-          schema:
-            type: integer
-            example: 28206
-        - in: query
-          name: anoproposta
-          required: true
-          schema:
-            type: integer
-            example: 2018
-        - in: query
-          name: nrmeta
-          required: true
-          schema:
-            type: integer
-            example: 1
-        - in: query
-          name: nrsubmeta
-          required: true
-          schema:
-            type: integer
-            example: 1
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PlanilhaPayload'
-      responses:
-        '201':
-          description: Worksheet successfully created
-        '400':
-          description: Bad request (validation errors)
-        '401':
-          description: Unauthorized
-        '403':
-          description: Forbidden (insufficient permissions)
-
-  /submetas:
+  /api/public/plano-acao/listagem:
     get:
-      summary: Consult Subgoals
-      description: Retrieves the list of subgoals for a given proposal.
-      parameters:
-        - in: query
-          name: nrproposta
-          required: true
-          schema:
-            type: integer
-            example: 28206
-        - in: query
-          name: anoproposta
-          required: true
-          schema:
-            type: integer
-            example: 2018
-      responses:
-        '200':
-          description: Subgoals retrieved successfully
-        '401':
-          description: Unauthorized
+      summary: Listar Planos de Ação
+      description: |
+        Retorna lista paginada de Planos de Ação de Transferências Especiais.
+        Endpoint público — não requer autenticação.
+        Pode ser restrito a IPs brasileiros (rede gov.br).
 
-  /voluntarias/proposta/ConsultarProposta/ConsultarProposta.do:
-    get:
-      summary: Consult Proposals (CSV)
-      description: Queries the Transferegov portal to return an open CSV list of proposals linked to an amendment author / politician ID.
+        Exemplos de uso real:
+        - Objeto 301 (Cemitérios), ano 2026 → 38 registros
+        - Todos os objetos, ano 2026 → 9598+ registros
       parameters:
-        - in: query
-          name: autorDaEmenda
-          required: true
+        - name: objetoExecucao
+          in: query
+          required: false
+          description: |
+            Código do objeto de execução.
+            Use vazio para todos os objetos.
+            Use 301 para Cemitérios.
           schema:
             type: string
-            example: "1234"
-          description: ID of the politician / amendment author
+          examples:
+            cemiterios:
+              value: "301"
+              summary: Cemitérios e Espaços Públicos
+            todos:
+              value: ""
+              summary: Todos os objetos
+        - name: objetoExecucaoAno
+          in: query
+          required: false
+          description: Ano exercício do plano de ação
+          schema:
+            type: string
+          example: "2026"
+        - name: uf
+          in: query
+          required: false
+          description: UF do beneficiário (2 letras)
+          schema:
+            type: string
+          example: "AL"
+        - name: beneficiario
+          in: query
+          required: false
+          description: ID do beneficiário
+          schema:
+            type: string
+          example: "9858"
+        - name: parlamentar
+          in: query
+          required: false
+          description: ID do parlamentar autor da emenda
+          schema:
+            type: string
+          example: "4291"
+        - name: emenda
+          in: query
+          required: false
+          description: ID da emenda parlamentar
+          schema:
+            type: string
+          example: "11228"
+        - name: programaId
+          in: query
+          required: false
+          description: |
+            ID do programa. 25 = Transferências Especiais (Emendas Pix)
+          schema:
+            type: string
+          example: "25"
+        - name: planoAcaoSituacao
+          in: query
+          required: false
+          description: |
+            Situação do plano de ação (underscores, sem acento).
+            Valores: CIENTE, APROVADO, REPROVADO, IMPEDIDO,
+            IMPEDIDO_REJEICAO_PLANO_TRABALHO, CANCELADO,
+            EM_EXECUCAO, CONCLUIDO, NAO_CUMPROU
+          schema:
+            type: string
+          example: "IMPEDIDO"
+        - name: planoTrabalhoSituacao
+          in: query
+          required: false
+          description: Situação do plano de trabalho
+          schema:
+            type: string
+          example: "ENVIADO_PARA_ANALISE"
+        - name: politicasPublicas
+          in: query
+          required: false
+          description: Código da política pública. Vazio = todas.
+          schema:
+            type: string
+          default: ""
+        - name: pageSize
+          in: query
+          required: false
+          description: |
+            Itens por página. Máximo efetivo: 100.
+            Valores maiores podem ser truncados pelo servidor.
+          schema:
+            type: string
+            default: "100"
+          example: "100"
+        - name: pageNumber
+          in: query
+          required: false
+          description: Página atual (1-indexed). Incrementar no loop.
+          schema:
+            type: string
+            default: "1"
+          example: "1"
       responses:
         '200':
-          description: Successful response returning a CSV file with proposals
+          description: Lista de planos de ação
           content:
-            text/csv:
+            application/json:
               schema:
-                type: string
-                example: "Proposta,Status,Órgão Concedente,Convenente,Emenda Parlamentar?,CNPJ do Convenente\n023366/2026,Em execução,..."
+                $ref: '#/components/schemas/ListaPlanosResponse'
+              example:
+                total: 38
+                listaPlanosAcao:
+                  - planoAcaoId: 88849
+                    planoAcaoCodigo: "09032026-088849"
+                    planoAcaoSituacao: "CIENTE"
+                    planoTrabalhoSituacao: "APROVADO"
+                    objetoId: 301
+                    objetoDescricao: "301 - Cemitérios E Espaços Públicos Associados Ao Cemitério Como Capela Mortuária - Ministério das Cidades"
+                    beneficiarioCnpj: "32846347000146"
+                    beneficiarioId: 8804
+                    beneficiarioNome: "MUNICIPIO DE SANTANA DO SAO FRANCISCO"
+                    uf: "SE"
+                    enteId: 5577
+                    programaCodigo: "09032026"
+                    programaId: 25
+                    politicasPublicas: "15-Urbanismo / 452-Serviços Urbanos"
+                    codigoEmendaFormatado: "202642740010-LAÉRCIO OLIVEIRA"
+                    motivoImpedimento: null
+                    numeroParceria: null
+                    valorCusteio: 0.00
+                    valorInvestimento: 597000.00
+                    valorTotal: 597000.00
+                    dataAtualizacaoPlanoAcao: null
+                    dataAtualizacaoPlanoTrabalho: null
+        '403':
+          description: IP bloqueado (acesso restrito a rede gov.br)
+        '500':
+          description: Erro interno do servidor
+
+components:
+  schemas:
+    ListaPlanosResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total de registros que atendem ao filtro
+          example: 38
+        listaPlanosAcao:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanoAcao'
+
+    PlanoAcao:
+      type: object
+      properties:
+        planoAcaoId:
+          type: integer
+          description: ID único do plano de ação
+          example: 88849
+        planoAcaoCodigo:
+          type: string
+          description: Código do plano (AAAAAA-NNNNNN)
+          example: "09032026-088849"
+        planoAcaoSituacao:
+          type: string
+          description: |
+            Situação do plano de ação.
+            Valores conhecidos:
+            - CIENTE — município ciente, aguardando ação
+            - APROVADO — plano aprovado
+            - REPROVADO — negado
+            - IMPEDIDO — impedido (motivoImpedimento preenchido)
+            - CANCELADO — cancelado
+            - EM_EXECUCAO — em execução
+            - CONCLUIDO — concluído
+            - NAO_CUMPROU — não cumpriu (perdido)
+          example: "CIENTE"
+        planoTrabalhoSituacao:
+          type: string
+          description: Situação do plano de trabalho associado
+          example: "APROVADO"
+        objetoId:
+          type: integer
+          description: Código do objeto de execução
+          example: 301
+        objetoDescricao:
+          type: string
+          description: Descrição do objeto completo
+          example: "301 - Cemitérios E Espaços Públicos Associados Ao Cemitério Como Capela Mortuária - Ministério das Cidades"
+        beneficiarioCnpj:
+          type: string
+          description: CNPJ do município beneficiário (14 dígitos)
+          example: "32846347000146"
+        beneficiarioId:
+          type: integer
+          description: ID do beneficiário
+          example: 8804
+        beneficiarioNome:
+          type: string
+          description: Nome do município beneficiário
+          example: "MUNICIPIO DE SANTANA DO SAO FRANCISCO"
+        uf:
+          type: string
+          description: Unidade federativa (2 letras)
+          example: "SE"
+        enteId:
+          type: integer
+          description: ID do ente federativo
+          example: 5577
+        programaCodigo:
+          type: string
+          description: Código do programa
+          example: "09032026"
+        programaId:
+          type: integer
+          description: ID do programa
+          example: 25
+        politicasPublicas:
+          type: string
+          description: Políticas públicas associadas (separadas por vírgula)
+          example: "15-Urbanismo / 452-Serviços Urbanos, 15-Urbanismo / 451-Infraestrutura Urbana"
+        codigoEmendaFormatado:
+          type: string
+          description: Emenda parlamentar formatada
+          example: "202642740010-LAÉRCIO OLIVEIRA"
+        motivoImpedimento:
+          type: string
+          nullable: true
+          description: Motivo do impedimento (null se não impedido)
+        numeroParceria:
+          type: string
+          nullable: true
+          description: Número da parceria (null se não aplicável)
+        valorCusteio:
+          type: number
+          format: double
+          description: Valor de custeio (R$)
+          example: 0.00
+        valorInvestimento:
+          type: number
+          format: double
+          description: Valor de investimento (R$)
+          example: 597000.00
+        valorTotal:
+          type: number
+          format: double
+          description: Valor total (custeio + investimento)
+          example: 597000.00
+        dataAtualizacaoPlanoAcao:
+          type: string
+          nullable: true
+          description: Data de atualização do plano de ação (null se não atualizado)
+        dataAtualizacaoPlanoTrabalho:
+          type: string
+          nullable: true
+          description: Data de atualização do plano de trabalho (null se não atualizado)

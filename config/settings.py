@@ -37,8 +37,46 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; TransfereGov-Extractor/1.0)",
 }
 
-# ---------------------------------------------------------------------------
-# Parâmetros de request
+# Parâmetros de query disponíveis na API (descobertos via URL real)
+# Todos são opcionais. Combinar para filtrar.
+# Exemplo completo:
+#   uf=AL&beneficiario=9858&parlamentar=4291&emenda=11228
+#   &programaId=25&planoAcaoSituacao=IMPEDIDO_RESTRICAO_TECNICA
+#   &planoTrabalhoSituacao=ENVIADO_PARA_ANALISE&politicasPublicas=4
+#   &objetoExecucao=1&objetoExecucaoAno=2026&pageSize=100&pageNumber=1
+API_PARAMS_KNOWN = [
+    "uf",                        # UF do beneficiário (ex: AL, SP, PI)
+    "beneficiario",              # ID do beneficiário
+    "parlamentar",               # ID do parlamentar autor
+    "emenda",                    # ID da emenda
+    "programaId",                # ID do programa (25 = Transferências Especiais)
+    "planoAcaoSituacao",         # Situação do plano (underscores, sem acento)
+    "planoTrabalhoSituacao",     # Situação do plano de trabalho
+    "politicasPublicas",         # Código da política pública
+    "objetoExecucao",            # Código do objeto de execução
+    "objetoExecucaoAno",         # Ano exercício
+    "pageSize",                  # Itens por página (máx: 100)
+    "pageNumber",                # Página atual (1-indexed)
+]
+
+# Situações de plano de ação (valores reais da API, com underscores)
+# Mapeamento display site → valor API:
+#   "Impedido por Restrição Técnica"          → IMPEDIDO
+#   "Impedido por Rejeição do Plano de Trabalho" → IMPEDIDO_REJEICAO_PLANO_TRABALHO
+SITUACOES_TRANSFEREGOV = {
+    "AGUARDANDO_CIENCIA",
+    "PLANO_TRABALHO_EM_ELABORACAO",
+    "CIENTE",
+    "IMPEDIDO",
+    "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
+    "CANCELADO",
+    "EM_EXECUCAO",
+    "CONCLUIDO",
+    "NAO_CUMPROU",
+}
+
+# Situações que indicam plano negado/perdido
+SITUACOES_NEGADAS = {"REPROVADO", "IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO", "CANCELADO", "NAO_CUMPROU"}
 # ---------------------------------------------------------------------------
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_TIMEOUT = 60       # segundos
@@ -67,3 +105,14 @@ SITUACOES_CONHECIDAS = {
 # ---------------------------------------------------------------------------
 API_URL_LEGADO = "https://api.transferegov.gestao.gov.br/transferenciasespeciais"
 ENDPOINT_LEGADO = "/plano_acao_especial"
+
+# ---------------------------------------------------------------------------
+# PostgreSQL — Banco transferegov_db
+# ---------------------------------------------------------------------------
+PG_HOST = os.environ.get("PGHOST", "127.0.0.1")
+PG_PORT = int(os.environ.get("PGPORT", "5432"))
+PG_DB = os.environ.get("PGDATABASE", "transferegov_db")
+PG_USER = os.environ.get("PGUSER", "cognee")
+PG_PASS = os.environ.get("PGPASSWORD", "cognee")
+
+DATABASE_URL = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"

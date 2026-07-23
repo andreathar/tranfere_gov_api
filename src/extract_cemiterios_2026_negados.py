@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-Extração de Planos de Ação 2026 (Objeto 301 - Cemitérios) PERDIDOS ou NEGADOS.
+[DEPRECATED] Extração de Planos de Ação 2026 (Objeto 301 - Cemitérios) PERDIDOS ou NEGADOS.
 
-Uso: python3 src/extract_cemiterios_2026_negados.py
+DEPRECATED: Use o script genérico:
+  python3 src/transferegov_extract.py --objeto 301 --ano 2026 --negados
+  python3 src/transferegov_extract.py --objeto 301 --ano 2026 --negados --db
+
+Este script será removido em versão futura.
 """
 
 import sys
@@ -27,6 +31,8 @@ from config.settings import (
     DEFAULT_PAGE_SIZE,
     SITUACOES_NEGADAS,
     OUTPUT_LOGS,
+    OUTPUT_XLSX,
+    OUTPUT_CSV,
     OUTPUT_JSON,
 )
 
@@ -135,7 +141,7 @@ def export(records, basename):
         if "valor" in col.lower():
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    xlsx = f"{basename}.xlsx"
+    xlsx = str(OUTPUT_XLSX / f"{basename}.xlsx")
     with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Negados/Perdidos")
         ws = writer.sheets["Negados/Perdidos"]
@@ -148,7 +154,7 @@ def export(records, basename):
             ws.column_dimensions[col_letter].width = min(max_len, 60)
     logger.info("Excel: %s", xlsx)
 
-    csv = f"{basename}.csv"
+    csv = str(OUTPUT_CSV / f"{basename}.csv")
     df.to_csv(csv, index=False, sep=";", encoding="utf-8-sig")
     logger.info("CSV: %s", csv)
 
