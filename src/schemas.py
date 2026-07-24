@@ -7,7 +7,7 @@ Usado por: transferegov_extract.py, db_import.py
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 
 class PlanoAcaoSchema(BaseModel):
@@ -58,7 +58,12 @@ class PlanoAcaoSchema(BaseModel):
         if v is None:
             return 0.0
         if isinstance(v, str):
-            v = v.replace(",", ".").strip()
+            v = v.strip()
+            # Handle BRL format: "1.234,56" → 1234.56
+            if "," in v and "." in v:
+                v = v.replace(".", "").replace(",", ".")
+            elif "," in v:
+                v = v.replace(",", ".")
         try:
             return float(v)
         except (ValueError, TypeError):

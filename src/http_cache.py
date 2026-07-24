@@ -7,7 +7,6 @@ Cache em arquivo JSON com expiração.
 
 import json
 import time
-from pathlib import Path
 
 from config.settings import OUTPUT_DIR
 
@@ -40,7 +39,7 @@ def cache_get(url: str, params: dict, ttl: int = DEFAULT_TTL) -> dict | None:
             cache_file.unlink(missing_ok=True)
             return None
 
-        return entry.get("data")
+        return entry.get("data")  # type: ignore[no-any-return]
     except (json.JSONDecodeError, KeyError):
         cache_file.unlink(missing_ok=True)
         return None

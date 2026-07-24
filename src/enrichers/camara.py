@@ -7,15 +7,20 @@ Busca dados dos deputados que são autores de emendas no programa.
 """
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 import psycopg2
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, CAMARA_API_BASE, ENRICH_RATE_LIMIT
+from config.settings import (
+    CAMARA_API_BASE,
+    ENRICH_RATE_LIMIT,
+    PG_DB,
+    PG_HOST,
+    PG_PASS,
+    PG_PORT,
+    PG_USER,
+)
 
 
 def get_connection():
@@ -30,12 +35,13 @@ def buscar_deputado(nome: str) -> dict | None:
     url = f"{CAMARA_API_BASE}/deputados"
     params = {"nome": nome, "itens": 5, "ordem": "ASC", "ordenarPor": "nome"}
     try:
-        resp = requests.get(url, params=params, timeout=15)
+        resp = requests.get(url, params=params, timeout=15)  # type: ignore[arg-type]
         if resp.status_code == 200:
-            data = resp.json()
-            deputados = data.get("dados", [])
+            data: dict = resp.json()
+            deputados: list = data.get("dados", [])
             if deputados:
-                return deputados[0]  # Dados básicos já vêm na listagem
+                result: dict = deputados[0]
+                return result
     except Exception:
         pass
     return None

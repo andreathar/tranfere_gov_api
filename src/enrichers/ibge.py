@@ -7,15 +7,11 @@ Busca dados demográficos/econômicos dos municípios beneficiários.
 """
 
 import argparse
-import sys
-import time
-from pathlib import Path
 
 import psycopg2
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, IBGE_API_BASE, ENRICH_RATE_LIMIT
+from config.settings import IBGE_API_BASE, PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 
 def get_connection():
@@ -30,7 +26,7 @@ def buscar_municipios_ibge(uf: str) -> list:
     url = f"{IBGE_API_BASE}/localidades/estados/{uf}/municipios"
     resp = requests.get(url, timeout=15)
     if resp.status_code == 200:
-        return resp.json()
+        return resp.json()  # type: ignore[no-any-return]
     return []
 
 

@@ -7,16 +7,13 @@ Uso:
     python3 src/db_import.py output/json/arquivo.json # importa arquivo específico
 """
 
-import sys
-import json
 import glob
+import json
 import os
-from pathlib import Path
-from datetime import datetime
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import sys
 
 import psycopg2
+
 from config.settings import PROJECT_ROOT
 
 DB_CONFIG = {
@@ -70,10 +67,11 @@ def parse_record(rec):
 
     # Extrair ano do codigo (AAAAAA-NNNNNN → AAAA)
     codigo = rec.get("planoAcaoCodigo", "")
-    try:
-        ano = int(codigo[:4]) if len(codigo) >= 4 else None
-    except ValueError:
-        ano = None
+    if len(codigo) >= 4:
+        try:
+            _ano = int(codigo[:4])
+        except ValueError:
+            pass
 
     return {
         "plano_acao_id": plano_id,
@@ -173,8 +171,8 @@ def import_file(conn, filepath):
     conn.commit()
     cur.close()
 
-    for e in errors:
-        print(e)
+    for err in errors:
+        print(err)
 
     return imported
 
@@ -213,7 +211,7 @@ def main():
     conn.close()
 
     print(f"\n{'='*50}")
-    print(f"IMPORTAÇÃO CONCLUÍDA")
+    print("IMPORTAÇÃO CONCLUÍDA")
     print(f"{'='*50}")
     print(f"Arquivos processados: {len(files)}")
     print(f"Registros importados: {total}")

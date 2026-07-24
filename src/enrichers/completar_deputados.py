@@ -5,15 +5,20 @@ Uso: python3 src/enrichers/completar_deputados.py
 
 Busca detalhes apenas para deputados sem sigla_partido preenchida.
 """
-import sys
 import time
-from pathlib import Path
 
 import psycopg2
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, CAMARA_API_BASE, ENRICH_RATE_LIMIT
+from config.settings import (
+    CAMARA_API_BASE,
+    ENRICH_RATE_LIMIT,
+    PG_DB,
+    PG_HOST,
+    PG_PASS,
+    PG_PORT,
+    PG_USER,
+)
 
 
 def main():

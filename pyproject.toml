@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transferegov-api"
+version = "2.0.0"
+description = "Extração, validação e análise de Planos de Ação do Transferegov (Governo Federal)"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "requests>=2.31.0",
+    "pandas>=2.1.0",
+    "openpyxl>=3.1.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0",
+    "httpx>=0.27",
+    "duckdb>=1.1",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "psycopg2-binary>=2.9",
+    "plotly>=5.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.22",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "config*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # line length handled by formatter
+    "B905",   # zip() strict= — pre-existing, enable after audit
+    "SIM105", # contextlib.suppress — pre-existing, enable after audit
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "src"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

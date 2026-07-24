@@ -7,15 +7,20 @@ Valida CNPJs dos beneficiários no banco e salva resultados em validacao_cnpj.
 """
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 import psycopg2
 import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS, BRASILAPI_BASE, ENRICH_RATE_LIMIT
+from config.settings import (
+    BRASILAPI_BASE,
+    ENRICH_RATE_LIMIT,
+    PG_DB,
+    PG_HOST,
+    PG_PASS,
+    PG_PORT,
+    PG_USER,
+)
 
 
 def get_connection():

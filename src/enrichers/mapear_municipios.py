@@ -10,15 +10,11 @@ Uso: python3 -m src.enrichers.mapear_municipios [--dry-run]
 """
 
 import argparse
-import re
-import sys
 import unicodedata
-from pathlib import Path
 
 import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
+from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 
 def normalize(text: str) -> str:

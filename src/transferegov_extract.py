@@ -16,37 +16,36 @@ Dependências:
 
 import argparse
 import json
+import logging
 import sys
 import time
-import logging
 from datetime import datetime
-from pathlib import Path
 
-# Adicionar raiz do projeto ao path para importar config
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import requests
 import pandas as pd
+import requests
 
 from config.settings import (
     API_URL_LISTAGEM as API_URL,
-    HEADERS,
-    DEFAULT_TIMEOUT as TIMEOUT,
-    SLEEP_BETWEEN_PAGES as SLEEP,
-    MAX_RETRIES,
-    RETRY_BACKOFF,
+)
+from config.settings import (
     DEFAULT_PAGE_SIZE,
-    SITUACOES_NEGADAS,
-    SITUACOES_CONHECIDAS,
-    OUTPUT_LOGS,
-    OUTPUT_XLSX,
+    HEADERS,
+    MAX_RETRIES,
     OUTPUT_CSV,
     OUTPUT_JSON,
-    DATABASE_URL,
+    OUTPUT_LOGS,
+    OUTPUT_XLSX,
+    RETRY_BACKOFF,
+    SITUACOES_NEGADAS,
 )
-
-from src.schemas import PlanoAcaoSchema, validate_records
+from config.settings import (
+    DEFAULT_TIMEOUT as TIMEOUT,
+)
+from config.settings import (
+    SLEEP_BETWEEN_PAGES as SLEEP,
+)
 from src.http_cache import cache_get, cache_set
+from src.schemas import validate_records
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -73,7 +72,7 @@ def format_brl(value) -> str:
 def make_request(session, params, use_cache=True):
     # Cache hit
     if use_cache:
-        cached = cache_get(API_URL, params, ttl=SLEEP * 30)  # cache por ~30 páginas
+        cached = cache_get(API_URL, params, ttl=int(SLEEP * 30))  # cache por ~30 páginas
         if cached is not None:
             logger.debug("Cache hit página %s", params["pageNumber"])
             return cached  # retorna dict em vez de Response
@@ -284,7 +283,8 @@ def export_csv(df, filepath):
 def import_to_db(records: list[dict]) -> tuple[int, int]:
     """Importa registros validados para o PostgreSQL. Retorna (importados, erros)."""
     import psycopg2
-    from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
+
+    from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
     conn = psycopg2.connect(
         host=PG_HOST, port=PG_PORT, dbname=PG_DB,
@@ -378,7 +378,7 @@ def import_to_db(records: list[dict]) -> tuple[int, int]:
             "INSERT INTO extract_log (objeto_id, ano, total_registros, source, notes) "
             "VALUES (%s, %s, %s, %s, %s)",
             (records[0].get("objetoId") if records else None,
-             ano, imported, "cli_extract", f"via transferegov_extract.py"),
+             ano, imported, "cli_extract", "via transferegov_extract.py"),
         )
     except Exception:
         pass

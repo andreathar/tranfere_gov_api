@@ -14,20 +14,14 @@ Uso: python3 src/dashboard.py [--output output/dashboard.html]
 """
 
 import argparse
-import json
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
-import psycopg2
 import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
-
+from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 # ── Cores do tema ──────────────────────────────────────────────────────
 CORES = {

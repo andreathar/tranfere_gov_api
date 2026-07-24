@@ -20,14 +20,11 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import psycopg2
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import psycopg2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
-
+from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 # ═══════════════════════════════════════════════════════════════════════
 # CORES E TEMAS
@@ -415,9 +412,10 @@ def grafico_regiao_valor_bar(df):
         "negada": "❌ Negada (IMPEDIDO, REPROVADO, etc.)",
         "em_andamento": "🟡 Em Andamento",
     }
-    for trace in fig.data:
-        if trace.name in rename_map:
-            trace.name = rename_map[trace.name]
+    for trace in fig.data:  # type: ignore[union-attr]
+        trace_name = getattr(trace, "name", None)
+        if trace_name in rename_map:
+            trace_name = rename_map[trace_name]
     estilo_fig(fig, height=420)
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
@@ -532,7 +530,7 @@ def grafico_objeto_regiao_heatmap(df):
 
     fig = px.imshow(
         pivot,
-        text_auto=".1f",
+        text_auto=True,
         aspect="auto",
         color_continuous_scale="Blues",
         labels=dict(x="Região", y="Objeto", color="R$ milhões"),

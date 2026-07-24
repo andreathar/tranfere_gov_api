@@ -14,14 +14,12 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import psycopg2
 import plotly.express as px
 import plotly.graph_objects as go
+import psycopg2
 from plotly.subplots import make_subplots
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
-
+from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 # ═══════════════════════════════════════════════════════════════════════
 # CORES E TEMAS
@@ -434,12 +432,13 @@ def grafico_parlamentar_regiao(df):
 
     fig = px.imshow(
         pivot_milhoes,
-        text_auto=".1f",
+        text_auto=True,
         aspect="auto",
         color_continuous_scale="YlOrRd",
         labels=dict(x="Região", y="Parlamentar", color="R$ milhões"),
         title="🗺️ Mapa de Calor — Parlamentar vs Região (R$ milhões)",
     )
+    fig.update_traces(texttemplate="%{text:.1f}")
 
     fig = estilo_fig(fig, height=650)
     fig.update_layout(
@@ -592,12 +591,13 @@ def grafico_parlamentar_objeto(df):
 
     fig = px.imshow(
         pivot,
-        text_auto=".0f",
+        text_auto=True,
         aspect="auto",
         color_continuous_scale="Viridis",
         labels=dict(x="Objeto de Execução", y="Parlamentar", color="R$ milhões"),
         title="🎯 Matriz de Especialização — Parlamentar vs Objeto (R$ milhões)",
     )
+    fig.update_traces(texttemplate="%{text:.1f}")
 
     fig = estilo_fig(fig, height=650)
     fig.update_layout(
@@ -755,7 +755,7 @@ def grafico_radar_competencia(df):
 
     fig = go.Figure()
 
-    for i, (_, row) in enumerate(top.iterrows()):
+    for i, (_, _row) in enumerate(top.iterrows()):
         valores = df_norm.iloc[i].tolist()
         valores += valores[:1]  # fechar o polígono
 
@@ -868,19 +868,6 @@ def grafico_objeto_treemap(df):
 # ═══════════════════════════════════════════════════════════════════════
 
 def gerar_html(data_str, cards, *charts):
-    nomes_charts = [
-        "eficiencia_vs_volume",
-        "top_parlamentares",
-        "parlamentar_regiao",
-        "partidos",
-        "concentracao",
-        "parlamentar_objeto",
-        "impedimento",
-        "regiao_situacao",
-        "radar_competencia",
-        "objeto_treemap",
-    ]
-
     secoes = []
     descricoes = [
         ("🎯 Eficiência vs Volume", "Cada bolha é um deputado. O eixo X mostra a taxa de sucesso dos planos; o Y, o valor total gerido. "
@@ -1269,7 +1256,7 @@ def main():
     # Injetar IDs de âncora nas seções
     for i in range(1, 11):
         html = html.replace(
-            f'<div class="section">',
+            '<div class="section">',
             f'<div class="section" id="g{i}">', 1
         )
 

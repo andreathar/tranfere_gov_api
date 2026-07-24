@@ -14,10 +14,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-
-def run_script(script: str, extra_args: list = None) -> int:
+def run_script(script: str, extra_args: list | None = None) -> int:
     """Executa um script enricher como subprocesso."""
     cmd = [sys.executable, "-m", f"src.enrichers.{script}"]
     if extra_args:
@@ -59,7 +57,8 @@ def fase2_perfil_camara(dry_run: bool, limit: int):
 def fase3_vinculacao(dry_run: bool):
     """Fase 3: Vincula parlamentares a beneficiários."""
     import psycopg2
-    from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
+
+    from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
     print("\n\n>>> FASE 3: Vinculação parlamentar-beneficiário")
 

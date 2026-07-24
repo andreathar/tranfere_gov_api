@@ -14,13 +14,10 @@ Uso:
 """
 
 import sys
-import os
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import psycopg2
-from config.settings import PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
+
+from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
 DB_CONFIG = {
     "host": PG_HOST,

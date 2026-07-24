@@ -77,6 +77,7 @@ SITUACOES_TRANSFEREGOV = {
 
 # Situações que indicam plano negado/perdido
 SITUACOES_NEGADAS = {"REPROVADO", "IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO", "CANCELADO", "NAO_CUMPROU"}
+
 # ---------------------------------------------------------------------------
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_TIMEOUT = 60       # segundos
@@ -84,16 +85,12 @@ MAX_RETRIES = 3
 RETRY_BACKOFF = 2.0        # base do backoff exponencial
 SLEEP_BETWEEN_PAGES = 1.0  # segundos — cortesia ao servidor gov
 
-# ---------------------------------------------------------------------------
-# Situações dos Planos de Ação
-# ---------------------------------------------------------------------------
-SITUACOES_NEGADAS = {"REPROVADO", "IMPEDIDO", "CANCELADO", "NAO_CUMPROU"}
-
 SITUACOES_CONHECIDAS = {
     "CIENTE",
     "APROVADO",
     "REPROVADO",
     "IMPEDIDO",
+    "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
     "CANCELADO",
     "EM_EXECUCAO",
     "CONCLUIDO",
