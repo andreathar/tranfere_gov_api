@@ -62,9 +62,12 @@ def main():
         for mun in municipios:
             mun_id = mun.get("id")
             nome = mun.get("nome", "")
-            regiao = mun.get("regiao", {}).get("nome", "")
             micro = mun.get("microrregiao") or {}
-            mesorregiao = micro.get("mesorregiao", {}).get("nome", "")
+            meso = micro.get("mesorregiao") or {}
+            uf_data = meso.get("UF") or {}
+            regiao_data = uf_data.get("regiao") or {}
+            regiao = regiao_data.get("nome", "")
+            mesorregiao = meso.get("nome", "")
             microrregiao = micro.get("nome", "")
 
             if args.dry_run:

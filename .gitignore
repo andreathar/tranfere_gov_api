@@ -22,3 +22,5 @@ output/
 # IDE
 .DS_Store
 .vscode/
+
+google-cloud-sdk/

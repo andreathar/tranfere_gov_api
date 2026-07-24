@@ -26,7 +26,7 @@ def get_connection():
 
 
 def buscar_deputado(nome: str) -> dict | None:
-    """Busca deputado por nome na API da Câmara."""
+    """Busca deputado por nome na API da Câmara (1 request apenas)."""
     url = f"{CAMARA_API_BASE}/deputados"
     params = {"nome": nome, "itens": 5, "ordem": "ASC", "ordenarPor": "nome"}
     try:
@@ -35,12 +35,7 @@ def buscar_deputado(nome: str) -> dict | None:
             data = resp.json()
             deputados = data.get("dados", [])
             if deputados:
-                d = deputados[0]
-                # Buscar detalhes
-                det_resp = requests.get(f"{CAMARA_API_BASE}/deputados/{d['id']}", timeout=10)
-                if det_resp.status_code == 200:
-                    return det_resp.json().get("dados", {})
-                return d
+                return deputados[0]  # Dados básicos já vêm na listagem
     except Exception:
         pass
     return None
@@ -55,7 +50,7 @@ def main():
     conn = get_connection()
     cur = conn.cursor()
 
-    # Buscar parlamentares únicos no banco
+    # Buscar parlamentares únicos não cadastrados
     cur.execute("""
         SELECT DISTINCT parlamentar_nome
         FROM planos_acao
@@ -73,18 +68,17 @@ def main():
     nao_encontrados = 0
 
     for i, nome in enumerate(nomes, 1):
-        # Verificar se já existe
-        if not args.dry_run:
-            cur.execute("SELECT id FROM parlamentares_dados WHERE nome = %s", (nome,))
-            if cur.fetchone():
-                continue
+        # Pular se já existe
+        cur.execute("SELECT id FROM parlamentares_dados WHERE nome = %s", (nome,))
+        if cur.fetchone():
+            continue
 
         dep = buscar_deputado(nome)
 
         if dep:
             encontrados += 1
+            status = dep.get("ultimoStatus", {})
             if args.dry_run:
-                status = dep.get("ultimoStatus", {})
                 partido = status.get("siglaPartido", "?")
                 uf = status.get("siglaUf", "?")
                 print(f"  [{i}/{len(nomes)}] {nome} ({partido}/{uf})")
@@ -103,16 +97,16 @@ def main():
                 """, (
                     dep.get("id"),
                     dep.get("nome", nome),
-                    dep.get("ultimoStatus", {}).get("nomeEleitoral", nome),
-                    dep.get("ultimoStatus", {}).get("siglaPartido"),
-                    dep.get("ultimoStatus", {}).get("siglaUf"),
-                    dep.get("ultimoStatus", {}).get("situacao"),
-                    dep.get("ultimoStatus", {}).get("gabinete", {}).get("nome"),
-                    dep.get("ultimoStatus", {}).get("gabinete", {}).get("predio"),
-                    dep.get("ultimoStatus", {}).get("gabinete", {}).get("telefone"),
-                    dep.get("ultimoStatus", {}).get("gabinete", {}).get("email"),
-                    dep.get("ultimoStatus", {}).get("urlFoto"),
-                    dep.get("ultimoStatus", {}).get("situacao"),
+                    status.get("nomeEleitoral", nome),
+                    status.get("siglaPartido"),
+                    status.get("siglaUf"),
+                    status.get("situacao"),
+                    status.get("gabinete", {}).get("nome"),
+                    status.get("gabinete", {}).get("predio"),
+                    status.get("gabinete", {}).get("telefone"),
+                    status.get("gabinete", {}).get("email"),
+                    status.get("urlFoto"),
+                    status.get("situacao"),
                     dep.get("dataNascimento"),
                     dep.get("municipioNascimento"),
                     dep.get("ufNascimento"),
@@ -123,7 +117,7 @@ def main():
             if args.dry_run:
                 print(f"  [{i}/{len(nomes)}] {nome} — não encontrado")
 
-        if i % 20 == 0:
+        if i % 25 == 0:
             conn.commit()
             print(f"  [{i}/{len(nomes)}] Encontrados={encontrados} Não encontrados={nao_encontrados}")
 
