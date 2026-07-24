@@ -148,7 +148,7 @@ SELECT
     ROUND((SUM(pa.valor_total) / NULLIF(COUNT(DISTINCT pa.beneficiario_id), 0))::numeric, 2) AS valor_por_municipio,
     ROUND((SUM(pa.valor_total) / NULLIF(COUNT(*), 0))::numeric, 2) AS valor_medio_plano
 FROM planos_acao pa
-LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome
+LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome_urna
 WHERE pa.parlamentar_nome IS NOT NULL AND pa.parlamentar_nome != ''
 GROUP BY pa.parlamentar_nome, pd.sigla_partido, pd.uf
 ORDER BY valor_total DESC
@@ -179,7 +179,7 @@ SELECT
     ROUND((SUM(pa.valor_total) / NULLIF(COUNT(DISTINCT pa.parlamentar_nome), 0))::numeric, 2) AS valor_por_deputado,
     ROUND((SUM(pa.valor_total) / NULLIF(COUNT(DISTINCT pa.beneficiario_id), 0))::numeric, 2) AS valor_por_municipio
 FROM planos_acao pa
-LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome
+LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome_urna
 LEFT JOIN (
     SELECT
         parlamentar_nome,
@@ -219,7 +219,7 @@ SELECT
     ROUND(100.0 * SUM(CASE WHEN pa.plano_acao_situacao IN ('IMPEDIDO','IMPEDIDO_REJEICAO_PLANO_TRABALHO') THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) AS taxa_impedimento,
     ROUND(SUM(CASE WHEN pa.plano_acao_situacao IN ('IMPEDIDO','IMPEDIDO_REJEICAO_PLANO_TRABALHO') THEN pa.valor_total ELSE 0 END)::numeric, 2) AS valor_impedido
 FROM planos_acao pa
-LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome
+LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome_urna
 WHERE pa.parlamentar_nome IS NOT NULL AND pa.parlamentar_nome != ''
 GROUP BY pa.parlamentar_nome, pd.sigla_partido
 HAVING COUNT(*) >= 3
@@ -265,7 +265,7 @@ SELECT
     ROUND(SUM(pa.valor_total)::numeric, 2) AS valor
 FROM planos_acao pa
 JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome
+LEFT JOIN parlamentares_dados pd ON pa.parlamentar_nome = pd.nome_urna
 WHERE pa.parlamentar_nome IS NOT NULL AND pa.parlamentar_nome != ''
 GROUP BY pa.parlamentar_nome, pd.sigla_partido, b.nome, b.uf
 ORDER BY valor DESC
@@ -576,7 +576,7 @@ def grafico_parlamentar_objeto(df):
     top_obj = df.groupby("objeto_descricao")["valor"].sum().nlargest(15).index
 
     df_filt = df[
-        df["parlamentar_nome"].isin(top_par) &
+        df["parlamentar_nome"].isin(top_parl) &
         df["objeto_descricao"].isin(top_obj)
     ].copy()
     df_filt["parlamentar_nome"] = df_filt["parlamentar_nome"].str.title()
