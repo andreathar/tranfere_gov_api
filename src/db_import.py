@@ -9,20 +9,13 @@ Uso:
 
 import glob
 import json
-import os
+import logging
 import sys
 
-import psycopg2
+from config.settings import PROJECT_ROOT, SITUACOES_NEGADAS
+from src.db_utils import get_connection
 
-from config.settings import PROJECT_ROOT
-
-DB_CONFIG = {
-    "host": os.environ.get("PGHOST", "127.0.0.1"),
-    "port": int(os.environ.get("PGPORT", 5432)),
-    "dbname": os.environ.get("PGDATABASE", "transferegov_db"),
-    "user": os.environ.get("PGUSER", "cognee"),
-    "password": os.environ.get("PGPASSWORD", "cognee"),
-}
+log = logging.getLogger(__name__)
 
 UPSERT_SQL = """
 SELECT upsert_plano_acao(
@@ -56,7 +49,7 @@ INSERT INTO extract_log (objeto_id, ano, total_registros, total_negados, source,
 VALUES (%s, %s, %s, %s, %s, %s);
 """
 
-NEGADAS = {"REPROVADO", "IMPEDIDO", "CANCELADO", "NAO_CUMPROU"}
+
 
 
 def parse_record(rec):
@@ -65,14 +58,7 @@ def parse_record(rec):
     if not plano_id:
         return None
 
-    # Extrair ano do codigo (AAAAAA-NNNNNN → AAAA)
     codigo = rec.get("planoAcaoCodigo", "")
-    if len(codigo) >= 4:
-        try:
-            _ano = int(codigo[:4])
-        except ValueError:
-            pass
-
     return {
         "plano_acao_id": plano_id,
         "plano_acao_codigo": codigo,
@@ -121,7 +107,7 @@ def import_file(conn, filepath):
             cur.execute(UPSERT_SQL, params)
             imported += 1
             sit = params["plano_acao_situacao"]
-            if sit in NEGADAS:
+            if sit in SITUACOES_NEGADAS:
                 negados += 1
         except Exception as e:
             errors.append(f"  ERRO plano {params['plano_acao_id']}: {e}")

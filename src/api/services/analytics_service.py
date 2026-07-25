@@ -87,7 +87,7 @@ async def get_deputy_roi() -> List[Dict[str, Any]]:
             total_despesas = sum([d.get("valorDocumento", 0) for d in despesas])
             dep["valor_despesas"] = total_despesas
         except Exception as e:
-            log.error(f"Failed to fetch expenses for {dep['nome']}: {e}")
+            log.error("Failed to fetch expenses for %s: %s", dep['nome'], e)
             dep["valor_despesas"] = 0
             
     return deputados

@@ -344,6 +344,33 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal Diário Oficial do Perfil -->
+    <div id="modal-diario-perfil" class="modal hidden">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                <h2 id="modal-diario-perfil-title" style="margin-bottom: 0.25rem;">📰 Diário Oficial</h2>
+                <span class="close-modal" onclick="closeModal('modal-diario-perfil')">&times;</span>
+            </div>
+            <p id="modal-diario-perfil-subtitle" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;"></p>
+
+            <!-- Filtros internos -->
+            <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                <select id="diario-escopo-select" style="background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem;">
+                    <option value="ambos">Ambos (Federal + Municipal)</option>
+                    <option value="federal">Apenas DOU (Federal)</option>
+                    <option value="municipal">Apenas Municipal (Querido Diário)</option>
+                </select>
+                <input type="date" id="diario-data-inicio" style="background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem;">
+                <input type="date" id="diario-data-fim" style="background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem;">
+                <button id="btn-buscar-diario-perfil" style="background: var(--accent-blue); color: #fff; border: none; padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;">🔍 Buscar</button>
+            </div>
+
+            <div id="diario-perfil-results" class="modal-body" style="min-height: 120px; background: #0f172a; border-radius: 8px; padding: 1rem; max-height: 55vh; overflow-y: auto;">
+                <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Clique em "Buscar" para consultar o Diário Oficial.</p>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 

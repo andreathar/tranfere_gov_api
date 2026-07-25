@@ -23,5 +23,31 @@ async def buscar_diario(
         )
         return {"status": "success", "data": result}
     except Exception as e:
-        log.error(f"Erro ao buscar no Diário Oficial para {q}: {e}")
-        raise HTTPException(status_code=500, detail=f"Falha ao consultar Diário Oficial: {str(e)}")
+        log.error("Erro ao buscar no Diário Oficial para %s: %s", q, e)
+        raise HTTPException(status_code=500, detail=f"Falha ao consultar Diário Oficial: {e}")
+
+
+@router.post("/buscar-perfil", response_model=Dict[str, Any])
+async def buscar_diario_perfil(payload: dict):
+    """Busca citações de um político no Diário Oficial (DOU + Querido Diário).
+
+    Body: {q: str, escopo: str, uf_municipio?: str, data_inicio?: str, data_fim?: str}
+    """
+    q = payload.get("q", "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Campo 'q' é obrigatório")
+
+    escopo = payload.get("escopo", "ambos")
+    uf = payload.get("uf_municipio")
+    data_inicio = payload.get("data_inicio")
+    data_fim = payload.get("data_fim")
+
+    try:
+        result = await mcp_service.buscar_diario_perfil(
+            nome=q, escopo=escopo, uf_municipio=uf,
+            data_inicio=data_inicio, data_fim=data_fim,
+        )
+        return {"status": "success", "data": result}
+    except Exception as e:
+        log.error("Erro ao buscar diário para perfil '%s': %s", q, e)
+        raise HTTPException(status_code=500, detail=f"Falha: {e}")

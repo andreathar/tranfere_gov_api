@@ -15,18 +15,9 @@ Uso:
 
 import sys
 
-import psycopg2
-
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 from src.formatters import format_brl
-
-DB_CONFIG = {
-    "host": PG_HOST,
-    "port": PG_PORT,
-    "dbname": PG_DB,
-    "user": PG_USER,
-    "password": PG_PASS,
-}
 
 QUERIES = {
     "resumo": """
@@ -116,15 +107,23 @@ def main():
         return 1
 
     cmd = sys.argv[1].lower()
-    conn = psycopg2.connect(**DB_CONFIG)
+    conn = get_connection()
     cur = conn.cursor()
 
     if cmd == "sql":
-        # Query customizada
+        # Query customizada — read-only enforcement
         if len(sys.argv) < 3:
-            print("Uso: db_report.py sql \"SELECT ...\"")
+            print('Uso: db_report.py sql "SELECT ..."')
             return 1
         sql = " ".join(sys.argv[2:])
+        normalized = sql.strip().upper()
+        # Block dangerous statements in read-only CLI tool
+        if any(normalized.startswith(kw) for kw in (
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
+            "CREATE", "TRUNCATE", "GRANT", "REVOKE",
+        )):
+            print("ERRO: db_report.py é somente leitura. Comandos de escritura bloqueados.")
+            return 1
         cur.execute(sql)
         print_table(cur)
 

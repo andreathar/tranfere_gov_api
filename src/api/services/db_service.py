@@ -14,17 +14,14 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_real_dict_connection
 
 log = logging.getLogger(__name__)
 
 
 def _get_connection():
     """Cria conexão com o PostgreSQL transferegov_db."""
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-        cursor_factory=RealDictCursor,
-    )
+    return get_real_dict_connection()
 
 
 def _rows_to_list(rows: list) -> list[dict]:

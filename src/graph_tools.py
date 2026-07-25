@@ -13,7 +13,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash.mcp import mcp_enabled
 
-from src.graph_factory import CHART_REGISTRY, aplicar_tema, query_df, register_chart
+from src.graph_factory import CHART_REGISTRY, aplicar_tema, register_chart
+from src.db_utils import fig_has_data
 
 log = logging.getLogger("graph_tools")
 
@@ -60,28 +61,21 @@ def inspect_chart_health(chart_id: str | None = None) -> list[dict[str, Any]]:
             fig = spec.builder()
             num_traces = len(fig.data) if fig and hasattr(fig, "data") else 0
             total_points = 0
-            has_data = False
+            has_data = fig_has_data(fig)
 
-            if fig and hasattr(fig, "data"):
+            if has_data and fig:
                 for trace in fig.data:
-                    sizes = [
-                        len(trace.x) if hasattr(trace, 'x') and trace.x is not None else 0,
-                        len(trace.y) if hasattr(trace, 'y') and trace.y is not None else 0,
-                        len(trace.values) if hasattr(trace, 'values') and trace.values is not None else 0,
-                        len(trace.z) if hasattr(trace, 'z') and trace.z is not None else 0,
-                        len(trace.locations) if hasattr(trace, 'locations') and trace.locations is not None else 0,
-                        len(trace.lat) if hasattr(trace, 'lat') and trace.lat is not None else 0,
-                        len(trace.lon) if hasattr(trace, 'lon') and trace.lon is not None else 0,
-                        len(trace.r) if hasattr(trace, 'r') and trace.r is not None else 0,
-                        len(trace.theta) if hasattr(trace, 'theta') and trace.theta is not None else 0,
-                    ]
-                    # Sankey: dados ficam em trace.link.value
-                    if hasattr(trace, "link") and trace.link and hasattr(trace.link, "value") and trace.link.value is not None:
-                        sizes.append(len(trace.link.value))
-                    pts = max(sizes)
-                    total_points += pts
-                    if pts > 0:
-                        has_data = True
+                    link = getattr(trace, "link", None)
+                    sankey_pts = (
+                        len(link.value)
+                        if link and hasattr(link, "value") and link.value is not None
+                        else 0
+                    )
+                    for attr in ("x", "y", "values", "z", "locations", "lat", "lon", "r", "theta"):
+                        val = getattr(trace, attr, None)
+                        if val is not None:
+                            total_points += len(val)
+                    total_points += sankey_pts
 
             health_report.append({
                 "chart_id": c_id,
@@ -185,7 +179,7 @@ def register_custom_graph(
             category=category
         )(dynamic_builder)
 
-        log.info(f"Novo gráfico dinâmico '{id}' registrado com sucesso por Agente MCP!")
+        log.info("Novo gráfico dinâmico '%s' registrado com sucesso por Agente MCP!", id)
         return {
             "success": True,
             "message": f"Gráfico '{title}' registrado com sucesso!",

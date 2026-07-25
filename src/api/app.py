@@ -31,12 +31,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS (permissivo para desenvolvimento local)
+# CORS — configurable via env var; permissive only in dev
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(","
+)
+allow_all = "*" in CORS_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"] if allow_all else CORS_ORIGINS,
+    allow_credentials=not allow_all,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

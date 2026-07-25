@@ -1,4 +1,6 @@
 import asyncio
+import json
+import time
 from typing import Any, Dict, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -9,16 +11,18 @@ from dotenv import load_dotenv
 
 log = logging.getLogger(__name__)
 
+
 class MCPBrasilClient:
     def __init__(self, cache_ttl: int = 3600):
         self.cache_ttl = cache_ttl
-        self._cache: Dict[str, Any] = {}
+        self._cache: Dict[str, Any] = {}  # key -> (value, timestamp)
         self._session: Optional[ClientSession] = None
         self._exit_stack = contextlib.AsyncExitStack()
-        self._lock = asyncio.Lock()
+        self._connect_lock = asyncio.Lock()
+        self._call_lock = asyncio.Lock()
 
     async def connect(self):
-        async with self._lock:
+        async with self._connect_lock:
             if self._session:
                 return
                 
@@ -42,46 +46,67 @@ class MCPBrasilClient:
         await self._exit_stack.aclose()
         self._session = None
 
+    def _cache_get(self, key: str) -> Any | None:
+        """Busca no cache com TTL. Retorna None se expirado."""
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        value, ts = entry
+        if time.monotonic() - ts > self.cache_ttl:
+            del self._cache[key]
+            return None
+        return value
+
+    def _cache_set(self, key: str, value: Any) -> None:
+        """Armazena no cache com timestamp."""
+        self._cache[key] = (value, time.monotonic())
+
     async def call_tool(self, name: str, args: Dict) -> Any:
         if not self._session:
             await self.connect()
             
-        # Basic cache
-        import json
         cache_key = f"{name}:{json.dumps(args, sort_keys=True)}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
         
-        async with self._lock:
-            log.info(f"Calling MCP Tool: {name} with args {args}")
+        async with self._call_lock:
+            # Double-check after acquiring lock
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                return cached
+            log.info("Calling MCP Tool: %s with args %s", name, args)
             result = await self._session.call_tool(name, args)
         
         text_result = result.content[0].text if result.content else None
         
-        self._cache[cache_key] = text_result
+        self._cache_set(cache_key, text_result)
         return text_result
 
     async def call_tools_batch(self, consultas: List[Dict]) -> Any:
-        import json
         if not self._session:
             await self.connect()
             
         cache_key = f"executar_lote:{json.dumps(consultas, sort_keys=True)}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
             
-        async with self._lock:
-            log.info(f"Calling MCP Tool: executar_lote with {len(consultas)} consultas")
+        async with self._call_lock:
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                return cached
+            log.info("Calling MCP Tool: executar_lote with %d consultas", len(consultas))
             result = await self._session.call_tool("executar_lote", {"consultas": consultas})
             
         text_result = result.content[0].text if result.content else None
         
         try:
             parsed = json.loads(text_result) if text_result else {}
-            self._cache[cache_key] = parsed
+            self._cache_set(cache_key, parsed)
             return parsed
         except json.JSONDecodeError:
-            self._cache[cache_key] = {"result": text_result}
+            self._cache_set(cache_key, {"result": text_result})
             return {"result": text_result}
 
 # Global singleton client
@@ -128,3 +153,75 @@ async def buscar_processos_datajud(query: str) -> Any:
 async def executar_lote(consultas: List[Dict]) -> Any:
     """Wrapper for executar_lote"""
     return await _mcp_client.call_tools_batch(consultas)
+
+
+async def buscar_diario_perfil(
+    nome: str,
+    escopo: str = "ambos",
+    uf_municipio: str | None = None,
+    data_inicio: str | None = None,
+    data_fim: str | None = None,
+) -> dict:
+    """Busca citações de um nome no Diário Oficial (DOU + Querido Diário).
+
+    Returns dict com keys:
+      - federal: list de publicações DOU
+      - municipal: list de publicações Querido Diário
+      - query: termo buscado
+      - total: soma de resultados
+    """
+    import json as _json
+
+    results: dict[str, Any] = {
+        "federal": [],
+        "municipal": [],
+        "query": nome,
+        "total": 0,
+    }
+
+    # Busca DOU federal
+    if escopo in ("ambos", "federal"):
+        try:
+            dou_args: dict[str, Any] = {"texto": nome, "secao": "DOU-e"}
+            if data_inicio:
+                dou_args["data_inicio"] = data_inicio
+            if data_fim:
+                dou_args["data_fim"] = data_fim
+
+            res = await _mcp_client.call_tool(
+                "diario_oficial_dou_buscar", dou_args
+            )
+            if res:
+                parsed = _json.loads(res) if isinstance(res, str) else res
+                if isinstance(parsed, list):
+                    results["federal"] = parsed[:20]
+                elif isinstance(parsed, dict):
+                    items = parsed.get("items") or parsed.get("data") or []
+                    results["federal"] = (items if isinstance(items, list) else [])[:20]
+        except Exception as e:
+            log.warning(f"Erro busca DOU federal para '{nome}': {e}")
+            results["federal_error"] = str(e)
+
+    # Busca Querido Diário (municipal)
+    if escopo in ("ambos", "municipal"):
+        try:
+            qd_args: dict[str, Any] = {"texto": nome}
+            if uf_municipio:
+                qd_args["uf"] = uf_municipio
+
+            res = await _mcp_client.call_tool(
+                "diario_oficial_buscar_diarios", qd_args
+            )
+            if res:
+                parsed = _json.loads(res) if isinstance(res, str) else res
+                if isinstance(parsed, list):
+                    results["municipal"] = parsed[:20]
+                elif isinstance(parsed, dict):
+                    items = parsed.get("items") or parsed.get("data") or []
+                    results["municipal"] = (items if isinstance(items, list) else [])[:20]
+        except Exception as e:
+            log.warning(f"Erro busca Querido Diário para '{nome}': {e}")
+            results["municipal_error"] = str(e)
+
+    results["total"] = len(results["federal"]) + len(results["municipal"])
+    return results

@@ -18,7 +18,7 @@ async def get_saude(codigo_ibge: str):
         data = await mcp_service.get_saude_resumo(codigo_ibge)
         return {"status": "success", "data": data}
     except Exception as e:
-        log.error(f"Error fetching saude data for {codigo_ibge}: {e}")
+        log.error("Error fetching saude data for %s: %s", codigo_ibge, e)
         raise HTTPException(status_code=500, detail="Failed to fetch saude data.")
 
 @router.get("/justica", response_model=Dict[str, Any])
@@ -28,53 +28,48 @@ async def search_justica(query: str = Query(..., description="CNPJ to search in 
     Results are cached in the database for 30 days.
     """
     try:
-        conn = db_service._get_connection()
-        cur = conn.cursor()
-        
-        # Check cache first
-        cur.execute("SELECT processos_detalhes, checked_at FROM beneficiario_processos WHERE cnpj = %s AND checked_at > NOW() - INTERVAL '30 days'", (query,))
-        row = cur.fetchone()
-        
-        if row:
-            data = row['processos_detalhes']
-            cur.close()
-            conn.close()
-            if not data:
-                data = "Nenhum processo encontrado (cache local)."
-            return {"status": "success", "data": data}
-            
-        # Cache miss, call API
-        try:
-            res = await mcp_service._mcp_client.call_tool("datajud_buscar_processos", {"query": query, "tamanho": 5})
-            
-            import json
-            try:
-                data = json.loads(res) if res else {}
-            except Exception:
-                data = {"message": res} if res else {}
+        with db_service._get_connection() as conn:
+            with conn.cursor() as cur:
+                # Check cache first
+                cur.execute("SELECT processos_detalhes, checked_at FROM beneficiario_processos WHERE cnpj = %s AND checked_at > NOW() - INTERVAL '30 days'", (query,))
+                row = cur.fetchone()
                 
-            total = len(data) if isinstance(data, list) else 0
-            
-            # Upsert into DB
-            cur.execute("""
-                INSERT INTO beneficiario_processos (cnpj, total_processos, processos_detalhes, erro, checked_at)
-                VALUES (%s, %s, %s, NULL, NOW())
-                ON CONFLICT (cnpj) DO UPDATE SET 
-                    total_processos = EXCLUDED.total_processos,
-                    processos_detalhes = EXCLUDED.processos_detalhes,
-                    erro = NULL,
-                    checked_at = NOW();
-            """, (query, total, json.dumps(data)))
-            conn.commit()
-        except Exception as api_err:
-            log.error(f"DataJud API error for {query}: {api_err}")
-            data = {"message": f"Erro ao consultar DataJud: {api_err}"}
-            
-        cur.close()
-        conn.close()
-        return {"status": "success", "data": data}
+                if row:
+                    data = row['processos_detalhes']
+                    if not data:
+                        data = "Nenhum processo encontrado (cache local)."
+                    return {"status": "success", "data": data}
+                
+                # Cache miss, call API
+                try:
+                    res = await mcp_service._mcp_client.call_tool("datajud_buscar_processos", {"query": query, "tamanho": 5})
+                    
+                    import json
+                    try:
+                        data = json.loads(res) if res else {}
+                    except Exception:
+                        data = {"message": res} if res else {}
+                        
+                    total = len(data) if isinstance(data, list) else 0
+                    
+                    # Upsert into DB
+                    cur.execute("""
+                        INSERT INTO beneficiario_processos (cnpj, total_processos, processos_detalhes, erro, checked_at)
+                        VALUES (%s, %s, %s, NULL, NOW())
+                        ON CONFLICT (cnpj) DO UPDATE SET 
+                            total_processos = EXCLUDED.total_processos,
+                            processos_detalhes = EXCLUDED.processos_detalhes,
+                            erro = NULL,
+                            checked_at = NOW();
+                    """, (query, total, json.dumps(data)))
+                    conn.commit()
+                except Exception as api_err:
+                    log.error("DataJud API error for %s: %s", query, api_err)
+                    data = {"message": f"Erro ao consultar DataJud: {api_err}"}
+                    
+                return {"status": "success", "data": data}
     except Exception as e:
-        log.error(f"Error fetching datajud for {query}: {e}")
+        log.error("Error fetching datajud for %s: %s", query, e)
         raise HTTPException(status_code=500, detail="Failed to search judicial processes.")
 
 @router.get("/tcu", response_model=Dict[str, Any])

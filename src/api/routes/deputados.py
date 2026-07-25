@@ -1,5 +1,8 @@
 from fastapi import APIRouter, HTTPException
+import logging
 from src.api.services import db_service, camara_service
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,8 +23,8 @@ async def search_deputados(q: str):
                         "uf": api_dep['siglaUf'],
                         "url_foto": api_dep['urlFoto']
                     })
-        except Exception:
-            pass # degrade gracefully to local DB results
+        except Exception as e:
+            log.warning("Fallback to local DB for search '%s': %s", q, e)
     return db_results
 
 @router.get("/{deputado_id}/perfil")
@@ -51,7 +54,10 @@ async def get_perfil(deputado_id: int):
                 "escolaridade": api_perfil.get("escolaridade"),
                 "data_nascimento": api_perfil.get("dataNascimento")
             }
-        except Exception:
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning("Câmara API fallback for perfil %d: %s", deputado_id, e)
             raise HTTPException(status_code=502, detail="Erro na API da Câmara")
     return perfil
 
@@ -62,7 +68,8 @@ async def get_emendas(deputado_id: int):
         try:
             api_perfil = await camara_service.buscar_deputado(deputado_id)
             nome = api_perfil.get("nomeEleitoral") or api_perfil.get("nomeCivil")
-        except Exception:
+        except Exception as e:
+            log.warning("Câmara API fallback for emendas %d: %s", deputado_id, e)
             raise HTTPException(status_code=404, detail="Deputado não encontrado")
     return db_service.get_emendas_deputado(nome)
 
@@ -73,7 +80,8 @@ async def get_resumo_emendas(deputado_id: int):
         try:
             api_perfil = await camara_service.buscar_deputado(deputado_id)
             nome = api_perfil.get("nomeEleitoral") or api_perfil.get("nomeCivil")
-        except Exception:
+        except Exception as e:
+            log.warning("Câmara API fallback for resumo %d: %s", deputado_id, e)
             raise HTTPException(status_code=404, detail="Deputado não encontrado")
     return db_service.get_resumo_emendas(nome)
 
@@ -81,32 +89,38 @@ async def get_resumo_emendas(deputado_id: int):
 async def get_despesas(deputado_id: int, ano: int | None = None):
     try:
         return await camara_service.listar_despesas(deputado_id, ano)
-    except Exception:
+    except Exception as e:
+        log.error("Erro ao buscar despesas do deputado %d: %s", deputado_id, e)
         raise HTTPException(status_code=502, detail="Erro na API da Câmara")
 
 @router.get("/{deputado_id}/comissoes")
 async def get_comissoes(deputado_id: int):
     try:
         return await camara_service.listar_orgaos(deputado_id)
-    except Exception:
+    except Exception as e:
+        log.error("Erro ao buscar comissões do deputado %d: %s", deputado_id, e)
         raise HTTPException(status_code=502, detail="Erro na API da Câmara")
 
 @router.get("/{deputado_id}/votacoes")
 async def get_votacoes(deputado_id: int, limit: int = 50):
     try:
         return await camara_service.listar_votacoes(deputado_id, limit)
-    except Exception:
+    except Exception as e:
+        log.error("Erro ao buscar votações do deputado %d: %s", deputado_id, e)
         raise HTTPException(status_code=502, detail="Erro na API da Câmara")
 
 @router.get("/{deputado_id}/proposicoes")
 async def get_proposicoes(deputado_id: int):
     try:
         return await camara_service.listar_proposicoes(deputado_id)
-    except Exception:
+    except Exception as e:
+        log.error("Erro ao buscar proposições do deputado %d: %s", deputado_id, e)
         raise HTTPException(status_code=502, detail="Erro na API da Câmara")
 
+import datetime
+
 @router.get("/{deputado_id}/full_report")
-async def get_full_report(deputado_id: int, ano: int = 2024):
+async def get_full_report(deputado_id: int, ano: int = datetime.date.today().year):
     """
     Fetches the deputy's profile, expenses, votes, and propositions in parallel 
     using the mcp-brasil executar_lote smart feature.

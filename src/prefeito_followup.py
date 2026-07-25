@@ -20,17 +20,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-import psycopg2
 
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 from src.formatters import fmt_brl, fmt_num, fmt_pct
-
-
-def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
 
 
 def buscar_prefeitos(termo: str) -> list[tuple]:

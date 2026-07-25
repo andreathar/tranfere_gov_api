@@ -7,7 +7,11 @@ Usado por: transferegov_extract.py, db_import.py
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel, field_validator
+
+log = logging.getLogger(__name__)
 
 
 class PlanoAcaoSchema(BaseModel):
@@ -105,6 +109,7 @@ def validate_records(
             msg = f"Registro {i} (id={pid}): {e}"
             if strict:
                 raise ValueError(msg) from e
+            log.debug("Registro inválido pulado: %s", msg)
             erros.append(msg)
 
     return validos, erros

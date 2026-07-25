@@ -11,6 +11,7 @@ Qualquer novo gráfico registrado via @register_chart() é automaticamente:
 
 import json
 import os
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,7 +20,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from src.db_utils import get_connection
+from src.db_utils import get_connection, query_df
 
 # ---------------------------------------------------------------------------
 # DESIGN TOKENS

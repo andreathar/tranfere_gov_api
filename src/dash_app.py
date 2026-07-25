@@ -16,6 +16,8 @@ from dash import Dash, Input, Output, callback, dcc, html
 from dash.mcp import configure_mcp_server
 
 from src.graph_factory import CHART_REGISTRY, aplicar_tema
+from src.db_utils import fig_has_data
+import src.graph_tools  # Registra ferramentas MCP customizadas (@mcp_enabled)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("dash_app")
@@ -48,29 +50,8 @@ def safe_build_chart(chart_id: str, **kwargs) -> go.Figure:
 
     try:
         fig = spec.builder(**kwargs)
-        # Verifica se o gráfico gerado possui dados válidos (todas as tipagens de trace)
-        has_data = False
-        if fig and hasattr(fig, "data") and len(fig.data) > 0:
-            for trace in fig.data:
-                sizes = [
-                    len(trace.x) if hasattr(trace, "x") and trace.x is not None else 0,
-                    len(trace.y) if hasattr(trace, "y") and trace.y is not None else 0,
-                    len(trace.values) if hasattr(trace, "values") and trace.values is not None else 0,
-                    len(trace.z) if hasattr(trace, "z") and trace.z is not None else 0,
-                    len(trace.locations) if hasattr(trace, "locations") and trace.locations is not None else 0,
-                    len(trace.lat) if hasattr(trace, "lat") and trace.lat is not None else 0,
-                    len(trace.lon) if hasattr(trace, "lon") and trace.lon is not None else 0,
-                    len(trace.r) if hasattr(trace, "r") and trace.r is not None else 0,
-                    len(trace.theta) if hasattr(trace, "theta") and trace.theta is not None else 0,
-                ]
-                # Sankey: dados ficam em trace.link.value
-                if hasattr(trace, "link") and trace.link and hasattr(trace.link, "value") and trace.link.value is not None:
-                    sizes.append(len(trace.link.value))
-                if max(sizes) > 0:
-                    has_data = True
-                    break
-
-        if not has_data:
+        # Verifica se o gráfico gerado possui dados válidos
+        if not fig_has_data(fig):
             fig = go.Figure()
             fig.add_annotation(
                 text="ℹ️ Dados em sincronização ou insuficientes para o filtro selecionado",
@@ -82,7 +63,7 @@ def safe_build_chart(chart_id: str, **kwargs) -> go.Figure:
         return fig
 
     except Exception as err:
-        log.error(f"Erro ao gerar gráfico '{chart_id}': {err}")
+        log.error("Erro ao gerar gráfico '%s': %s", chart_id, err)
         fig = go.Figure()
         fig.add_annotation(
             text=f"⚠️ Erro ao carregar dados do gráfico ({err})",
@@ -160,7 +141,7 @@ for chart_id, spec in CHART_REGISTRY.items():
                 return safe_build_chart(c_key, **kwargs)
         register_with_ctrl(chart_id, spec.controls)
 
-log.info(f"Registrados {len(CHART_REGISTRY)} gráficos interativos e resilientes no Dash MCP Server!")
+log.info("Registrados %d gráficos interativos e resilientes no Dash MCP Server!", len(CHART_REGISTRY))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8050, debug=False)
