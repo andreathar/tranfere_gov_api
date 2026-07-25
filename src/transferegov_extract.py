@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Transferegov Genérico — Extração de Planos de Ação por Objeto.
@@ -44,6 +45,7 @@ from config.settings import (
 from config.settings import (
     SLEEP_BETWEEN_PAGES as SLEEP,
 )
+from src.formatters import format_brl
 from src.http_cache import cache_get, cache_set
 from src.schemas import validate_records
 
@@ -56,14 +58,6 @@ logger = logging.getLogger("transferegov")
 # ---------------------------------------------------------------------------
 # Formatação brasileira
 # ---------------------------------------------------------------------------
-def format_brl(value) -> str:
-    """Formata valor como R$ brasileiro."""
-    if value is None or pd.isna(value):
-        return "—"
-    try:
-        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except (ValueError, TypeError):
-        return "—"
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +526,7 @@ Exemplos:
     # Filtrar por situação
     if situacao_filter:
         before = len(df)
-        df = df[df["planoAcaoSituacao"].isin(situacao_filter)].copy()
+        df = df[df["planoAcaoSituacao"].isin(list(situacao_filter))].copy()
         logger.info("Filtro situacao: %d → %d registros", before, len(df))
         if df.empty:
             logger.info("Nenhum registro com situação %s para objeto %s/%s.",
@@ -582,7 +576,10 @@ Exemplos:
         total_valor = df["valorTotal"].sum()
         print(f"Valor total:      {format_brl(total_valor)}")
     if "planoAcaoSituacao" in df.columns:
-        print(f"Situações:        {df['planoAcaoSituacao'].value_counts().to_dict()}")
+        situacao_series = df['planoAcaoSituacao']
+        if not isinstance(situacao_series, pd.Series):
+            situacao_series = pd.Series(situacao_series)
+        print(f"Situações:        {situacao_series.value_counts().to_dict()}")
     if args.db:
         print(f"DB importados:    {db_imported}")
         if db_errors:

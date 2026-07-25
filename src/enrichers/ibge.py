@@ -8,17 +8,10 @@ Busca dados demográficos/econômicos dos municípios beneficiários.
 
 import argparse
 
-import psycopg2
 import requests
 
-from config.settings import IBGE_API_BASE, PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
-
-
-def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+from config.settings import IBGE_API_BASE
+from src.db_utils import get_connection
 
 
 def buscar_municipios_ibge(uf: str) -> list:

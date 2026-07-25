@@ -8,6 +8,8 @@ __pycache__/
 build/
 dist/
 coverage/
+*.egg-info/
+transferegov_api.egg-info/
 
 # Outputs (gerados por scripts)
 output/
@@ -23,5 +25,14 @@ output/
 .DS_Store
 .vscode/
 
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.codegraph/
+.omo/
+.playwright-mcp/
+
+# External SDKs
 google-cloud-sdk/
 *.tar.gz

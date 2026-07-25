@@ -27,6 +27,17 @@ Provides a fully simulated integration environment mimicking the real Transfereg
 ### 3. AI Advisor (Integration Expert)
 - A simulated intelligent agent embedded in the application that answers specific, contextual questions based on the Transferegov v1.3 API Integration Manual.
 
+### 4. Plotly Dash & MCP Server Analytics Hub (Dash 4.3+)
+- **Interactive Web UI**: [http://localhost:8050](http://localhost:8050)
+- **MCP Server Endpoint**: `http://localhost:8050/_mcp`
+- **17 Interactive Crossed Data Graphs**: Real-time analytical figures crossing TransfereGov transfer data with IBGE socioeconomic stats, Chamber of Deputies politician profiles, and SICONFI municipal fiscal metrics.
+- **Fail-Proof Pre-rendering**: Server-side initial rendering (`figure=initial_figure`) combined with `safe_build_chart` wrapper ensures zero empty white chart boxes.
+- **Custom MCP Tools (`src/graph_tools.py`)**: `@mcp_enabled` tools allowing AI agents to list, inspect health, query data summaries, and dynamically register new SQL-backed charts in real time.
+```bash
+python3 src/dash_app.py        # Run Dash & MCP Hub
+python3 src/verify_graphs.py  # Audit 100% chart data health
+```
+
 ## Setup & Running Locally
 
 1. **Install Dependencies:**

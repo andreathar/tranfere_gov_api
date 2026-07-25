@@ -18,6 +18,10 @@ psycopg2-binary>=2.9
 # Dashboard
 plotly>=5.18
 
+# Web Server
+fastapi>=0.115
+uvicorn[standard]>=0.32
+
 # MCP Server (opcional)
 fastmcp[code-mode]>=3.2.3
 anthropic>=0.40

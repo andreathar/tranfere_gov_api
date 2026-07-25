@@ -18,6 +18,7 @@ import sys
 import psycopg2
 
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.formatters import format_brl
 
 DB_CONFIG = {
     "host": PG_HOST,
@@ -70,11 +71,6 @@ QUERIES = {
 }
 
 
-def format_brl(value):
-    """Formata valor como R$ brasileiro."""
-    if value is None:
-        return "—"
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def print_table(cur):

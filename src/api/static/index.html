@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deputy Intelligence Dashboard</title>
+    <meta name="description" content="Dashboard interativo para visualização de emendas, despesas e dados de deputados.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo">TransfereGov Intel</div>
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="Pesquisar deputado por nome..." autocomplete="off">
+            <div id="search-autocomplete" class="autocomplete-dropdown hidden"></div>
+        </div>
+    </header>
+
+    <div id="empty-state" class="empty-state active">
+        <div class="empty-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <h2>Bem-vindo ao Dashboard de Inteligência</h2>
+            <p>Pesquise e selecione um deputado para visualizar análises detalhadas sobre emendas, despesas, votações e comissões.</p>
+        </div>
+    </div>
+
+    <div id="loading-state" class="loading-state hidden">
+        <div class="spinner"></div>
+        <p>Carregando dados do deputado...</p>
+    </div>
+
+    <main id="dashboard" class="dashboard hidden">
+        <aside class="sidebar">
+            <div id="profile-card" class="profile-card">
+                <!-- Profile populated by JS -->
+            </div>
+            
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <span class="kpi-label">Total Emendas</span>
+                    <span id="kpi-total-plans" class="kpi-value">-</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Valor Total</span>
+                    <span id="kpi-total-value" class="kpi-value">-</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Municípios</span>
+                    <span id="kpi-municipalities" class="kpi-value">-</span>
+                </div>
+                <div class="kpi-card">
+                    <span class="kpi-label">Taxa Sucesso</span>
+                    <span id="kpi-success-rate" class="kpi-value">-</span>
+                </div>
+            </div>
+        </aside>
+
+        <section class="main-content">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="emendas">Emendas</button>
+                <button class="tab-btn" data-tab="despesas">Despesas</button>
+                <button class="tab-btn" data-tab="comissoes">Comissões</button>
+                <button class="tab-btn" data-tab="votacoes">Votações</button>
+                <button class="tab-btn" data-tab="proposicoes">Proposições</button>
+                <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">Inteligência 🚀</button>
+                <button class="tab-btn" data-tab="saude-explorer" onclick="switchTab('saude-explorer')">Saúde 🏥</button>
+                <button class="tab-btn" data-tab="diario" onclick="switchTab('diario')">Diário Oficial 📰</button>
+            </div>
+
+            <div class="tab-content-container">
+                <!-- Emendas Tab -->
+                <div id="tab-emendas" class="tab-pane active">
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <h3>Situação das Emendas</h3>
+                            <div id="chart-emendas-status" class="chart-container"></div>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Top Municípios por Valor</h3>
+                            <div id="chart-emendas-mun" class="chart-container"></div>
+                        </div>
+                    </div>
+                    <div class="table-card">
+                        <h3>Detalhamento das Emendas</h3>
+                        <div class="table-responsive">
+                            <table id="table-emendas">
+                                <thead>
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Beneficiário</th>
+                                        <th>UF</th>
+                                        <th>Situação</th>
+                                        <th>Valor</th>
+                                        <th>Ações (Auditoria)</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Despesas Tab -->
+                <div id="tab-despesas" class="tab-pane">
+                    <div class="tab-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                        <h2 style="font-size:1.5rem;">Despesas (Cota Parlamentar)</h2>
+                        <select id="select-ano" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem; border-radius:8px; outline:none;">
+                            <option value="2026">2026</option>
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                            <option value="2023">2023</option>
+                        </select>
+                    </div>
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <h3>Despesas por Categoria</h3>
+                            <div id="chart-despesas-cat" class="chart-container"></div>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Maiores Fornecedores</h3>
+                            <div id="chart-despesas-forn" class="chart-container"></div>
+                        </div>
+                    </div>
+                    <div class="table-card">
+                        <div class="table-responsive">
+                            <table id="table-despesas">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Tipo</th>
+                                        <th>Fornecedor</th>
+                                        <th>Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comissoes Tab -->
+                <div id="tab-comissoes" class="tab-pane">
+                    <h2 style="margin-bottom:1.5rem;">Participação em Comissões</h2>
+                    <div id="list-comissoes" class="card-list"></div>
+                </div>
+
+                <!-- Votacoes Tab -->
+                <div id="tab-votacoes" class="tab-pane">
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <h3>Distribuição de Votos</h3>
+                            <div id="chart-votacoes" class="chart-container"></div>
+                        </div>
+                    </div>
+                    <div class="table-card">
+                        <h3>Últimas Votações</h3>
+                        <div id="list-votacoes" class="timeline-list"></div>
+                    </div>
+                </div>
+
+                <!-- Proposicoes Tab -->
+                <div id="tab-proposicoes" class="tab-pane">
+                    <h2 style="margin-bottom:1.5rem;">Proposições de Autoria</h2>
+                    <div id="list-proposicoes" class="card-list"></div>
+                </div>
+
+                <!-- Inteligência Tab -->
+                <div id="tab-inteligencia" class="tab-pane">
+                    <div class="tab-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+                        <h2 style="font-size:1.5rem;">Inteligência de Dados (Cross-Data)</h2>
+                        <button id="btn-load-analytics" style="background:var(--accent); color:var(--text-main); border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Recarregar Dados</button>
+                    </div>
+                    
+                    <div class="charts-row" style="margin-bottom: 2rem;">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>1. Eficiência de Execução por Partido</h3>
+                            <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Taxa de sucesso na execução das emendas (Concluído/Em Execução vs Impedido/Reprovado).</p>
+                            <div id="chart-party-efficiency" class="chart-container" style="height:400px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="charts-row" style="margin-bottom: 2rem;">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>2. Mapa Socioeconômico de Repasses (IDHM vs Volume)</h3>
+                            <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Relação entre o desenvolvimento do município (IDHM) e o valor recebido (Tamanho = População).</p>
+                            <div id="chart-socioeconomic" class="chart-container" style="height:500px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="charts-row">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>3. ROI do Deputado (Custo vs. Retorno) - Top 20</h3>
+                            <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Despesas totais da Cota Parlamentar versus total de Emendas aprovadas para o estado.</p>
+                            <div id="chart-deputy-roi" class="chart-container" style="height:400px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Saude Explorer Tab -->
+                <div id="tab-saude-explorer" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem;">
+                        <h2 style="font-size:1.5rem;">Explorador de Saúde Pública (DataSUS)</h2>
+                        <p style="color:var(--text-muted); font-size:0.9rem;">Top municípios beneficiados por emendas e suas respectivas infraestruturas de saúde em tempo real.</p>
+                    </header>
+                    
+                    <div id="saude-grid" class="saude-grid">
+                        <!-- Cards renderizados dinamicamente -->
+                    </div>
+                </div>
+
+                <!-- Diário Oficial Tab -->
+                <div id="tab-diario" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Monitoramento do Diário Oficial (DOU + Querido Diário)</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Publicações oficiais federais e municipais em tempo real via mcp-brasil.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="text" id="diario-search-input" placeholder="Buscar no Diário Oficial..." style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none; min-width:250px;">
+                            <button id="btn-search-diario" style="background:var(--accent-blue); color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Buscar</button>
+                        </div>
+                    </header>
+                    <div id="diario-results" class="table-card" style="padding:1.5rem;">
+                        <p style="color:var(--text-muted); text-align:center;">Selecione um deputado ou digite um termo acima para buscar matérias publicadas no Diário Oficial.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+
+    <!-- Modals for Auditoria -->
+    <div id="modal-saude" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('modal-saude')">&times;</span>
+            <h2 id="modal-saude-title">Resumo da Rede Municipal de Saúde</h2>
+            <div id="modal-saude-body" class="modal-body">
+                Carregando...
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-justica" class="modal hidden">
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="close-modal" onclick="closeModal('modal-justica')">&times;</span>
+            <h2 id="modal-justica-title" style="margin-bottom: 0.25rem;">🔍 Painel de Integridade</h2>
+            <p id="modal-justica-cnpj" style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;"></p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                <!-- TCU Sanctions Panel -->
+                <div>
+                    <h3 style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem;">
+                        <span id="tcu-status-icon">⏳</span> Sanções TCU
+                    </h3>
+                    <div id="modal-tcu-body" class="modal-body" style="min-height: 120px; background: #0f172a; border-radius: 8px; padding: 1rem;">
+                        Consultando TCU...
+                    </div>
+                </div>
+                <!-- DataJud Panel -->
+                <div>
+                    <h3 style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem;">
+                        <span id="datajud-status-icon">⏳</span> Processos Judiciais
+                    </h3>
+                    <div id="modal-justica-body" class="modal-body" style="min-height: 120px; background: #0f172a; border-radius: 8px; padding: 1rem;">
+                        Consultando DataJud...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

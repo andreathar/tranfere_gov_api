@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 TransfereGov — Dashboard Interativo de Visualizações.
@@ -19,9 +20,9 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-import psycopg2
 
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
+from src.formatters import fmt_brl, fmt_num
 
 # ── Cores do tema ──────────────────────────────────────────────────────
 CORES = {
@@ -42,28 +43,11 @@ CORES_CATEGORIA = {
 }
 
 
-def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
 
 
 def query_df(conn, sql):
     return pd.read_sql(sql, conn)
 
-
-def fmt_brl(valor):
-    """Formata valor em R$ brasileiro."""
-    if pd.isna(valor):
-        return "R$ 0"
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def fmt_num(valor):
-    if pd.isna(valor):
-        return "0"
-    return f"{int(valor):,}".replace(",", ".")
 
 
 # ── Queries ────────────────────────────────────────────────────────────

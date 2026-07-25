@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 TransfereGov — Dashboard de Competência e Eficiência dos Parlamentares.
@@ -16,10 +17,10 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import psycopg2
 from plotly.subplots import make_subplots
 
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
+from src.formatters import fmt_brl, fmt_num
 
 # ═══════════════════════════════════════════════════════════════════════
 # CORES E TEMAS
@@ -69,33 +70,12 @@ TEMA = {
 # UTILITÁRIOS
 # ═══════════════════════════════════════════════════════════════════════
 
-def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
 
 
 def query_df(conn, sql):
     return pd.read_sql(sql, conn)
 
 
-def fmt_brl(valor):
-    if pd.isna(valor) or valor is None:
-        return "R$ 0"
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def fmt_num(valor):
-    if pd.isna(valor) or valor is None:
-        return "0"
-    return f"{int(valor):,}".replace(",", ".")
-
-
-def fmt_pct(valor):
-    if pd.isna(valor) or valor is None:
-        return "0%"
-    return f"{valor:.1f}%"
 
 
 def estilo_fig(fig, height=450):

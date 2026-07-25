@@ -1,0 +1,87 @@
+---
+references:
+  - "File: /tests/test_schemas.py"
+  - "File: /src/schemas.py"
+  - "File: /data/swagger.yaml"
+  - "File: /AGENTS.md"
+generationTime: 2026-07-24T04:05:46.867Z
+---
+erDiagram
+    PLANO_ACAO {
+        int planoAcaoId PK
+        int planoAcaoId PK "ID único do plano de ação"
+        int beneficiarioId FK
+        int beneficiarioId FK "ID do beneficiário"
+        int enteId FK
+        int enteId FK "ID do ente federativo"
+        int objetoId FK
+        int objetoId FK "Código do objeto de execução"
+        int programaId FK
+        int programaId FK "ID do programa (25=Transferências Especiais)"
+        float valorCusteio
+        float valorCusteio "Valor de custeio (R$)"
+        float valorInvestimento
+        float valorInvestimento "Valor de investimento (R$)"
+        float valorTotal
+        float valorTotal "Valor total (custeio + investimento)"
+        string beneficiarioCnpj
+        string beneficiarioCnpj "CNPJ do município beneficiário (14 dígitos)"
+        string beneficiarioNome
+        string beneficiarioNome "Nome do município beneficiário"
+        string codigoEmendaFormatado
+        string codigoEmendaFormatado "Emenda parlamentar formatada"
+        string dataAtualizacaoPlanoAcao
+        string dataAtualizacaoPlanoAcao "Data atualização plano de ação (nullable)"
+        string dataAtualizacaoPlanoTrabalho
+        string dataAtualizacaoPlanoTrabalho "Data atualização plano de trabalho (nullable)"
+        string motivoImpedimento
+        string motivoImpedimento "Motivo do impedimento (nullable)"
+        string numeroParceria
+        string numeroParceria "Número da parceria (nullable)"
+        string objetoDescricao
+        string objetoDescricao "Descrição do objeto completo"
+        string planoAcaoCodigo
+        string planoAcaoCodigo "Código do plano (AAAAAA-NNNNNN)"
+        string planoAcaoSituacao
+        string planoAcaoSituacao "Situação: CIENTE, APROVADO, REPROVADO, IMPEDIDO, CANCELADO, EM_EXECUCAO, CONCLUIDO, NAO_CUMPROU"
+        string planoTrabalhoSituacao
+        string planoTrabalhoSituacao "Situação do plano de trabalho"
+        string politicasPublicas
+        string politicasPublicas "Políticas públicas associadas"
+        string programaCodigo "Código do programa"
+        string uf
+        string uf "Unidade federativa (2 letras)"
+    }
+    OBJETO {
+        int objetoId PK
+        int objetoId PK "Código do objeto de execução"
+        string objetoDescricao
+        string objetoDescricao "Descrição do objeto"
+    }
+    PROGRAMA {
+        int programaId PK
+        int programaId PK "ID do programa"
+        string programaCodigo
+        string programaCodigo "Código do programa"
+        string programaNome
+        string programaNome "Nome do programa"
+    }
+    BENEFICIARIO {
+        int beneficiarioId PK
+        int beneficiarioId PK "ID do beneficiário"
+        string beneficiarioCnpj
+        string beneficiarioCnpj "CNPJ (14 dígitos)"
+        string beneficiarioNome
+        string beneficiarioNome "Nome do município"
+        string uf "Unidade federativa"
+    }
+    ENTE {
+        int enteId PK
+        int enteId PK "ID do ente federativo"
+        string enteNome
+        string enteNome "Nome do ente"
+    }
+    PLANO_ACAO ||--o{ BENEFICIARIO : beneficiarioId
+    PLANO_ACAO ||--o{ ENTE : enteId
+    PLANO_ACAO ||--o{ OBJETO : objetoId
+    PLANO_ACAO ||--o{ PROGRAMA : programaId

@@ -9,25 +9,13 @@ Busca dados dos deputados que são autores de emendas no programa.
 import argparse
 import time
 
-import psycopg2
 import requests
 
 from config.settings import (
     CAMARA_API_BASE,
     ENRICH_RATE_LIMIT,
-    PG_DB,
-    PG_HOST,
-    PG_PASS,
-    PG_PORT,
-    PG_USER,
 )
-
-
-def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+from src.db_utils import get_connection
 
 
 def buscar_deputado(nome: str) -> dict | None:
