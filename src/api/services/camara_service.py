@@ -1,12 +1,12 @@
 import httpx
 import time
-from typing import Optional
+from typing import Any, Optional
 
 BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
 CACHE_TTL = 3600
-cache: dict[str, tuple[float, any]] = {}
+cache: dict[str, tuple[float, Any]] = {}
 
-def get_from_cache(key: str) -> Optional[any]:
+def get_from_cache(key: str) -> Optional[Any]:
     if key in cache:
         timestamp, value = cache[key]
         if time.time() - timestamp < CACHE_TTL:
@@ -15,10 +15,10 @@ def get_from_cache(key: str) -> Optional[any]:
             del cache[key]
     return None
 
-def set_in_cache(key: str, value: any):
+def set_in_cache(key: str, value: Any):
     cache[key] = (time.time(), value)
 
-async def _get_json(client: httpx.AsyncClient, endpoint: str, params: dict = None) -> any:
+async def _get_json(client: httpx.AsyncClient, endpoint: str, params: dict = None) -> Any:
     url = f"{BASE_URL}{endpoint}"
     cache_key = f"{url}?{str(params)}"
     cached = get_from_cache(cache_key)

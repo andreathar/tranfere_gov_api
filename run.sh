@@ -6,6 +6,7 @@
 #   discover       — Listar todos os objetos disponíveis para 2026
 #   cemiterios     — Extrair todos os planos de cemitérios (objeto 301)
 #   negados        — Extrair planos negados/perdidos de cemitérios
+#   redator         — Redator oficial de documentos (nota-técnica, ofício, parecer)
 #   all            — Extrair TODOS os objetos de 2026
 #   help           — Mostrar esta ajuda
 
@@ -36,6 +37,7 @@ Comandos:
   validate           Validar CNPJs via BrasilAPI
   ibge               Enriquecer municípios via IBGE
   camara             Perfil de parlamentares via Câmara
+  redator             Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
   all                Extrair TODOS os objetos de 2026
   help               Mostrar esta ajuda
 
@@ -66,10 +68,10 @@ case "${1:-help}" in
         $PYTHON "$SRC/transferegov_extract.py" --discover --ano 2026
         ;;
     cemiterios)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 "$@"
+        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 "${@:2}"
         ;;
     negados)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 --negados "$@"
+        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 --negados "${@:2}"
         ;;
     import)
         $PYTHON "$SRC/db_import.py" "${@:2}"
@@ -96,8 +98,11 @@ case "${1:-help}" in
     camara)
         $PYTHON -m src.enrichers.camara "${@:2}"
         ;;
+    redator)
+        $PYTHON "$SRC/redator_transferegov.py" "${@:2}"
+        ;;
     all)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto all --ano 2026 --csv
+        $PYTHON "$SRC/transferegov_extract.py" --objeto all --ano 2026 --csv "${@:2}"
         ;;
     help|--help|-h)
         usage

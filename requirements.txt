@@ -32,3 +32,7 @@ pytest-asyncio>=0.24
 respx>=0.22
 ruff>=0.8
 mypy>=1.13
+pre-commit>=3.6.0
+types-requests
+types-psycopg2
+pandas-stubs

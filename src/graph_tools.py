@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from dash.mcp import mcp_enabled
 
 from src.graph_factory import CHART_REGISTRY, aplicar_tema, register_chart
-from src.db_utils import fig_has_data
+from src.db_utils import fig_has_data, query_df
 
 log = logging.getLogger("graph_tools")
 
