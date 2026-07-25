@@ -21,7 +21,7 @@ async def process_batch(cnpjs: list[str], limit: int = None):
         if limit and count >= limit:
             break
 
-        log.info(f"Fetching DataJud for CNPJ: {cnpj}")
+        log.info("Fetching DataJud for CNPJ: %s", cnpj)
 
         # Rate limit explicitly (1 req every 3 seconds to be safe)
         await asyncio.sleep(3.0)
@@ -36,7 +36,7 @@ async def process_batch(cnpjs: list[str], limit: int = None):
                 # Try one more time
                 res = await _mcp_client.call_tool("datajud_buscar_processos", {"query": cnpj, "tamanho": 3})
                 if res and "Rate limited" in res:
-                    log.error(f"Failed to fetch DataJud for {cnpj} due to rate limits.")
+                    log.error("Failed to fetch DataJud for %s due to rate limits.", cnpj)
                     continue
 
             try:
@@ -59,11 +59,11 @@ async def process_batch(cnpjs: list[str], limit: int = None):
             """, (cnpj, total, json.dumps(data)))
             conn.commit()
 
-            log.info(f"Saved {total} processes for CNPJ {cnpj}")
+            log.info("Saved %d processes for CNPJ %s", total, cnpj)
             count += 1
 
         except Exception as e:
-            log.error(f"Error processing DataJud for {cnpj}: {e}")
+            log.error("Error processing DataJud for %s: %s", cnpj, e)
             cur.execute("""
                 INSERT INTO beneficiario_processos (cnpj, erro, checked_at)
                 VALUES (%s, %s, NOW())
@@ -105,7 +105,7 @@ async def main():
     args = parser.parse_args()
 
     cnpjs = get_pending_cnpjs()
-    log.info(f"Found {len(cnpjs)} pending CNPJs for DataJud enrichment.")
+    log.info("Found %d pending CNPJs for DataJud enrichment.", len(cnpjs))
 
     if cnpjs:
         await process_batch(cnpjs, args.limit)

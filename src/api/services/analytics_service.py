@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import List, Dict, Any
 
@@ -8,7 +9,8 @@ from .camara_service import buscar_deputado, listar_despesas
 
 log = logging.getLogger(__name__)
 
-def get_party_efficiency() -> List[Dict[str, Any]]:
+
+def _sync_get_party_efficiency() -> List[Dict[str, Any]]:
     """
     Agrupa emendas por partido e status de execução.
     Retorna a eficiência de execução de cada partido.
@@ -29,7 +31,8 @@ def get_party_efficiency() -> List[Dict[str, Any]]:
             """)
             return _rows_to_list(cur.fetchall())
 
-def get_socioeconomic_data() -> List[Dict[str, Any]]:
+
+def _sync_get_socioeconomic_data() -> List[Dict[str, Any]]:
     """
     Agrega o volume de emendas por município e cruza com IDHM e PIB per capita.
     """
@@ -45,7 +48,6 @@ def get_socioeconomic_data() -> List[Dict[str, Any]]:
                     COALESCE(SUM(vu.valor_total), 0) as total_emendas,
                     COUNT(vu.codigo_emenda) as qtd_emendas
                 FROM v_emendas_unificadas vu
-                -- Cruza com beneficiarios pelo nome
                 JOIN beneficiarios b ON vu.beneficiario_nome = b.nome
                 JOIN beneficiario_ibge_map bim ON b.beneficiario_id = bim.beneficiario_id
                 JOIN municipios_ibge mi ON bim.municipio_id = mi.municipio_id
@@ -55,6 +57,18 @@ def get_socioeconomic_data() -> List[Dict[str, Any]]:
                 LIMIT 500
             """)
             return _rows_to_list(cur.fetchall())
+
+
+async def get_party_efficiency() -> List[Dict[str, Any]]:
+    """Async wrapper — executa query síncrona em thread separada."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_get_party_efficiency)
+
+
+async def get_socioeconomic_data() -> List[Dict[str, Any]]:
+    """Async wrapper — executa query síncrona em thread separada."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_get_socioeconomic_data)
 
 async def get_deputy_roi() -> List[Dict[str, Any]]:
     """
@@ -92,7 +106,7 @@ async def get_deputy_roi() -> List[Dict[str, Any]]:
             
     return deputados
 
-def get_top_municipios() -> List[Dict[str, Any]]:
+def _sync_get_top_municipios() -> List[Dict[str, Any]]:
     with _get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -105,3 +119,9 @@ def get_top_municipios() -> List[Dict[str, Any]]:
                 LIMIT 12;
             """)
             return _rows_to_list(cur.fetchall())
+
+
+async def get_top_municipios() -> List[Dict[str, Any]]:
+    """Async wrapper — executa query síncrona em thread separada."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_get_top_municipios)

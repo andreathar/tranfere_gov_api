@@ -276,14 +276,9 @@ def export_csv(df, filepath):
 # ---------------------------------------------------------------------------
 def import_to_db(records: list[dict]) -> tuple[int, int]:
     """Importa registros validados para o PostgreSQL. Retorna (importados, erros)."""
-    import psycopg2
+    from src.db_utils import get_connection
 
-    from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
-
-    conn = psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+    conn = get_connection()
 
     cur = conn.cursor()
     imported = 0

@@ -6,12 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import psycopg2
 
 # Add project root to path
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -19,13 +18,7 @@ logger = logging.getLogger(__name__)
 TRANSPARENCIA_API_URL = "https://api.portaldatransparencia.gov.br/api-de-dados/emendas"
 
 def get_db_connection():
-    return psycopg2.connect(
-        host=PG_HOST,
-        port=PG_PORT,
-        dbname=PG_DB,
-        user=PG_USER,
-        password=PG_PASS
-    )
+    return get_connection()
 
 def fetch_emendas_transparencia(api_key: str, pagina: int = 1) -> list[dict[str, Any]]:
     """Busca emendas (Transferências Discricionárias) no Portal da Transparência."""

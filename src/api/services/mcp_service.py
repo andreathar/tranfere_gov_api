@@ -134,14 +134,14 @@ async def buscar_processos_datajud(query: str) -> Any:
         
         # Check if it's the specific timeout message
         if res and "Upstream request timed out" in res and attempt < max_retries:
-            log.warning(f"DataJud timed out for query '{query}', retrying {attempt+1}/{max_retries}...")
+            log.warning("DataJud timed out for query '%s', retrying %d/%d...", query, attempt + 1, max_retries)
             await asyncio.sleep(2.0)
             continue
             
         # Check if rate limited
         if res and "Rate limited" in res and attempt < max_retries:
             wait_time = 5.0 * (attempt + 1)
-            log.warning(f"DataJud rate limited for query '{query}', waiting {wait_time}s before retry {attempt+1}/{max_retries}...")
+            log.warning("DataJud rate limited for query '%s', waiting %.1fs before retry %d/%d...", query, wait_time, attempt + 1, max_retries)
             await asyncio.sleep(wait_time)
             continue
             
@@ -199,7 +199,7 @@ async def buscar_diario_perfil(
                     items = parsed.get("items") or parsed.get("data") or []
                     results["federal"] = (items if isinstance(items, list) else [])[:20]
         except Exception as e:
-            log.warning(f"Erro busca DOU federal para '{nome}': {e}")
+            log.warning("Erro busca DOU federal para '%s': %s", nome, e)
             results["federal_error"] = str(e)
 
     # Busca Querido Diário (municipal)
@@ -220,7 +220,7 @@ async def buscar_diario_perfil(
                     items = parsed.get("items") or parsed.get("data") or []
                     results["municipal"] = (items if isinstance(items, list) else [])[:20]
         except Exception as e:
-            log.warning(f"Erro busca Querido Diário para '{nome}': {e}")
+            log.warning("Erro busca Querido Diário para '%s': %s", nome, e)
             results["municipal_error"] = str(e)
 
     results["total"] = len(results["federal"]) + len(results["municipal"])

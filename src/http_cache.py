@@ -3,6 +3,7 @@ Cache TTL simples para requests HTTP.
 
 Evita bater na API do governo repetidamente.
 Cache em arquivo JSON com expiração.
+Capacidade máxima: 2000 entradas (LRU por arquivo mais antigo).
 """
 
 import json
@@ -14,6 +15,20 @@ CACHE_DIR = OUTPUT_DIR / ".http_cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_TTL = 300  # 5 minutos
+MAX_CACHE_ENTRIES = 2000
+
+
+def _evict_oldest_if_needed():
+    """Remove arquivos mais antigos quando cache excede MAX_CACHE_ENTRIES."""
+    files = sorted(CACHE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    if len(files) <= MAX_CACHE_ENTRIES:
+        return
+    to_remove = files[: len(files) - MAX_CACHE_ENTRIES]
+    for f in to_remove:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _cache_key(url: str, params: dict) -> str:
@@ -46,13 +61,15 @@ def cache_get(url: str, params: dict, ttl: int = DEFAULT_TTL) -> dict | None:
 
 
 def cache_set(url: str, params: dict, data: dict) -> None:
-    """Salva no cache."""
+    """Salva no cache com eviction automática."""
     key = _cache_key(url, params)
     cache_file = CACHE_DIR / f"{key}.json"
 
     entry = {"ts": time.time(), "data": data}
     with open(cache_file, "w") as f:
         json.dump(entry, f)
+
+    _evict_oldest_if_needed()
 
 
 def cache_clear() -> int:

@@ -10,6 +10,7 @@ Uso:
 import glob
 import json
 import logging
+import os
 import sys
 
 from config.settings import PROJECT_ROOT, SITUACOES_NEGADAS
@@ -164,8 +165,8 @@ def import_file(conn, filepath):
 
 
 def main():
-    conn = psycopg2.connect(**DB_CONFIG)
-    print(f"Conectado: {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['dbname']}")
+    conn = get_connection()
+    print(f"Conectado ao banco")
 
     if len(sys.argv) > 1:
         files = sys.argv[1:]

@@ -17,9 +17,9 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import psycopg2
 
-from config.settings import OUTPUT_DIR, PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from config.settings import OUTPUT_DIR
+from src.db_utils import get_connection
 
 # ---------------------------------------------------------------------------
 # CONFIGURAÇÃO DE LOGGING
@@ -63,9 +63,7 @@ CORES_MODALIDADE = {
 
 def conectar_db():
     """Cria conexão com o banco PostgreSQL transferegov_db."""
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB, user=PG_USER, password=PG_PASS
-    )
+    return get_connection()
 
 
 def aplicar_layout_base(fig: go.Figure, titulo: str, altura: int = 500) -> go.Figure:

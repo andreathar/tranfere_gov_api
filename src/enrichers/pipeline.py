@@ -59,16 +59,11 @@ def fase2_perfil_camara(dry_run: bool, limit: int):
 
 def fase3_vinculacao(dry_run: bool):
     """Fase 3: Vincula parlamentares a beneficiários."""
-    import psycopg2
-
-    from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+    from src.db_utils import get_connection
 
     print("\n\n>>> FASE 3: Vinculação parlamentar-beneficiário")
 
-    conn = psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""

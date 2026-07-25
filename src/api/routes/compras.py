@@ -23,7 +23,7 @@ async def consultar_fornecedor(
         )
         return {"status": "success", "data": res_fornecedor}
     except Exception as e:
-        log.error(f"Erro ao consultar PNCP para {cnpj}: {e}")
+        log.error("Erro ao consultar PNCP para %s: %s", cnpj, e)
         raise HTTPException(status_code=500, detail=f"Falha ao consultar PNCP: {str(e)}")
 
 @router.get("/bps", response_model=Dict[str, Any])
@@ -40,5 +40,5 @@ async def buscar_precos_medicamentos(
         )
         return {"status": "success", "data": result}
     except Exception as e:
-        log.error(f"Erro ao consultar BPS para {termo}: {e}")
+        log.error("Erro ao consultar BPS para %s: %s", termo, e)
         raise HTTPException(status_code=500, detail=f"Falha ao consultar Banco de Preços em Saúde: {str(e)}")

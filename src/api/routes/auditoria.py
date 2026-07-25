@@ -87,6 +87,6 @@ async def check_tcu(cnpj: str = Query(..., description="CNPJ do beneficiário pa
         ])
         return {"status": "success", "data": result}
     except Exception as e:
-        log.error(f"Error checking TCU for {cnpj}: {e}")
+        log.error("Error checking TCU for %s: %s", cnpj, e)
         raise HTTPException(status_code=500, detail="Falha ao consultar TCU.")
 

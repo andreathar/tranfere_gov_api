@@ -17,18 +17,14 @@ import argparse
 import logging
 from typing import Any
 
-import psycopg2
-
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("enricher_tcu_compras")
 
 
 def get_db_connection():
-    return psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB, user=PG_USER, password=PG_PASS
-    )
+    return get_connection()
 
 
 def auditar_parlamentares_tcu() -> list[dict[str, Any]]:
@@ -51,7 +47,7 @@ def auditar_parlamentares_tcu() -> list[dict[str, Any]]:
     finally:
         conn.close()
 
-    log.info(f"Auditando {len(parlamentares)} parlamentares no banco de dados...")
+    log.info("Auditando %d parlamentares no banco de dados...", len(parlamentares))
     findings = []
 
     for p in parlamentares:
@@ -86,7 +82,7 @@ def main():
     args = parser.parse_args()
 
     relatorio = gerar_relatorio_risco_mcp()
-    log.info(f"Relatório de Auditoria Gerado: {relatorio['total_auditados']} parlamentares analisados.")
+    log.info("Relatório de Auditoria Gerado: %d parlamentares analisados.", relatorio['total_auditados'])
     print(relatorio)
 
 

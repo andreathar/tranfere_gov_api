@@ -7,25 +7,17 @@ Busca detalhes apenas para deputados sem sigla_partido preenchida.
 """
 import time
 
-import psycopg2
 import requests
 
 from config.settings import (
     CAMARA_API_BASE,
     ENRICH_RATE_LIMIT,
-    PG_DB,
-    PG_HOST,
-    PG_PASS,
-    PG_PORT,
-    PG_USER,
 )
+from src.db_utils import get_connection
 
 
 def main():
-    conn = psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+    conn = get_connection()
     cur = conn.cursor()
 
     # Buscar deputados sem partido

@@ -13,9 +13,7 @@ import argparse
 import asyncio
 import unicodedata
 
-import psycopg2
-
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 
 
 def normalize(text: str) -> str:
@@ -32,10 +30,7 @@ def normalize(text: str) -> str:
 
 
 async def sync_prefeitos(dry_run: bool = False, target_uf: str | None = None, ano: int = 2024) -> None:
-    conn = psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+    conn = get_connection()
     cur = conn.cursor()
 
     # 1. Carregar municípios IBGE

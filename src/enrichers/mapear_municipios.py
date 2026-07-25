@@ -12,9 +12,7 @@ Uso: python3 -m src.enrichers.mapear_municipios [--dry-run]
 import argparse
 import unicodedata
 
-import psycopg2
-
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+from src.db_utils import get_connection
 
 
 def normalize(text: str) -> str:
@@ -37,10 +35,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    conn = psycopg2.connect(
-        host=PG_HOST, port=PG_PORT, dbname=PG_DB,
-        user=PG_USER, password=PG_PASS,
-    )
+    conn = get_connection()
     cur = conn.cursor()
 
     # Buscar todos os beneficiários
