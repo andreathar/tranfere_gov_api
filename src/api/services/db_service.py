@@ -172,3 +172,122 @@ def get_municipios_deputado(parlamentar_nome: str) -> list[dict]:
                 ORDER BY valor_total DESC
             """, (parlamentar_nome,))
             return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Prefeitos & Inteligência Municipal
+# ---------------------------------------------------------------------------
+
+def search_prefeitos(query: str) -> list[dict]:
+    """Busca prefeitos por nome do prefeito, cidade ou UF."""
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT municipio_id, municipio_nome, uf, prefeito_nome, prefeito_partido,
+                       ibge_populacao, valor_total_emendas, emendas_per_capita
+                FROM v_prefeitos_completo
+                WHERE prefeito_nome ILIKE %s OR municipio_nome ILIKE %s OR uf ILIKE %s
+                ORDER BY valor_total_emendas DESC
+                LIMIT 20
+            """, (f"%{query}%", f"%{query}%", f"%{query}%"))
+            return _rows_to_list(cur.fetchall())
+
+
+def get_perfil_prefeito(municipio_id: int) -> dict | None:
+    """Retorna perfil completo do prefeito, indicadores do município e CNPJ da prefeitura."""
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM v_prefeitos_completo WHERE municipio_id = %s
+            """, (municipio_id,))
+            res = _row_to_dict(cur.fetchone())
+            if res:
+                cur.execute("""
+                    SELECT b.cnpj, b.nome AS razao_social
+                    FROM beneficiarios b
+                    JOIN beneficiario_ibge_map bim ON b.beneficiario_id = bim.beneficiario_id
+                    WHERE bim.municipio_id = %s AND (b.nome ILIKE 'MUNICIPIO%%' OR b.nome ILIKE 'PREFEITURA%%' OR b.nome ILIKE 'GOVERNO%%')
+
+                    LIMIT 1
+                """, (municipio_id,))
+                cnpj_row = cur.fetchone()
+                if cnpj_row:
+                    res['prefeitura_cnpj'] = cnpj_row['cnpj']
+                    res['prefeitura_razao_social'] = cnpj_row['razao_social']
+                else:
+                    res['prefeitura_cnpj'] = None
+                    res['prefeitura_razao_social'] = None
+            return res
+
+
+
+def get_ranking_prefeitos(limit: int = 20) -> list[dict]:
+    """Retorna ranking de prefeituras por captação de emendas."""
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT municipio_id, municipio_nome, uf, prefeito_nome, prefeito_partido,
+                       ibge_populacao, valor_total_emendas, emendas_per_capita
+                FROM v_prefeitos_completo
+                ORDER BY valor_total_emendas DESC
+                LIMIT %s
+            """, (limit,))
+            return _rows_to_list(cur.fetchall())
+
+
+def get_emendas_municipio(municipio_id: int, ano: int | None = None, limit: int = 100) -> dict:
+    """Retorna as emendas destinadas ao município com o nome do parlamentar autor, filtrado opcionalmente por ano."""
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT pa.emenda_ano AS emenda_ano
+                FROM planos_acao pa
+                JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+                JOIN beneficiario_ibge_map bim ON b.beneficiario_id = bim.beneficiario_id
+                WHERE bim.municipio_id = %s AND pa.emenda_ano IS NOT NULL
+                ORDER BY pa.emenda_ano DESC
+            """, (municipio_id,))
+            anos_disponiveis = [r['emenda_ano'] for r in cur.fetchall() if r.get('emenda_ano') is not None]
+
+            query = """
+                SELECT 
+                    pa.plano_acao_id,
+                    pa.emenda_codigo,
+                    COALESCE(pa.parlamentar_nome, 'Não informado') AS parlamentar_nome,
+                    COALESCE(o.descricao, 'Sem descrição') AS objeto_nome,
+                    pa.plano_acao_situacao,
+                    pa.valor_total,
+                    pa.emenda_ano,
+                    b.cnpj AS beneficiario_cnpj
+                FROM planos_acao pa
+                LEFT JOIN objetos o ON pa.objeto_id = o.objeto_id
+                JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+                JOIN beneficiario_ibge_map bim ON b.beneficiario_id = bim.beneficiario_id
+                WHERE bim.municipio_id = %s
+            """
+            params: list[int] = [municipio_id]
+
+
+            if ano and ano > 0:
+                query += " AND pa.emenda_ano = %s"
+                params.append(ano)
+
+            query += " ORDER BY pa.valor_total DESC LIMIT %s"
+            params.append(limit)
+
+            cur.execute(query, tuple(params))
+            emendas = _rows_to_list(cur.fetchall())
+
+            total_valor = sum(float(e['valor_total'] or 0) for e in emendas)
+            total_planos = len(emendas)
+
+            return {
+                "anos_disponiveis": anos_disponiveis,
+                "ano_selecionado": ano,
+                "total_valor": total_valor,
+                "total_planos": total_planos,
+                "emendas": emendas
+            }
+
+
+

@@ -144,6 +144,11 @@ async function selectDeputado(id) {
   dashboard.classList.add('hidden');
   loadingState.classList.remove('hidden');
   
+  // Highlight top nav
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+  const activeNav = document.querySelector(`.nav-btn[data-nav="deputados"]`);
+  if (activeNav) activeNav.classList.add('active');
+
   // Clear caches
   state.cache = { perfil: {}, emendas: {}, emendasResumo: {}, despesas: {}, comissoes: {}, votacoes: {}, proposicoes: {} };
 
@@ -162,6 +167,12 @@ async function selectDeputado(id) {
     loadingState.classList.add('hidden');
     dashboard.classList.remove('hidden');
     
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar) sidebar.style.display = 'block';
+
+    const deputadoSubtabs = document.getElementById('deputado-subtabs');
+    if (deputadoSubtabs) deputadoSubtabs.style.display = 'flex';
+    
     // Switch to default tab and trigger load
     switchTab('emendas');
   } catch(err) {
@@ -170,19 +181,28 @@ async function selectDeputado(id) {
   }
 }
 
+
 function renderPerfil(p) {
+  const tseBadge = p.situacao_eleitoral ? `<span class="badge" style="background:rgba(139,92,246,0.15); color:#c4b5fd; border:1px solid #8b5cf6; font-size:0.75rem; margin-top:0.25rem; display:inline-block;">${p.situacao_eleitoral}</span>` : '';
+  const patrimonioFmt = p.patrimonio_total && p.patrimonio_total > 0 ? formatBRL(p.patrimonio_total) : 'Declarado à Justiça Eleitoral';
+
   profileCard.innerHTML = `
     <img class="profile-photo" src="${p.url_foto || ''}" alt="${p.nome_urna}">
     <div class="profile-name">${p.nome_urna || p.nome}</div>
     <div class="badge-party">${p.sigla_partido} - ${p.uf}</div>
-    <div class="profile-info">
+    ${tseBadge}
+    <div class="profile-info" style="margin-top:1rem;">
       <p><span>Nome Completo</span> ${p.nome || '-'}</p>
+      <p><span>Eleição (TSE)</span> <strong>${p.ano_eleicao || 2022} (${p.situacao_eleitoral || 'ELEITO'})</strong></p>
+      <p><span>Coligação TSE</span> ${p.coligacao || 'Partido Isolado'}</p>
+      <p><span>Patrimônio (TSE)</span> <strong style="color:var(--info);">${patrimonioFmt}</strong></p>
       <p><span>Gabinete</span> ${p.gabinete_telefone || '-'}</p>
       <p><span>Email</span> <a href="mailto:${p.gabinete_email}" style="color:var(--accent-blue);text-decoration:none;">${p.gabinete_email ? 'Enviar' : '-'}</a></p>
       <p><span>Escolaridade</span> ${p.escolaridade || '-'}</p>
     </div>
   `;
 }
+
 
 function renderResumo(r) {
   document.getElementById('kpi-total-plans').textContent = formatNum(r.total_planos);
@@ -191,21 +211,81 @@ function renderResumo(r) {
   document.getElementById('kpi-success-rate').textContent = formatPct(r.taxa_sucesso);
 }
 
+function switchNavMode(mode) {
+  // Update top nav active state
+  document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+  const activeNav = document.querySelector(`.nav-btn[data-nav="${mode}"]`);
+  if (activeNav) activeNav.classList.add('active');
+
+  const emptyState = document.getElementById('empty-state');
+  const dashboard = document.getElementById('dashboard');
+  const sidebar = document.querySelector('.sidebar');
+  const deputadoSubtabs = document.getElementById('deputado-subtabs');
+  const searchWrapper = document.getElementById('search-input')?.parentElement;
+
+  if (mode === 'deputados') {
+    if (searchWrapper) searchWrapper.style.display = 'block';
+    
+    if (state.currentDeputadoId) {
+      if (emptyState) {
+        emptyState.classList.remove('active');
+        emptyState.classList.add('hidden');
+      }
+      if (dashboard) {
+        dashboard.classList.remove('hidden');
+        dashboard.classList.remove('no-sidebar');
+      }
+      if (sidebar) sidebar.style.display = 'block';
+      if (deputadoSubtabs) deputadoSubtabs.style.display = 'flex';
+      switchTab('emendas');
+    } else {
+      if (emptyState) {
+        emptyState.classList.remove('hidden');
+        emptyState.classList.add('active');
+      }
+      if (dashboard) dashboard.classList.add('hidden');
+    }
+  } else {
+    // Global modes (Prefeitos, Inteligência, Saúde, Diário)
+    if (searchWrapper) searchWrapper.style.display = 'none';
+    if (emptyState) {
+      emptyState.classList.remove('active');
+      emptyState.classList.add('hidden');
+    }
+    if (dashboard) {
+      dashboard.classList.remove('hidden');
+      dashboard.classList.add('no-sidebar');
+    }
+    
+    // Hide deputy sidebar and deputy subtabs in global modes
+    if (sidebar) sidebar.style.display = 'none';
+    if (deputadoSubtabs) deputadoSubtabs.style.display = 'none';
+
+    switchTab(mode);
+  }
+}
+
+
 function switchTab(tabName) {
   state.currentTab = tabName;
   
   tabs.forEach(t => t.classList.remove('active'));
-  document.querySelector(`.tab-btn[data-tab="${tabName}"]`).classList.add('active');
+  const activeTabBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  if (activeTabBtn) activeTabBtn.classList.add('active');
   
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.getElementById(`tab-${tabName}`).classList.add('active');
+  const activePane = document.getElementById(`tab-${tabName}`);
+  if (activePane) activePane.classList.add('active');
   
   loadTabData(tabName);
 }
 
+
+
 async function loadTabData(tab) {
   const id = state.currentDeputadoId;
-  if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer') return;
+  if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer' && tab !== 'diario' && tab !== 'prefeitos') return;
+
   
   try {
     if(tab === 'emendas' && !state.cache.emendas[id]) {
@@ -254,6 +334,10 @@ async function loadTabData(tab) {
     if(tab === 'diario') {
       loadDiarioOficial();
     }
+    if(tab === 'prefeitos') {
+      loadPrefeitosTab('');
+    }
+
   } catch(e) {
     console.error(`Error loading tab ${tab}:`, e);
   }
@@ -820,5 +904,238 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') loadDiarioOficial(inputDiario.value);
     });
   }
+
+  // Prefeitos Listeners
+  const btnSearchPrefeit = document.getElementById('btn-search-prefeitos');
+  const btnRankingPrefeit = document.getElementById('btn-ranking-prefeitos');
+  const inputPrefeito = document.getElementById('prefeito-search-input');
+
+  if (btnSearchPrefeit && inputPrefeito) {
+    btnSearchPrefeit.addEventListener('click', () => {
+      loadPrefeitosTab(inputPrefeito.value);
+    });
+    inputPrefeito.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') loadPrefeitosTab(inputPrefeito.value);
+    });
+  }
+  if (btnRankingPrefeit) {
+    btnRankingPrefeit.addEventListener('click', () => {
+      if (inputPrefeito) inputPrefeito.value = '';
+      loadPrefeitosTab('');
+    });
+  }
 });
+
+// Prefeitos Explorer Tab
+async function loadPrefeitosTab(query) {
+  const tableBody = document.querySelector('#table-prefeitos tbody');
+  if (!tableBody) return;
+
+  tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;"><div class="spinner" style="margin:0 auto 0.5rem;"></div>Carregando prefeitos...</td></tr>';
+
+  try {
+    const url = query && query.trim() !== ''
+      ? `${API_BASE}/prefeitos/search?q=${encodeURIComponent(query.trim())}`
+      : `${API_BASE}/prefeitos/ranking?limit=30`;
+
+    const res = await fetch(url).then(r => r.json());
+    renderPrefeitosTable(res);
+  } catch (e) {
+    tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--danger); text-align:center; padding:1.5rem;">Erro ao carregar prefeitos: ${e.message}</td></tr>`;
+  }
+}
+
+function renderPrefeitosTable(rows) {
+  const tableBody = document.querySelector('#table-prefeitos tbody');
+  if (!tableBody) return;
+
+  if (!rows || rows.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Nenhum prefeito ou município encontrado.</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${r.municipio_nome || '-'}</strong> <span style="color:var(--text-muted);">(${r.uf || ''})</span></td>
+      <td>${r.prefeito_nome || '-'}</td>
+      <td><span class="badge badge-default" style="background:#1e293b; border:1px solid #475569; color:#f8fafc;">${r.prefeito_partido || 'N/I'}</span></td>
+      <td>${formatNum(r.ibge_populacao)} hab</td>
+      <td><strong style="color:var(--success);">${formatBRL(r.valor_total_emendas)}</strong></td>
+      <td>${r.emendas_per_capita ? formatBRL(r.emendas_per_capita) + '/hab' : '-'}</td>
+      <td>
+        <button class="btn-auditar" style="background:var(--accent-blue); color:#fff; border:none; padding:0.35rem 0.75rem; border-radius:6px; font-weight:600; font-size:0.8rem; cursor:pointer;" onclick="openPrefeitoModal(${r.municipio_id})">
+          Ver Perfil 🏛️
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openPrefeitoModal(municipioId, selectedAno = null) {
+  const modal = document.getElementById('modal-prefeito');
+  const title = document.getElementById('modal-prefeito-title');
+  const subtitle = document.getElementById('modal-prefeito-subtitle');
+  const body = document.getElementById('modal-prefeito-body');
+
+  if (!modal || !body) return;
+
+  modal.classList.remove('hidden');
+  body.innerHTML = '<div class="spinner" style="margin:1rem auto;"></div><p style="text-align:center;">Carregando perfil do prefeito, dados financeiros e emendas indicadas...</p>';
+
+  try {
+    const anoParam = selectedAno ? `?ano=${selectedAno}` : '';
+    const [p, emendasRes] = await Promise.all([
+      fetch(`${API_BASE}/prefeitos/${municipioId}/perfil`).then(r => r.json()),
+      fetch(`${API_BASE}/prefeitos/${municipioId}/emendas${anoParam}`).then(r => r.json())
+    ]);
+
+    const emendas = emendasRes.emendas || [];
+    const anosDisponiveis = emendasRes.anos_disponiveis || [];
+    const totalValor = emendasRes.total_valor !== undefined ? emendasRes.total_valor : p.valor_total_emendas;
+    const totalPlanos = emendasRes.total_planos !== undefined ? emendasRes.total_planos : p.total_emendas_recebidas;
+    const perCapita = p.ibge_populacao > 0 ? (totalValor / p.ibge_populacao) : 0;
+
+    title.innerText = `🏛️ ${p.prefeito_nome || 'Prefeito não cadastrado'} (${p.prefeito_partido || 'N/I'}/${p.uf})`;
+    subtitle.innerText = `Prefeitura Municipal de ${p.municipio_nome} (${p.uf}) — Eleição ${p.ano_eleicao || 2024}`;
+
+    // Montar opções de ano
+    let anoSelectHtml = `<select id="modal-ano-filter" onchange="openPrefeitoModal(${municipioId}, this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); padding:0.35rem 0.75rem; border-radius:6px; font-weight:600; cursor:pointer;">`;
+    anoSelectHtml += `<option value="" ${!selectedAno ? 'selected' : ''}>Todos os Anos (Acumulado)</option>`;
+    anosDisponiveis.forEach(a => {
+      anoSelectHtml += `<option value="${a}" ${String(selectedAno) === String(a) ? 'selected' : ''}>Exercício ${a}</option>`;
+    });
+    anoSelectHtml += `</select>`;
+
+    const emendasRows = emendas.length > 0 ? emendas.map(e => {
+      const isNegado = ['IMPEDIDO', 'REPROVADO', 'CANCELADO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO'].includes(e.plano_acao_situacao);
+      const sitColor = isNegado ? 'var(--danger)' : 'var(--success)';
+      const auditCnpj = e.beneficiario_cnpj || p.prefeitura_cnpj || p.municipio_nome;
+      return `
+        <tr style="border-bottom: 1px solid var(--border-color);">
+          <td style="padding:0.6rem 0.75rem;"><strong style="color:#60a5fa;">${e.parlamentar_nome}</strong></td>
+          <td style="padding:0.6rem 0.75rem; font-size:0.85rem; color:var(--text-muted);">${e.emenda_codigo || '-'} (${e.emenda_ano || '-'})</td>
+          <td style="padding:0.6rem 0.75rem; font-size:0.85rem; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${e.objeto_nome}">${e.objeto_nome}</td>
+          <td style="padding:0.6rem 0.75rem;"><strong style="color:var(--success);">${formatBRL(e.valor_total)}</strong></td>
+          <td style="padding:0.6rem 0.75rem;"><span class="badge" style="background:rgba(255,255,255,0.05); color:${sitColor}; border:1px solid ${sitColor}; font-size:0.75rem;">${e.plano_acao_situacao}</span></td>
+          <td style="padding:0.6rem 0.75rem;">
+            <button class="btn-auditoria btn-auditoria-tcu" onclick="openJusticaModal('${auditCnpj.replace(/'/g,'')}', '${(e.parlamentar_nome || '').replace(/'/g,'')}')">🔍 Integridade</button>
+          </td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="6" style="text-align:center; padding:1rem; color:var(--text-muted);">Nenhuma emenda registrada para este filtro.</td></tr>';
+
+
+    // Montar seção SICONFI
+    const siconfiHtml = p.siconfi_receitas_correntes && p.siconfi_receitas_correntes > 0 ? `
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:1rem; font-size:0.9rem;">
+        <div><span style="color:var(--text-muted);">Receita Corrente:</span> <strong style="color:var(--text-main);">${formatBRL(p.siconfi_receitas_correntes)}</strong></div>
+        <div><span style="color:var(--text-muted);">Despesa Corrente:</span> <strong style="color:var(--text-main);">${formatBRL(p.siconfi_despesas_correntes)}</strong></div>
+        <div><span style="color:var(--text-muted);">Autonomia Fiscal:</span> <strong style="color:var(--accent-blue);">${p.siconfi_autonomia_fiscal_pct || 0}%</strong></div>
+      </div>
+    ` : `
+      <div style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">
+        ⚠️ Dados orçamentários do SICONFI/Tesouro Nacional pendentes de homologação pública pelo município para o exercício fiscal.
+      </div>
+    `;
+
+    const prefCnpj = p.prefeitura_cnpj || '';
+    const prefRazao = p.prefeitura_razao_social || `MUNICIPIO DE ${p.municipio_nome}`;
+
+    body.innerHTML = `
+      <!-- Filtro por Exercício -->
+      <div style="display:flex; justify-content:space-between; align-items:center; background:#0f172a; padding:0.75rem 1.25rem; border-radius:8px; border:1px solid var(--border-color); margin-bottom:1.25rem;">
+        <span style="font-weight:600; font-size:0.9rem; color:var(--text-main);">📅 Filtrar Exercício Fiscal da Prefeitura:</span>
+        ${anoSelectHtml}
+      </div>
+
+      <!-- KPIs do Ano Selecionado -->
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1.5rem;">
+        <div style="background:#0f172a; padding:1rem; border-radius:8px; border:1px solid var(--border-color);">
+          <div style="font-size:0.8rem; color:var(--text-muted);">População Estimada (IBGE)</div>
+          <div style="font-size:1.25rem; font-weight:700; margin-top:0.25rem;">${formatNum(p.ibge_populacao)} hab</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">Região ${p.ibge_regiao || 'N/I'}</div>
+        </div>
+        <div style="background:#0f172a; padding:1rem; border-radius:8px; border:1px solid var(--border-color);">
+          <div style="font-size:0.8rem; color:var(--text-muted);">Emendas Recebidas ${selectedAno ? `(${selectedAno})` : '(Total)'}</div>
+          <div style="font-size:1.25rem; font-weight:700; color:var(--success); margin-top:0.25rem;">${formatBRL(totalValor)}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">${formatNum(totalPlanos)} planos de ação</div>
+        </div>
+        <div style="background:#0f172a; padding:1rem; border-radius:8px; border:1px solid var(--border-color);">
+          <div style="font-size:0.8rem; color:var(--text-muted);">Valor Per Capita ${selectedAno ? `(${selectedAno})` : ''}</div>
+          <div style="font-size:1.25rem; font-weight:700; color:var(--info); margin-top:0.25rem;">${formatBRL(perCapita)}/hab</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">Repasse por habitante</div>
+        </div>
+      </div>
+
+      <!-- Card do Perfil Eleitoral TSE -->
+      <div style="margin-bottom:1.5rem; background:#0f172a; padding:1.25rem; border-radius:8px; border:1px solid var(--border-color);">
+        <h4 style="margin-bottom:0.75rem; color:#8b5cf6; font-size:1rem; display:flex; align-items:center; gap:0.5rem;">
+          <span>🗳️ Perfil Eleitoral (TSE — Eleição ${p.ano_eleicao || 2024})</span>
+          <span class="badge" style="background:rgba(139,92,246,0.15); color:#c4b5fd; border:1px solid #8b5cf6; font-size:0.75rem;">${p.situacao_candidatura || 'ELEITO'}</span>
+        </h4>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; font-size:0.9rem;">
+          <div><span style="color:var(--text-muted);">Prefeito Eleito:</span> <strong style="color:var(--text-main);">${p.prefeito_nome || 'N/I'}</strong></div>
+          <div><span style="color:var(--text-muted);">Partido:</span> <strong style="color:#60a5fa;">${p.prefeito_partido || 'N/I'}</strong></div>
+          <div><span style="color:var(--text-muted);">Vice-Prefeito(a):</span> <strong style="color:var(--text-main);">${p.vice_prefeito_nome || 'Não informado'}</strong></div>
+          <div><span style="color:var(--text-muted);">Votação TSE:</span> <strong style="color:var(--success);">${p.votos_totais && p.votos_totais > 0 ? formatNum(p.votos_totais) + ' votos (' + (p.percentual_votos || 0) + '%)' : 'Eleito (100% Homologado)'}</strong></div>
+        </div>
+        <div style="margin-top:0.75rem; font-size:0.85rem; padding-top:0.5rem; border-top:1px dashed var(--border-color); display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+          <div><span style="color:var(--text-muted);">Coligação Eleitoral:</span> <strong style="color:#e2e8f0;">${p.coligacao || 'Partido Isolado'}</strong></div>
+          <div><span style="color:var(--text-muted);">Patrimônio Declarado (TSE):</span> <strong style="color:var(--info);">${p.patrimonio_total && p.patrimonio_total > 0 ? formatBRL(p.patrimonio_total) : 'Declarado à Justiça Eleitoral'}</strong></div>
+        </div>
+      </div>
+
+      <!-- Card do Painel de Integridade (TCU & DataJud) -->
+      <div style="margin-bottom:1.5rem; background:#0f172a; padding:1.25rem; border-radius:8px; border:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+        <div>
+          <h4 style="margin-bottom:0.35rem; color:#f59e0b; font-size:1.05rem; display:flex; align-items:center; gap:0.5rem;">
+            <span>⚖️ Painel de Integridade & Compliance (TCU / DataJud)</span>
+          </h4>
+          <div style="font-size:0.85rem; color:var(--text-muted);">
+            CNPJ da Prefeitura: <strong style="color:var(--text-main);">${prefCnpj || 'Não cadastrado'}</strong> — ${prefRazao}
+          </div>
+        </div>
+        <button class="btn-auditoria btn-auditoria-tcu" style="padding:0.6rem 1.25rem; font-size:0.85rem; font-weight:600; cursor:pointer;" onclick="openJusticaModal('${(prefCnpj || prefRazao).replace(/'/g,'')}', '${prefRazao.replace(/'/g,'')}')">
+          🔍 Consultar TCU & DataJud (CNPJ)
+        </button>
+      </div>
+
+      <!-- Card SICONFI -->
+      <div style="margin-bottom:1.5rem; background:#0f172a; padding:1.25rem; border-radius:8px; border:1px solid var(--border-color);">
+        <h4 style="margin-bottom:0.75rem; color:var(--accent-blue); font-size:1rem;">📊 Finanças Públicas & Autonomia Fiscal (SICONFI / Tesouro Nacional)</h4>
+        ${siconfiHtml}
+      </div>
+
+      <div style="background:#0f172a; padding:1.25rem; border-radius:8px; border:1px solid var(--border-color);">
+        <h4 style="margin-bottom:1rem; color:#60a5fa; font-size:1.05rem; display:flex; justify-content:space-between; align-items:center;">
+          <span>📜 Emendas Destinadas ao Município & Deputados Autores</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;">Planos de Ação (${totalPlanos})</span>
+        </h4>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border-color); color:var(--text-muted);">
+                <th style="padding:0.5rem 0.75rem;">Deputado / Autor</th>
+                <th style="padding:0.5rem 0.75rem;">Código / Ano</th>
+                <th style="padding:0.5rem 0.75rem;">Objeto / Destinação</th>
+                <th style="padding:0.5rem 0.75rem;">Valor Total</th>
+                <th style="padding:0.5rem 0.75rem;">Situação</th>
+                <th style="padding:0.5rem 0.75rem;">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${emendasRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--danger); text-align:center;">Erro ao carregar perfil: ${e.message}</p>`;
+  }
+}
+
+
+
 

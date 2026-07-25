@@ -374,15 +374,22 @@ O projeto possui um hub interativo completo em `src/dash_app.py` integrando a bi
 
 ---
 
-## Followup por Deputado (CLI)
+## Followup por Deputado & Prefeito (CLIs)
 
 ```bash
+# Followup de Deputados
 python3 src/deputado_followup.py AFONSO FLORENCE     # busca por nome
 python3 src/deputado_followup.py --buscar "ULYSSES"   # busca fuzzy
 python3 src/deputado_followup.py --emenda 202642740010 # por código emenda
 python3 src/deputado_followup.py --ranking              # ranking de deputados
 python3 src/deputado_followup.py --partido PT           # por partido
+
+# Followup de Prefeitos & Inteligência Municipal
+python3 src/prefeito_followup.py "Amapá"             # busca por município/prefeito
+python3 src/prefeito_followup.py --buscar "DAYMO"    # busca por nome do prefeito
+python3 src/prefeito_followup.py --ranking           # ranking top prefeituras por emendas
 ```
+
 
 CLI interativo que consulta o PostgreSQL e mostra: perfil do deputado, trail de emendas, municípios beneficiários, comparação com outros deputados do mesmo partido/UF.
 

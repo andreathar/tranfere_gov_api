@@ -22,14 +22,13 @@ def fmt_brl(valor) -> str:
 
 
 def format_brl(value) -> str:
-    """Formata valor como R$ brasileiro — retorna '—' para None.
+    """Formata valor como R$ brasileiro — retorna '—' para None/NA.
 
     Variante para uso em relatórios/texto (em vez de 'R$ 0').
     """
-    if value is None:
+    if value is None or pd.isna(value):
         return "—"
-    if isinstance(value, float) and pd.isna(value):
-        return "—"
+
     try:
         return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except (ValueError, TypeError):

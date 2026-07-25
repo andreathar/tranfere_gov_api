@@ -11,7 +11,16 @@
 </head>
 <body>
     <header class="app-header">
-        <div class="logo">TransfereGov Intel</div>
+        <div class="header-left">
+            <div class="logo">TransfereGov Intel</div>
+            <nav class="main-nav">
+                <button class="nav-btn active" data-nav="deputados" onclick="switchNavMode('deputados')">👥 Deputados</button>
+                <button class="nav-btn" data-nav="prefeitos" onclick="switchNavMode('prefeitos')">🏛️ Prefeitos</button>
+                <button class="nav-btn" data-nav="inteligencia" onclick="switchNavMode('inteligencia')">🚀 Inteligência</button>
+                <button class="nav-btn" data-nav="saude-explorer" onclick="switchNavMode('saude-explorer')">🏥 Saúde</button>
+                <button class="nav-btn" data-nav="diario" onclick="switchNavMode('diario')">📰 Diário Oficial</button>
+            </nav>
+        </div>
         <div class="search-container">
             <input type="text" id="search-input" placeholder="Pesquisar deputado por nome..." autocomplete="off">
             <div id="search-autocomplete" class="autocomplete-dropdown hidden"></div>
@@ -58,16 +67,14 @@
         </aside>
 
         <section class="main-content">
-            <div class="tabs">
+            <div class="tabs" id="deputado-subtabs">
                 <button class="tab-btn active" data-tab="emendas">Emendas</button>
                 <button class="tab-btn" data-tab="despesas">Despesas</button>
                 <button class="tab-btn" data-tab="comissoes">Comissões</button>
                 <button class="tab-btn" data-tab="votacoes">Votações</button>
                 <button class="tab-btn" data-tab="proposicoes">Proposições</button>
-                <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">Inteligência 🚀</button>
-                <button class="tab-btn" data-tab="saude-explorer" onclick="switchTab('saude-explorer')">Saúde 🏥</button>
-                <button class="tab-btn" data-tab="diario" onclick="switchTab('diario')">Diário Oficial 📰</button>
             </div>
+
 
             <div class="tab-content-container">
                 <!-- Emendas Tab -->
@@ -165,6 +172,60 @@
                     <h2 style="margin-bottom:1.5rem;">Proposições de Autoria</h2>
                     <div id="list-proposicoes" class="card-list"></div>
                 </div>
+
+                <!-- Prefeitos & Gestão Municipal Tab -->
+                <div id="tab-prefeitos" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Prefeitos & Inteligência Municipal 🏛️</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Perfil dos 5.570 prefeitos eleitos, patrimônio declarado e emendas destinadas à prefeitura.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <input type="text" id="prefeito-search-input" placeholder="Buscar por prefeito, cidade ou UF..." style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none; min-width:260px;">
+                            <button id="btn-search-prefeitos" style="background:var(--accent-blue); color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Buscar</button>
+                            <button id="btn-ranking-prefeitos" style="background:var(--border-color); color:var(--text-main); border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Top Ranking</button>
+                        </div>
+                    </header>
+
+                    <div class="kpi-grid" style="margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Prefeituras Mapeadas</span>
+                            <span id="kpi-pref-total" class="kpi-value">5.545</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Maior Captação</span>
+                            <span id="kpi-pref-max" class="kpi-value">R$ 58,3M</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Maior Valor Per Capita</span>
+                            <span id="kpi-pref-capita" class="kpi-value">R$ 6.915/hab</span>
+                        </div>
+                    </div>
+
+
+                    <div class="table-card">
+                        <h3>Lista de Prefeitos & Prefeituras</h3>
+                        <div class="table-responsive">
+                            <table id="table-prefeitos">
+                                <thead>
+                                    <tr>
+                                        <th>Município / UF</th>
+                                        <th>Prefeito Eleito</th>
+                                        <th>Partido</th>
+                                        <th>População</th>
+                                        <th>Total Emendas</th>
+                                        <th>Per Capita</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Carregando prefeitos...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
 
                 <!-- Inteligência Tab -->
                 <div id="tab-inteligencia" class="tab-pane">
@@ -271,5 +332,18 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal Prefeito -->
+    <div id="modal-prefeito" class="modal hidden">
+        <div class="modal-content" style="max-width: 950px; max-height: 90vh; overflow-y: auto;">
+            <span class="close-modal" onclick="closeModal('modal-prefeito')">&times;</span>
+            <h2 id="modal-prefeito-title" style="margin-bottom: 0.25rem;">🏛️ Perfil da Gestão Municipal</h2>
+            <p id="modal-prefeito-subtitle" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;"></p>
+            <div id="modal-prefeito-body" class="modal-body">
+                Carregando dados do prefeito...
+            </div>
+        </div>
+    </div>
 </body>
 </html>
+

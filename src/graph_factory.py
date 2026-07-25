@@ -1802,6 +1802,85 @@ def chart_sankey_fluxo_financeiro() -> go.Figure:
     return aplicar_tema(fig, "28. Diagrama de Fluxo Sankey: Região ➔ Situação de Aprovação", altura=500)
 
 
+@register_chart(
+    id="ranking_prefeituras_emendas_per_capita",
+    title="29. Top 20 Prefeituras por Captação de Emendas Per Capita (R$/Hab)",
+    description="Ranking das prefeituras com maior volume de repasses proporcional à sua população estimada.",
+    category="Gestão Municipal & Prefeitos"
+)
+def chart_ranking_prefeituras_emendas_per_capita() -> go.Figure:
+    query = """
+        SELECT 
+            municipio_nome || ' (' || uf || ')' AS municipio_uf,
+            prefeito_nome || ' (' || prefeito_partido || ')' AS prefeito_partido,
+            emendas_per_capita,
+            valor_total_emendas,
+            ibge_populacao
+        FROM v_prefeitos_completo
+        WHERE ibge_populacao > 1000 AND valor_total_emendas > 0
+        ORDER BY emendas_per_capita DESC
+        LIMIT 20;
+    """
+    df = query_df(query)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Dados de prefeituras indisponíveis", showarrow=False, font=dict(size=16, color="#64748b"))
+        return aplicar_tema(fig, "29. Top 20 Prefeituras Per Capita")
+
+    fig = px.bar(
+        df,
+        x="emendas_per_capita",
+        y="municipio_uf",
+        orientation="h",
+        color="emendas_per_capita",
+        color_continuous_scale="Viridis",
+        hover_name="prefeito_partido",
+        labels={"emendas_per_capita": "Valor Per Capita (R$/Hab)", "municipio_uf": "Município (UF)"}
+    )
+    fig.update_layout(yaxis=dict(autorange="reversed"))
+    return aplicar_tema(fig, "29. Top 20 Prefeituras por Captação de Emendas Per Capita (R$/Hab)", altura=550)
+
+
+@register_chart(
+    id="prefeitos_emendas_por_partido",
+    title="30. Volume Total de Emendas Captadas por Partido do Prefeito",
+    description="Distribuição dos recursos repassados aos municípios agrupados pela legenda partidária do prefeito eleito.",
+    category="Gestão Municipal & Prefeitos"
+)
+def chart_prefeitos_emendas_por_partido() -> go.Figure:
+    query = """
+        SELECT 
+            COALESCE(NULLIF(prefeito_partido, ''), 'OUTROS') AS partido,
+            SUM(valor_total_emendas) AS valor_total,
+            COUNT(municipio_id) AS total_prefeituras
+        FROM v_prefeitos_completo
+        WHERE valor_total_emendas > 0
+        GROUP BY prefeito_partido
+        ORDER BY valor_total DESC
+        LIMIT 15;
+    """
+    df = query_df(query)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Dados partidários indisponíveis", showarrow=False, font=dict(size=16, color="#64748b"))
+        return aplicar_tema(fig, "30. Volume por Partido do Prefeito")
+
+    fig = px.bar(
+        df,
+        x="partido",
+        y="valor_total",
+        color="valor_total",
+        color_continuous_scale="Blues",
+        text_auto=".2s",
+        hover_data={"total_prefeituras": True},
+        labels={"valor_total": "Valor Total Repassado (R$)", "partido": "Partido do Prefeito"}
+    )
+    return aplicar_tema(fig, "30. Volume Total de Emendas Captadas por Partido do Prefeito", altura=500)
+
+
+
 
 
 

@@ -19,14 +19,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routes import deputados, analytics, auditoria, diario, compras
+from src.api.routes import deputados, prefeitos, analytics, auditoria, diario, compras
 
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 app = FastAPI(
-    title="TransfereGov — Painel de Inteligência Parlamentar",
-    description="API REST para consulta de deputados, emendas pix, despesas CEAP, "
+    title="TransfereGov — Painel de Inteligência Parlamentar & Municipal",
+    description="API REST para consulta de deputados, prefeitos, emendas pix, despesas CEAP, "
                 "comissões, votações e proposições legislativas.",
     version="1.0.0",
 )
@@ -46,6 +46,14 @@ app.include_router(
     prefix="/api/v1/deputados",
     tags=["deputados"],
 )
+
+# Register prefeitos routes
+app.include_router(
+    prefeitos.router,
+    prefix="/api/v1/prefeitos",
+    tags=["prefeitos"],
+)
+
 
 # Register analytics routes
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
