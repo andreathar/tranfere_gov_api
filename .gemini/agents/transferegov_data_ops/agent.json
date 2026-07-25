@@ -1,0 +1,6 @@
+{
+    "name": "transferegov_data_ops",
+    "description": "Agente responsável por gerenciar extrações pesadas, enriquecimento de dados e relatórios assíncronos com LocalAI.",
+    "model": "pro",
+    "tools": ["read_file", "write_file", "run_command", "schedule"]
+}

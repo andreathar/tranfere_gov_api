@@ -78,7 +78,7 @@ psql -U cognee -h 127.0.0.1 -d transferegov_db
 # DASHBOARD INTERATIVO & SERVIDOR MCP (Dash 4.3+)
 # ============================================================
 python3 src/dash_app.py                    # Servidor Web (http://localhost:8050) & MCP (http://localhost:8050/_mcp)
-python3 src/verify_graphs.py              # Suíte de verificação/auditoria automática dos 17 gráficos
+python3 src/verify_graphs.py              # Suíte de verificação/auditoria automática dos 31 gráficos
 ```
 
 ---
@@ -96,14 +96,27 @@ tranfere_gov_api/
 │   ├── schemas.py                  Pydantic schemas (PlanoAcaoSchema)
 │   ├── http_cache.py               Cache TTL para requests HTTP
 │   ├── dash_app.py                 ← Servidor Web Plotly Dash + MCP Hub (http://localhost:8050)
-│   ├── graph_factory.py            ← Registro central e construtores de 27 gráficos interativos
+│   ├── graphs/                     ← Pacote de gráficos Plotly (12 módulos, 31 gráficos)
+│   │   ├── __init__.py               Re-exports CHART_REGISTRY, aplicar_tema, etc.
+│   │   ├── registry.py               CHART_REGISTRY dict + @register_chart decorator + dataclasses
+│   │   ├── theme.py                  Theme tokens (THEME_CARD_BG, CORES_SITUACAO, TODAS_UFS)
+│   │   ├── parlamentar.py            Charts: eficiencia_partidos, top_parlamentares_valores, impedimentos_por_partido
+│   │   ├── socioeconomico.py         Charts: socioeconomico_idhm, investimento_per_capita_idhm, vulnerabilidade_social
+│   │   ├── fiscal.py                 Charts: custeio_vs_investimento, taxa_impedimento_objeto, emendas_vs_compras
+│   │   ├── siconfi.py                Charts: 10 gráficos SICONFI (dependência, resultado, autonomia, etc.)
+│   │   ├── geoespacial.py            Charts: choropleth_emendas, choropleth_valor_total_uf, choropleth_taxa_impedimento_uf
+│   │   ├── impacto_social.py         Charts: impacto_saude, ideb_vs_emendas
+│   │   ├── analitico.py              Charts: tendencia_temporal, eleicao_emendas
+│   │   ├── hierarquico.py            Charts: sunburst_drilldown_recursos, treemap_investimentos_objetos, sankey_fluxo_financeiro
+│   │   └── prefeitos.py              Charts: ranking_prefeituras_emendas_per_capita, prefeitos_emendas_por_partido
+│   ├── graph_factory.py            ← Shim backward-compat (26 linhas) → importa de src.graphs
 │   ├── graph_tools.py              ← Ferramentas MCP customizadas (@mcp_enabled) para agentes
-│   ├── verify_graphs.py            ← Suíte de auditoria e verificação automatizada dos gráficos
+│   ├── verify_graphs.py            ← Suíte de auditoria e verificação automatizada dos 31 gráficos
 │   ├── dashboard.py                Dashboard geral (Plotly HTML) — DEPRECATED, usar dash_app.py
 │   ├── dashboard_deputados.py      Dashboard parlamentar — DEPRECATED, usar dash_app.py
 │   ├── dashboard_cross_analysis.py Análise cruzada — DEPRECATED, usar dash_app.py
 │   ├── dashboard_cross_fiscal.py   Análise fiscal — DEPRECATED, usar dash_app.py
-│   ├── graph_generator.py          Gerador modular de gráficos — DEPRECATED, usar graph_factory.py
+│   ├── graph_generator.py          Gerador modular de gráficos — DEPRECATED, usar src/graphs/
 │   ├── deputado_followup.py        CLI interativo de followup por deputado
 │   │
 │   ├── api/                        ← FastAPI Web App (ver src/api/AGENTS.md)
@@ -353,12 +366,13 @@ O projeto possui um hub interativo completo em `src/dash_app.py` integrando a bi
 
 ### Módulos Principais
 
-| Módulo | LOC | Descrição | Uso |
-|--------|-----|-----------|-----|
-| `dash_app.py` | 155 | Aplicação Web Dash interativa + Servidor MCP com pré-renderização server-side resiliente | `python3 src/dash_app.py` |
-| `graph_factory.py` | 790 | Registro central (`CHART_REGISTRY`) e construtores de 17 gráficos interativos | `from src.graph_factory import CHART_REGISTRY` |
-| `graph_tools.py` | 170 | Custom MCP Tools decoradas com `@mcp_enabled` para controle autônomo por Agentes | `from src.graph_tools import *` |
-| `verify_graphs.py` | 90 | Suíte de auditoria e verificação automatizada dos 17 gráficos | `python3 src/verify_graphs.py` |
+| Módulo | Descrição | Uso |
+|--------|-----------|-----|
+| `dash_app.py` | Aplicação Web Dash interativa + Servidor MCP com pré-renderização server-side resiliente | `python3 src/dash_app.py` |
+| `src/graphs/` | Pacote de gráficos: `registry.py` (CHART_REGISTRY + decorator), `theme.py` (tokens), 9 módulos de domínio com 31 gráficos | `from src.graphs import CHART_REGISTRY` |
+| `graph_factory.py` | Shim backward-compat (26 linhas) que re-exporta de `src.graphs` | `from src.graph_factory import CHART_REGISTRY` |
+| `graph_tools.py` | Custom MCP Tools decoradas com `@mcp_enabled` para controle autônomo por Agentes | `from src.graph_tools import *` |
+| `verify_graphs.py` | Suíte de auditoria e verificação automatizada dos 31 gráficos | `python3 src/verify_graphs.py` |
 
 ### Resiliência & Prevenção de Gráficos em Branco
 
@@ -450,6 +464,9 @@ PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS
     - Gráficos padrão (Bar, Scatter, Pie): checar `trace.x`, `trace.y`, `trace.values`.
     - Mapas Coropléticos (`px.choropleth`): checar `trace.z` ou `trace.locations`.
     - Diagramas de Fluxo (`go.Sankey`): checar `trace.link.value`.
+17. **Adicionar novos gráficos**: Crie um módulo em `src/graphs/` com o decorator `@register_chart` — ele será importado automaticamente via `src/graphs/__init__.py`. O shim `graph_factory.py` re-exporta tudo para backward compat.
+18. **Decomposição de `main()`**: `transferegov_extract.py` foi decomposto em funções auxiliares (`parse_args`, `setup_logging`, `run_discover`, `run_extraction`). Novas flags CLI vão para `parse_args()`.
+19. **Connection Pooling**: `db_utils.py` usa `psycopg2.pool.ThreadedConnectionPool` (min=2, max=10). `__exit__` patched com `_released` flag para prevenir double-return ao pool.
 
 
 ---

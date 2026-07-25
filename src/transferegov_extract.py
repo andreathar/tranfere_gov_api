@@ -380,9 +380,10 @@ def import_to_db(records: list[dict]) -> tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# CLI — Decomposed main()
 # ---------------------------------------------------------------------------
-def main():
+def parse_args() -> argparse.Namespace:
+    """Parseia argumentos da linha de comandos."""
     parser = argparse.ArgumentParser(
         description="Extrai Planos de Ação do Transferegov.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -396,7 +397,6 @@ Exemplos:
   %(prog)s --objeto 662 --ano 2026 --situacao REPROVADO CANCELADO
         """,
     )
-
     parser.add_argument("--discover", action="store_true",
                         help="Descobrir todos os objetos disponíveis")
     parser.add_argument("--objeto", type=str, default="301",
@@ -423,13 +423,12 @@ Exemplos:
                         help="Não deduplicar registros")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Logging verboso")
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
-    # Setup logging
-    level = logging.DEBUG if args.verbose else logging.INFO
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
+def setup_logging(verbose: bool, ts: str) -> None:
+    """Configura logging para arquivo + stdout."""
+    level = logging.DEBUG if verbose else logging.INFO
     log_file = OUTPUT_LOGS / f"transferegov_{ts}.log"
     logging.basicConfig(
         level=level,
@@ -439,60 +438,125 @@ Exemplos:
             logging.StreamHandler(sys.stdout),
         ],
     )
-
     logger.info("=" * 70)
     logger.info("TRANSFEREGOV — Extração de Planos de Ação")
     logger.info("Endpoint: %s", API_URL)
     logger.info("=" * 70)
 
-    # ---- Modo discover ----
-    if args.discover:
-        objetos = discover_objects(args.ano)
-        print(f"\n{'COD':>5}  DESCRIÇÃO")
-        print("-" * 70)
-        for oid in sorted(objetos.keys()):
-            print(f"{oid:>5}  {objetos[oid]}")
-        print(f"\nTotal: {len(objetos)} objetos disponíveis para {args.ano}")
 
-        # Salvar como JSON
-        disc_path = OUTPUT_JSON / f"objetos_disponiveis_{args.ano}_{ts}.json"
-        with open(disc_path, "w", encoding="utf-8") as f:
-            json.dump({str(k): v for k, v in objetos.items()}, f, ensure_ascii=False, indent=2)
-        logger.info("Lista salva: %s", disc_path)
-        return 0
+def run_discover(ano: str, ts: str) -> int:
+    """Executa modo discover e retorna código de saída."""
+    objetos = discover_objects(ano)
+    print(f"\n{'COD':>5}  DESCRIÇÃO")
+    print("-" * 70)
+    for oid in sorted(objetos.keys()):
+        print(f"{oid:>5}  {objetos[oid]}")
+    print(f"\nTotal: {len(objetos)} objetos disponíveis para {ano}")
 
-    # ---- Modo extração ----
+    disc_path = OUTPUT_JSON / f"objetos_disponiveis_{ano}_{ts}.json"
+    with open(disc_path, "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in objetos.items()}, f, ensure_ascii=False, indent=2)
+    logger.info("Lista salva: %s", disc_path)
+    return 0
+
+
+def _resolve_situacao_filter(args: argparse.Namespace) -> set[str] | None:
+    """Resolve o filtro de situação a partir dos argumentos CLI."""
+    if args.negados:
+        return SITUACOES_NEGADAS
+    if args.situacao:
+        return set(s.upper() for s in args.situacao)
+    return None
+
+
+def _build_output_base(
+    objeto: str, ano: str, args: argparse.Namespace,
+    situacao_filter: set[str] | None,
+) -> str:
+    """Monta o nome base dos arquivos de saída."""
+    if args.output:
+        return args.output
+    obj_tag = "all" if objeto == "all" else objeto
+    sit_tag = "_negados" if args.negados else (
+        "_".join(sorted(situacao_filter)) if situacao_filter else ""
+    )
+    return f"transferegov_{obj_tag}_{ano}{sit_tag}"
+
+
+def _export_files(
+    df: pd.DataFrame, base: str, ts: str, args: argparse.Namespace,
+) -> str:
+    """Exporta Excel, CSV (opcional) e JSON. Retorna caminho do XLSX."""
+    xlsx_path = OUTPUT_XLSX / f"{base}.xlsx"
+    export_excel(df, xlsx_path)
+
+    if args.csv:
+        export_csv(df, OUTPUT_CSV / f"{base}.csv")
+
+    json_path = OUTPUT_JSON / f"{base}_{ts}.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(df.to_dict("records"), f, ensure_ascii=False, indent=2)
+    logger.info("JSON: %s", json_path)
+
+    return str(xlsx_path)
+
+
+def _print_summary(
+    df: pd.DataFrame, objeto: str, ano: str,
+    xlsx_path: str, args: argparse.Namespace,
+    db_imported: int, db_errors: int,
+) -> None:
+    """Imprime resumo da extração no stdout."""
+    print("\n" + "=" * 70)
+    print("RESUMO")
+    print("=" * 70)
+    print(f"Objeto:           {objeto}")
+    print(f"Ano:              {ano}")
+    print(f"Registros:        {len(df)}")
+    print(f"Colunas:          {len(df.columns)}")
+    print(f"Arquivo:          {xlsx_path}")
+    if "valorTotal" in df.columns:
+        total_valor = df["valorTotal"].sum()
+        print(f"Valor total:      {format_brl(total_valor)}")
+    if "planoAcaoSituacao" in df.columns:
+        situacao_series = df["planoAcaoSituacao"]
+        if not isinstance(situacao_series, pd.Series):
+            situacao_series = pd.Series(situacao_series)
+        print(f"Situações:        {situacao_series.value_counts().to_dict()}")
+    if args.db:
+        print(f"DB importados:    {db_imported}")
+        if db_errors:
+            print(f"DB erros:         {db_errors}")
+    print("=" * 70 + "\n")
+
+
+def run_extraction(args: argparse.Namespace, ts: str) -> int:
+    """Pipeline completo de extração: fetch → validate → filter → export. Retorna código de saída."""
     objeto = args.objeto
     ano = args.ano
-
-    # Resolver situação
-    situacao_filter = None
-    if args.negados:
-        situacao_filter = SITUACOES_NEGADAS
-    elif args.situacao:
-        situacao_filter = set(s.upper() for s in args.situacao)
+    situacao_filter = _resolve_situacao_filter(args)
 
     logger.info("Objeto: %s | Ano: %s | Filtro situação: %s", objeto, ano, situacao_filter)
 
+    # Extração
     records = extract_all(
         objeto, ano,
         uf=args.uf,
         programa_id=args.programa,
         situacao_api=args.situacao_api,
     )
-
     if not records:
         logger.warning("Nenhum registro encontrado.")
         return 1
 
-    # Deduplicação (Fase 3)
+    # Deduplicação
     before_dedup = len(records)
     if not args.no_dedup:
         records = deduplicate(records)
         if before_dedup != len(records):
             logger.info("Deduplicação: %d → %d registros únicos", before_dedup, len(records))
 
-    # Validação Pydantic (Fase 1)
+    # Validação Pydantic
     validos, erros = validate_records(records, strict=False)
     if erros:
         logger.warning("Validação: %d registros com warnings:", len(erros))
@@ -502,9 +566,8 @@ Exemplos:
             logger.warning("  ... e mais %d erros", len(erros) - 5)
     logger.info("Validação: %d registros válidos", len(validos))
 
-    # Converter para dicts para DataFrame
+    # DataFrame
     records_for_df = [p.model_dump() for p in validos]
-
     df = pd.DataFrame(records_for_df)
 
     # Converter valores monetários
@@ -527,61 +590,32 @@ Exemplos:
             logger.info("Nenhum registro com situação %s para objeto %s/%s.",
                         situacao_filter, objeto, ano)
 
-    # ---- Flag --db (Fase 2) ----
-    db_imported = 0
-    db_errors = 0
+    # Import DB
+    db_imported, db_errors = 0, 0
     if args.db:
         logger.info("Importando %d registros para PostgreSQL...", len(df))
         db_imported, db_errors = import_to_db(records_for_df)
         logger.info("DB: %d importados, %d erros", db_imported, db_errors)
 
-    # Nome de saída
-    if args.output:
-        base = args.output
-    else:
-        obj_tag = "all" if objeto == "all" else objeto
-        sit_tag = "_negados" if args.negados else (
-            "_".join(sorted(situacao_filter)) if situacao_filter else ""
-        )
-        base = f"transferegov_{obj_tag}_{ano}{sit_tag}"
+    # Export
+    base = _build_output_base(objeto, ano, args, situacao_filter)
+    xlsx_path = _export_files(df, base, ts, args)
 
-    # Exportar
-    xlsx_path = OUTPUT_XLSX / f"{base}.xlsx"
-    export_excel(df, xlsx_path)
-
-    if args.csv:
-        export_csv(df, OUTPUT_CSV / f"{base}.csv")
-
-    # JSON backup
-    json_path = OUTPUT_JSON / f"{base}_{ts}.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(df.to_dict("records"), f, ensure_ascii=False, indent=2)
-    logger.info("JSON: %s", json_path)
-
-    # Resumo (Fase 3: formatação BRL)
-    print("\n" + "=" * 70)
-    print("RESUMO")
-    print("=" * 70)
-    print(f"Objeto:           {objeto}")
-    print(f"Ano:              {ano}")
-    print(f"Registros:        {len(df)}")
-    print(f"Colunas:          {len(df.columns)}")
-    print(f"Arquivo:          {xlsx_path}")
-    if "valorTotal" in df.columns:
-        total_valor = df["valorTotal"].sum()
-        print(f"Valor total:      {format_brl(total_valor)}")
-    if "planoAcaoSituacao" in df.columns:
-        situacao_series = df['planoAcaoSituacao']
-        if not isinstance(situacao_series, pd.Series):
-            situacao_series = pd.Series(situacao_series)
-        print(f"Situações:        {situacao_series.value_counts().to_dict()}")
-    if args.db:
-        print(f"DB importados:    {db_imported}")
-        if db_errors:
-            print(f"DB erros:         {db_errors}")
-    print("=" * 70 + "\n")
+    # Resumo
+    _print_summary(df, objeto, ano, xlsx_path, args, db_imported, db_errors)
 
     return 0
+
+
+def main() -> int:
+    """Ponto de entrada CLI — orquestra parse, logging e execução."""
+    args = parse_args()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    setup_logging(args.verbose, ts)
+
+    if args.discover:
+        return run_discover(args.ano, ts)
+    return run_extraction(args, ts)
 
 
 if __name__ == "__main__":

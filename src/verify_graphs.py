@@ -61,7 +61,7 @@ def verify_single_chart(chart_id: str, spec: Any) -> tuple[bool, int, int, float
 def run_verification_suite() -> bool:
     """Executa a suite completa de verificação em todos os gráficos do sistema."""
     print("=" * 80)
-    print(" 🛡️  TRANSFEREGOV — SUITE DE VERIFICAÇÃO DE SAÚDE DOS GRÁFICOS (17 CHARTS)")
+    print(" 🛡️  TRANSFEREGOV — SUITE DE VERIFICAÇÃO DE SAÚDE DOS GRÁFICOS (31 CHARTS)")
     print("=" * 80)
 
     total_charts = len(CHART_REGISTRY)

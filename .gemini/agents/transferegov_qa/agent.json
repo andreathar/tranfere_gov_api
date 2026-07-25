@@ -1,0 +1,6 @@
+{
+    "name": "transferegov_qa",
+    "description": "Agente responsável por garantir padrões estritos de código e tipagem (Ruff, Mypy, Pytest).",
+    "model": "flash",
+    "tools": ["read_file", "write_file", "run_command"]
+}

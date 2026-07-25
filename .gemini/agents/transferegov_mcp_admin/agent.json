@@ -1,0 +1,6 @@
+{
+    "name": "transferegov_mcp_admin",
+    "description": "Agente responsável por auditar gráficos do Dashboard, checar saúde do sistema e registrar gráficos sob demanda.",
+    "model": "flash",
+    "tools": ["read_file", "write_file", "run_command", "call_mcp_tool"]
+}
