@@ -75,10 +75,14 @@ async def listar_orgaos(deputado_id: int) -> list[dict[str, Any]]:
 
 
 async def listar_votacoes(deputado_id: int, limit: int = 50) -> list[dict[str, Any]]:
-    # A API da Câmara não possui um endpoint /deputados/{id}/votacoes.
-    # Obter as votações de um deputado requer buscar as votações e depois os votos,
-    # ou usar dados agregados externos. Retornamos lista vazia para não quebrar a UI.
-    return []
+    """Busca votações de um deputado a partir do banco local (tabela votos_camara).
+
+    A API da Câmara não possui endpoint /deputados/{id}/votacoes,
+    portanto usamos a tabela local preenchida pelo enricher votacoes_camara.
+    """
+    from src.api.services.db_service import get_votacoes_deputado
+
+    return get_votacoes_deputado(deputado_id, limit=limit)  # type: ignore[return-value]
 
 
 async def listar_proposicoes(deputado_id: int) -> list[dict[str, Any]]:

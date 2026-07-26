@@ -95,6 +95,28 @@ def get_deputado_texts(deputado_id: int) -> List[Dict[str, Any]]:
                 "ref": f"Emenda para {municipio}"
             })
             
+        # 4. Diário Oficial
+        cur.execute("""
+            SELECT da.orgao, da.tipo_ato, da.resumo_ia, da.valor_financeiro, da.entidades_citadas 
+            FROM parlamentar_alertas pa
+            JOIN diario_oficial_atos da ON pa.ato_id = da.ato_id
+            WHERE pa.parlamentar_nome = %s OR pa.parlamentar_nome = (SELECT nome_urna FROM parlamentares_dados WHERE deputado_id = %s LIMIT 1)
+        """, (nome, deputado_id))
+        for ato in cur.fetchall():
+            orgao, tipo_ato, resumo, valor, entidades = ato
+            txt_ato = f"Ato Oficial ({tipo_ato}) em {orgao}. Resumo: {resumo}."
+            if entidades and entidades != "[]":
+                txt_ato += f" Entidades citadas: {entidades}."
+            if valor:
+                txt_ato += f" Valor associado: R$ {valor}."
+                
+            docs.append({
+                "text": txt_ato,
+                "type": "diario_oficial",
+                "deputado_id": deputado_id,
+                "ref": f"Ato: {tipo_ato}"
+            })
+            
     return docs
 
 def embed_text(text: str) -> List[float]:
@@ -125,14 +147,36 @@ def main():
     client = QdrantClient(url=QDRANT_URL)
     ensure_collection(client, COLLECTION_NAME, VECTOR_SIZE)
 
-    # 3. Buscar Deputados para indexar
+    # 3. Buscar Deputados para indexar (priorizando os que têm alertas no Diário Oficial)
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT deputado_id, nome FROM parlamentares_dados ORDER BY deputado_id LIMIT %s", (args.limit,))
+        cur.execute("""
+            SELECT DISTINCT pd.deputado_id, pd.nome 
+            FROM parlamentares_dados pd
+            JOIN parlamentar_alertas pa ON pd.nome = pa.parlamentar_nome
+            ORDER BY pd.deputado_id
+            LIMIT %s
+        """, (args.limit,))
         deputados = cur.fetchall()
+        
+        # Se não encheu o limite, pega os restantes
+        if len(deputados) < args.limit:
+            faltam = args.limit - len(deputados)
+            cur.execute("""
+                SELECT deputado_id, nome 
+                FROM parlamentares_dados 
+                WHERE deputado_id NOT IN (
+                    SELECT DISTINCT pd.deputado_id 
+                    FROM parlamentares_dados pd 
+                    JOIN parlamentar_alertas pa ON pd.nome = pa.parlamentar_nome
+                )
+                ORDER BY deputado_id LIMIT %s
+            """, (faltam,))
+            deputados.extend(cur.fetchall())
 
     log.info(f"Processando {len(deputados)} deputados...")
 
-    point_id = 1
+    import uuid
+
     for deputado_id, nome in deputados:
         docs = get_deputado_texts(deputado_id)
         if not docs:
@@ -144,14 +188,15 @@ def main():
         for doc in docs:
             vector = embed_text(doc["text"])
             if vector and len(vector) == VECTOR_SIZE:
+                # Deterministic ID base on content and deputy ID to avoid duplicates
+                point_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{deputado_id}_{doc['text']}"))
                 points.append(
                     models.PointStruct(
-                        id=point_id,
+                        id=point_uuid,
                         vector=vector,
                         payload=doc
                     )
                 )
-                point_id += 1
                 
         if points:
             client.upsert(

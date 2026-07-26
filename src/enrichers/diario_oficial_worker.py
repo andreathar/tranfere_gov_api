@@ -91,6 +91,9 @@ async def process_diario_oficial(
             texto_ato = item.get("resumo") or "Resumo não gerado"
             import pandas as pd
             raw_date = item.get("data_publicacao") or datetime.today().strftime("%Y-%m-%d")
+            if isinstance(raw_date, list):
+                raw_date = str(raw_date[0]) if raw_date else datetime.today().strftime("%Y-%m-%d")
+            raw_date = str(raw_date)
             try:
                 data_pub = pd.to_datetime(raw_date, dayfirst=True).strftime("%Y-%m-%d")
             except Exception:
@@ -208,6 +211,9 @@ async def process_proposicoes(deputado_id: int, nome: str) -> None:
 
             # Safe date extraction for data_apresentacao
             raw_date_prop = item.get("data") or datetime.today().strftime("%Y-%m-%d")
+            if isinstance(raw_date_prop, list):
+                raw_date_prop = str(raw_date_prop[0]) if raw_date_prop else datetime.today().strftime("%Y-%m-%d")
+            raw_date_prop = str(raw_date_prop)
             try:
                 import pandas as pd
                 data_prop = pd.to_datetime(raw_date_prop, dayfirst=True).strftime("%Y-%m-%d")

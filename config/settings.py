@@ -138,7 +138,7 @@ SENADO_API_BASE = "https://legis.senado.leg.br/dadosabertos"
 # LocalAI — Modelos locais via API compatível OpenAI
 # ---------------------------------------------------------------------------
 LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080/v1")
-LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "120"))  # segundos
+LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "300"))  # segundos
 LOCALAI_MAX_RETRIES = int(os.getenv("LOCALAI_MAX_RETRIES", "3"))
 
 # Modelos categorizados por tarefa

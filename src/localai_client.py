@@ -109,7 +109,17 @@ class LocalAIClient:
             cleaned = cleaned.split("\n", 1)[-1]
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3]
-        return json.loads(cleaned)
+        
+        cleaned = cleaned.strip()
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:].strip()
+
+        try:
+            import json_repair
+            return json_repair.loads(cleaned)
+        except Exception:
+            # Fallback
+            return json.loads(cleaned)
 
     # ------------------------------------------------------------------
     # Chat (async)

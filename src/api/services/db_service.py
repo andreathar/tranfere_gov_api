@@ -299,3 +299,103 @@ def get_emendas_municipio(municipio_id: int, ano: int | None = None, limit: int 
             "total_planos": total_planos,
             "emendas": emendas,
         }
+
+
+# ---------------------------------------------------------------------------
+# Votações da Câmara
+# ---------------------------------------------------------------------------
+
+
+def get_votacoes_deputado(
+    deputado_id: int, limit: int = 50, ano: int | None = None
+) -> list[dict]:
+    """Retorna votações em que o deputado participou, com seu voto."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        query = """
+            SELECT
+                v.votacao_id,
+                v.tipo_voto,
+                v.deputado_id,
+                v.deputado_urna,
+                v.sigla_partido,
+                v.sigla_uf,
+                vc.data_registro,
+                vc.descricao,
+                vc.aprovacao,
+                vc.sigla_orgao,
+                vc.proposicao_ementa,
+                vc.tipo_evento
+            FROM votos_camara v
+            JOIN votacoes_camara vc ON v.votacao_id = vc.votacao_id
+            WHERE v.deputado_id = %s
+        """
+        params: list = [deputado_id]
+        if ano:
+            query += " AND EXTRACT(YEAR FROM vc.data_registro) = %s"
+            params.append(ano)
+        query += " ORDER BY vc.data_registro DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(query, tuple(params))
+        return _rows_to_list(cur.fetchall())
+
+
+def get_resumo_votos_deputado(deputado_id: int) -> dict:
+    """Retorna resumo agregado dos votos do deputado."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT * FROM v_resumo_votos_deputado
+                WHERE deputado_id = %s
+            """,
+            (deputado_id,),
+        )
+        return _row_to_dict(cur.fetchone()) or {}
+
+
+def get_resumo_votacao(votacao_id: str) -> dict:
+    """Retorna resumo de uma votação específica."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT * FROM v_resumo_votacao
+                WHERE votacao_id = %s
+            """,
+            (votacao_id,),
+        )
+        return _row_to_dict(cur.fetchone()) or {}
+
+
+def get_votacoes_recentes(ano: int | None = None, limit: int = 20) -> list[dict]:
+    """Retorna as votações mais recentes."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        query = """
+            SELECT vc.*, COALESCE(rv.total_votos, 0) AS total_votos,
+                   rv.sims, rv.naos, rv.abstencoes, rv.obstrucoes
+            FROM votacoes_camara vc
+            LEFT JOIN v_resumo_votacao rv ON vc.votacao_id = rv.votacao_id
+        """
+        params: list = []
+        if ano:
+            query += " WHERE EXTRACT(YEAR FROM vc.data_registro) = %s"
+            params.append(ano)
+        query += " ORDER BY vc.data_registro DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(query, tuple(params))
+        return _rows_to_list(cur.fetchall())
+
+
+def get_votos_por_votacao(votacao_id: str) -> list[dict]:
+    """Retorna todos os votos de uma votação específica."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    deputado_id, deputado_nome, deputado_urna,
+                    sigla_partido, sigla_uf, tipo_voto, em_segredo
+                FROM votos_camara
+                WHERE votacao_id = %s
+                ORDER BY sigla_partido, deputado_nome
+            """,
+            (votacao_id,),
+        )
+        return _rows_to_list(cur.fetchall())
