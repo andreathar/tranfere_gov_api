@@ -126,3 +126,29 @@ ENRICH_BATCH_SIZE = int(os.getenv("ENRICH_BATCH_SIZE", "50"))
 BRASILAPI_BASE = "https://brasilapi.com.br/api"
 IBGE_API_BASE = "https://servicodados.ibge.gov.br/api/v1"
 CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"
+
+# ---------------------------------------------------------------------------
+# LocalAI — Modelos locais via API compatível OpenAI
+# ---------------------------------------------------------------------------
+LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080/v1")
+LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "120"))  # segundos
+LOCALAI_MAX_RETRIES = int(os.getenv("LOCALAI_MAX_RETRIES", "3"))
+
+# Modelos categorizados por tarefa
+LOCALAI_MODELS = {
+    # Análise pesada (melhor qualidade, mais lento)
+    "analysis": "qwen3.6-27b-fable-fusion-711-uncensored-heretic-nm-dau-neo-max-mtp",
+    # Código
+    "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
+    # Classificação / tarefas simples (rápido)
+    "fast": "qwen2.5-1.5b-instruct-q4-k-m",
+    # Uso geral (equilíbrio qualidade/velocidade)
+    "general": "llama-3.1-8b-q4-k-m",
+    # Embeddings
+    "embedding": "nomic-embed-text-v1.5",
+    # Roteamento inteligente (deixa o LocalAI escolher)
+    "router": "intelligent-router",
+}
+
+# Modelo padrão para jobs de pipeline
+LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["general"]

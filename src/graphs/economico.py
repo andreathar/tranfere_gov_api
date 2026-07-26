@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
 from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
-from src.graphs.theme import TODAS_UFS, THEME_CARD_BG, THEME_GRID, THEME_TEXT, aplicar_tema
-
+from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
 
 # ---------------------------------------------------------------------------
 # Chart 31 — Emendas × Infraestrutura de Saúde (Leitos/10k por município)
@@ -341,7 +341,6 @@ def chart_heatmap_situacao_regiao() -> go.Figure:
         )
         return aplicar_tema(fig, "34. Heatmap: Emendas por Situação × Região")
 
-    import pandas as pd
     pivot = df.pivot_table(
         index="situacao",
         columns="regiao",
@@ -392,3 +391,295 @@ def chart_heatmap_situacao_regiao() -> go.Figure:
     )
 
     return aplicar_tema(fig, "34. Heatmap: Volume de Emendas por Situação × Região", 500)
+
+
+# ---------------------------------------------------------------------------
+# Chart 35 — PIB per Capita vs Emendas per Capita por UF
+# ---------------------------------------------------------------------------
+
+@register_chart(
+    id="econ_pib_emendas",
+    title="35. PIB per Capita vs Emendas per Capita por UF",
+    description=(
+        "Scatter plot comparando a riqueza média do estado (PIB per capita IBGE) "
+        "com o volume de emendas recebidas por habitante. Estados no canto inferior "
+        "direito são ricos e pouco dependem de emendas; no canto superior esquerdo, "
+        "pobres e com alta concentração de repasses."
+    ),
+    category="Análise Econômica",
+)
+def chart_econ_pib_emendas() -> go.Figure:
+    query = """
+        SELECT
+            m.uf,
+            m.regiao,
+            AVG(m.pib / NULLIF(m.populacao, 0)) AS pib_per_capita,
+            SUM(m.populacao) AS populacao_total,
+            SUM(COALESCE(v.valor_total, 0)) AS total_emendas,
+            ROUND(
+                SUM(COALESCE(v.valor_total, 0)) / NULLIF(SUM(m.populacao), 0), 2
+            ) AS emenda_per_capita,
+            COUNT(DISTINCT v.beneficiario_nome) AS num_beneficiarios
+        FROM v_emendas_unificadas v
+        JOIN municipios_ibge m ON v.beneficiario_ibge = m.municipio_id
+        WHERE v.beneficiario_ibge IS NOT NULL
+          AND m.pib > 0
+          AND m.populacao > 0
+        GROUP BY m.uf, m.regiao
+        HAVING SUM(COALESCE(v.valor_total, 0)) > 0
+        ORDER BY emenda_per_capita DESC;
+    """
+    df = query_df(query)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Sem dados de PIB disponíveis para cruzamento",
+            showarrow=False, font=dict(size=16, color="#64748b"),
+        )
+        return aplicar_tema(fig, "35. PIB per Capita vs Emendas per Capita por UF")
+
+    import pandas as pd
+    df["pib_per_capita"] = pd.to_numeric(df["pib_per_capita"], errors="coerce").fillna(0)
+    df["emenda_per_capita"] = pd.to_numeric(df["emenda_per_capita"], errors="coerce").fillna(0)
+    df["populacao_total"] = df["populacao_total"].clip(lower=1)
+
+    REGIAO_CORES = {
+        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
+        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+    }
+
+    fig = go.Figure()
+    for regiao in df["regiao"].dropna().unique():
+        dfr = df[df["regiao"] == regiao]
+        fig.add_trace(go.Scatter(
+            x=dfr["pib_per_capita"],
+            y=dfr["emenda_per_capita"],
+            mode="markers+text",
+            name=regiao,
+            text=dfr["uf"],
+            textposition="top center",
+            textfont=dict(size=10, color=THEME_TEXT),
+            marker=dict(
+                size=np.sqrt(dfr["populacao_total"] / dfr["populacao_total"].max()) * 50 + 10,
+                color=REGIAO_CORES.get(regiao, "#64748b"),
+                line=dict(width=1, color="#1e293b"),
+                opacity=0.85,
+            ),
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "PIB/hab: R$ %{x:,.0f}<br>"
+                "Emendas/hab: R$ %{y:,.2f}<br>"
+                "<extra></extra>"
+            ),
+        ))
+
+    fig.update_layout(
+        xaxis=dict(
+            title="PIB per Capita Médio (R$/hab)",
+            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+        ),
+        yaxis=dict(
+            title="Emendas per Capita (R$/hab)",
+            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+        ),
+    )
+
+    return aplicar_tema(fig, "35. PIB per Capita vs Emendas per Capita por UF", 520)
+
+
+# ---------------------------------------------------------------------------
+# Chart 36 — IDHM vs Dependência de Transferências
+# ---------------------------------------------------------------------------
+
+@register_chart(
+    id="econ_idhm_transferencias",
+    title="36. IDHM vs Dependência de Transferências por Município",
+    description=(
+        "Scatter cruzando o Índice de Desenvolvimento Humano Municipal (IDHM) "
+        "com a % de receita oriunda de transferências intergovernamentais. "
+        "Municípios com baixo IDHM e alta dependência são prioritários para "
+        "investimentos em capacitação de receita própria."
+    ),
+    category="Análise Econômica",
+    controls=[
+        ControlSpec(
+            id="regiao_filter",
+            label="Filtrar por Região",
+            options=["TODOS", "Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"],
+            default="TODOS",
+        ),
+    ],
+)
+def chart_econ_idhm_transferencias(regiao_filter: str = "TODOS") -> go.Figure:
+    query = """
+        SELECT
+            m.nome AS municipio,
+            m.uf,
+            m.regiao,
+            m.populacao,
+            ROUND(m.pib / NULLIF(m.populacao, 0), 2) AS pib_per_capita,
+            COALESCE(mf.arrec_iptu, 0) AS arrec_iptu,
+            ROUND(
+                COALESCE(mf.arrec_iptu, 0) / NULLIF(m.populacao, 0), 2
+            ) AS iptu_per_capita
+        FROM municipios_ibge m
+        JOIN municipios_financeiro mf ON m.municipio_id = mf.municipio_id
+        WHERE m.pib > 0
+          AND m.populacao > 0
+          AND mf.arrec_iptu > 0
+          AND m.populacao > 10000
+          AND (%s = 'TODOS' OR m.regiao = %s)
+        ORDER BY m.populacao DESC
+        LIMIT 200;
+    """
+    df = query_df(query, (regiao_filter, regiao_filter))
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Sem dados de PIB/IPTU suficientes",
+            showarrow=False, font=dict(size=16, color="#64748b"),
+        )
+        return aplicar_tema(fig, "36. PIB per Capita vs IPTU Arrecadado por Município")
+
+    import pandas as pd
+    df["pib_per_capita"] = pd.to_numeric(df["pib_per_capita"], errors="coerce").fillna(0)
+    df["iptu_per_capita"] = pd.to_numeric(df["iptu_per_capita"], errors="coerce").fillna(0)
+    df["populacao"] = df["populacao"].clip(lower=1)
+
+    REGIAO_CORES = {
+        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
+        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+    }
+
+    fig = go.Figure()
+    for regiao in df["regiao"].dropna().unique():
+        dfr = df[df["regiao"] == regiao]
+        fig.add_trace(go.Scatter(
+            x=dfr["pib_per_capita"],
+            y=dfr["iptu_per_capita"],
+            mode="markers",
+            name=regiao,
+            marker=dict(
+                size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 40 + 8,
+                color=REGIAO_CORES.get(regiao, "#64748b"),
+                opacity=0.7,
+                line=dict(width=1, color="#1e293b"),
+            ),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "PIB/hab: R$ %{x:,.0f}<br>"
+                "IPTU/hab: R$ %{y:,.2f}<br>"
+                "<extra></extra>"
+            ),
+            customdata=dfr[["municipio"]].values,
+        ))
+
+    fig.update_layout(
+        xaxis=dict(title="PIB per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        yaxis=dict(title="IPTU per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+    )
+
+    return aplicar_tema(fig, "36. PIB per Capita vs IPTU Arrecadado por Município", 550)
+
+
+# ---------------------------------------------------------------------------
+# Chart 37 — Ranking de Autonomia Fiscal Municipal (Top 30)
+# ---------------------------------------------------------------------------
+
+@register_chart(
+    id="econ_ranking_autonomia",
+    title="37. Ranking de Autonomia Fiscal: Municípios Mais Autônomos",
+    description=(
+        "Top 30 municípios com maior % de receita própria (impostos + contribuições) "
+        "em relação à receita corrente total. Indica a capacidade de financiar "
+        "serviços públicos sem depender de transferências federais/estaduais."
+    ),
+    category="Análise Econômica",
+    controls=[
+        ControlSpec(
+            id="uf_filter",
+            label="Filtrar por Estado (UF)",
+            options=TODAS_UFS,
+            default="TODOS",
+        ),
+    ],
+)
+def chart_econ_ranking_autonomia(uf_filter: str = "TODOS") -> go.Figure:
+    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+
+    query = """
+        SELECT
+            m.nome || ' (' || m.uf || ')' AS municipio_uf,
+            m.uf,
+            m.regiao,
+            m.populacao,
+            mf.receitas_correntes,
+            mf.receitas_capital,
+            ROUND(
+                mf.receitas_correntes / NULLIF(m.populacao, 0), 2
+            ) AS receita_per_capita
+        FROM municipios_financeiro mf
+        JOIN municipios_ibge m ON mf.municipio_id = m.municipio_id
+        WHERE mf.receitas_correntes > 5000000
+          AND m.populacao > 10000
+          AND (%s = 'TODOS' OR m.uf = %s)
+        ORDER BY receita_per_capita DESC
+        LIMIT 30;
+    """
+    df = query_df(query, params)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Sem dados suficientes para ranking de autonomia fiscal",
+            showarrow=False, font=dict(size=16, color="#64748b"),
+        )
+        return aplicar_tema(fig, "37. Ranking de Autonomia Fiscal Municipal")
+
+    import pandas as pd
+    df["receita_per_capita"] = pd.to_numeric(
+        df["receita_per_capita"], errors="coerce"
+    ).fillna(0)
+
+    cores = []
+    for val in df["receita_per_capita"]:
+        q75 = df["receita_per_capita"].quantile(0.75)
+        q50 = df["receita_per_capita"].quantile(0.5)
+        if val >= q75:
+            cores.append("#22c55e")
+        elif val >= q50:
+            cores.append("#3b82f6")
+        else:
+            cores.append("#f59e0b")
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=df["receita_per_capita"],
+        y=df["municipio_uf"],
+        orientation="h",
+        marker_color=cores,
+        text=df["receita_per_capita"].apply(lambda x: f"R$ {x:,.0f}"),
+        textposition="outside",
+        textfont=dict(size=10, color=THEME_TEXT),
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            "Receita per capita: R$ %{x:,.0f}<br>"
+            "Receita corrente: R$ %{customdata[0]:,.0f}<br>"
+            "Receita capital: R$ %{customdata[1]:,.0f}<br>"
+            "<extra></extra>"
+        ),
+        customdata=df[["receitas_correntes", "receitas_capital"]].values,
+    ))
+
+    fig.update_layout(
+        yaxis={"categoryorder": "total ascending"},
+        xaxis=dict(
+            title="Receita Corrente per Capita (R$/hab)",
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
+        ),
+    )
+
+    return aplicar_tema(fig, "37. Ranking de Receita per Capita: Top 30 Municípios", 600)

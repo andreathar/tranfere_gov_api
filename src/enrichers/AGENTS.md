@@ -27,7 +27,7 @@ pipeline.py  ← orquestrador, executa fases via subprocess
 | 1b | `ibge.py` | IBGE API (localidades) | `municipios_ibge` | Lista municípios por UF (nomes, códigos, geo) |
 | 1c | `mapear_municipios.py` | Match fuzzy (normalize) | `beneficiario_ibge_map` | Liga beneficiários a códigos IBGE |
 | 1d | `ibge_agregados.py` | IBGE API (agregados v3) | `municipios_ibge` (colunas extras) | População, PIB, área territorial |
-| 1e | `siconfi.py` | SICONFI/Tesouro Nacional (DCA) | `municipios_financeiro` | Dados financeiros: receitas, despesas, resultado, dívida, patrimônio |
+| 1e | `siconfi.py` | SICONFI/Tesouro Nacional (DCA + RREO A03) | `municipios_financeiro` | Dados financeiros + arrecadação de impostos (IPTU/ISS/ICMS/FPM) |
 | 2 | `camara.py` | Câmara dos Deputados | `parlamentares_dados` | Perfil completo dos deputados autores |
 | 3 | `pipeline.py` (--fase 3) | SQL JOIN | `parlamentar_beneficiario` | Agrega valor total por parlamentar×município×emenda |
 
@@ -55,7 +55,7 @@ python3 -m src.enrichers.pipeline --fase 3 [--dry-run]  # Vinculação
 python3 -m src.enrichers.validacao [--dry-run] [--limit N]
 python3 -m src.enrichers.ibge [--dry-run] [--uf UF]
 python3 -m src.enrichers.ibge_agregados [--dry-run] [--uf UF] [--limit N]
-python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO]
+python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO] [--rreo]
 python3 -m src.enrichers.mapear_municipios [--dry-run]
 python3 -m src.enrichers.camara [--dry-run] [--limit N]
 python3 -m src.enrichers.completar_deputados
@@ -86,9 +86,11 @@ python3 -m src.enrichers.discricionarias_sync
 5. `pipeline.py --fase 3` roda SQL direto (não subprocesso) — único enricher que não delega
 6. Dry-run não garante que APIs externas não serão chamadas — mostra output mas não bloqueia HTTP
 7. `ibge_agregados.py` requer migration_004 aplicada (colunas populacao, pib, area_km2) e `ibge.py` rodado antes (popula municipios_ibge com códigos)
-8. `siconfi.py` requer migration_007 aplicada (tabela municipios_financeiro) e `ibge.py` rodado antes (popula municipios_ibge com codigos)
+8. `siconfi.py` requer migration_007 + migration_012 aplicadas (tabelas municipios_financeiro + colunas arrec_*) e `ibge.py` rodado antes (popula municipios_ibge com codigos)
 9. `siconfi.py` tem rate limit próprio de 1 req/s — SICONFI bloqueia IP por excesso de requests
 10. DCA (Declaração de Contas Anuais) costuma ter 1-2 anos de atraso — o script tenta automaticamente 2025→2023 quando `--ano` não é informado
+11. RREO Anexo 03 (`--rreo`) contém arrecadação de impostos por município — usa `nr_periodo=6` (consolidação anual, 6º bimestre)
+12. RREO retorna texto com acentos (ex: 'Transferências') — o parser usa `unicodedata.normalize('NFKD')` para normalizar
 
 ---
 

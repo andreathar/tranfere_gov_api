@@ -10,26 +10,28 @@ Uso:
 """
 
 # Importar registry e tema (infraestrutura)
+import src.graphs.analitico  # noqa: F401, E501
+import src.graphs.arrecadacao  # noqa: F401, E501
+import src.graphs.economico  # noqa: F401, E501
+import src.graphs.financas  # noqa: F401, E501
+import src.graphs.fiscal  # noqa: F401, E501
+import src.graphs.geoespacial  # noqa: F401, E501
+import src.graphs.hierarquico  # noqa: F401, E501
+import src.graphs.impacto_social  # noqa: F401, E501
+
+# Importar todos os módulos de gráficos para executar os @register_chart.
+# Cada módulo, ao ser importado, registra seus gráficos no CHART_REGISTRY.
+import src.graphs.parlamentar  # noqa: F401, E501
+import src.graphs.prefeitos  # noqa: F401, E501
+import src.graphs.siconfi  # noqa: F401, E501
+import src.graphs.socioeconomico  # noqa: F401, E501
 from src.graphs.registry import (
     CHART_REGISTRY,
     ChartSpec,
     ControlSpec,
     register_chart,
 )
-from src.graphs.theme import aplicar_tema, CORES_SITUACAO, TODAS_UFS, THEME_CARD_BG
-
-# Importar todos os módulos de gráficos para executar os @register_chart.
-# Cada módulo, ao ser importado, registra seus gráficos no CHART_REGISTRY.
-import src.graphs.parlamentar       # noqa: F401, E501
-import src.graphs.socioeconomico    # noqa: F401, E501
-import src.graphs.fiscal            # noqa: F401, E501
-import src.graphs.siconfi           # noqa: F401, E501
-import src.graphs.geoespacial       # noqa: F401, E501
-import src.graphs.impacto_social    # noqa: F401, E501
-import src.graphs.analitico         # noqa: F401, E501
-import src.graphs.hierarquico       # noqa: F401, E501
-import src.graphs.prefeitos         # noqa: F401, E501
-import src.graphs.economico         # noqa: F401, E501
+from src.graphs.theme import CORES_SITUACAO, THEME_CARD_BG, TODAS_UFS, aplicar_tema
 
 __all__ = [
     "CHART_REGISTRY",

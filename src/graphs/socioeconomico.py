@@ -71,9 +71,10 @@ def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
             COALESCE(SUM(v.valor_total), 0)           AS total_emendas,
             ROUND(COALESCE(SUM(v.valor_total), 0) / NULLIF(m.populacao, 0), 2) AS valor_per_capita,
             mf.receitas_correntes,
-            mf.receitas_transferencias,
+            (COALESCE(mf.arrec_cota_fpm, 0) + COALESCE(mf.arrec_cota_icms, 0)) AS transferencias_estimadas,
             ROUND(
-                100.0 * mf.receitas_transferencias / NULLIF(mf.receitas_correntes, 0),
+                100.0 * (COALESCE(mf.arrec_cota_fpm, 0) + COALESCE(mf.arrec_cota_icms, 0))
+                / NULLIF(mf.receitas_correntes, 0),
                 1
             ) AS pct_dependencia
         FROM v_emendas_unificadas v
@@ -84,9 +85,9 @@ def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
           AND mf.receitas_correntes > 0
           AND (%s = 'TODOS' OR m.regiao = %s)
         GROUP BY m.nome, m.uf, m.regiao, m.populacao,
-                 mf.receitas_correntes, mf.receitas_transferencias
+                 mf.receitas_correntes, mf.arrec_cota_fpm, mf.arrec_cota_icms
         HAVING COALESCE(SUM(v.valor_total), 0) > 0
-          AND mf.receitas_transferencias > 0
+          AND (COALESCE(mf.arrec_cota_fpm, 0) + COALESCE(mf.arrec_cota_icms, 0)) > 0
         ORDER BY valor_per_capita DESC LIMIT 80;
     """
     df = query_df(query, (regiao_filter, regiao_filter))
