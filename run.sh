@@ -37,7 +37,9 @@ Comandos:
   validate           Validar CNPJs via BrasilAPI
   ibge               Enriquecer municípios via IBGE
   camara             Perfil de parlamentares via Câmara
-  redator             Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
+  cron-diario        Roda o worker do Diário Oficial (baixa DOU e gera resumo)
+  cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
+  redator            Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
   all                Extrair TODOS os objetos de 2026
   help               Mostrar esta ajuda
 
@@ -97,6 +99,12 @@ case "${1:-help}" in
         ;;
     camara)
         $PYTHON -m src.enrichers.camara "${@:2}"
+        ;;
+    cron-diario)
+        $PYTHON -m src.enrichers.diario_oficial_worker "${@:2}"
+        ;;
+    cron-qdrant)
+        $PYTHON -m src.enrichers.rag_qdrant_indexer "${@:2}"
         ;;
     redator)
         $PYTHON "$SRC/redator_transferegov.py" "${@:2}"

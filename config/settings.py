@@ -147,8 +147,8 @@ LOCALAI_MODELS = {
     "analysis": "qwen3.6-27b-fable-fusion-711-uncensored-heretic-nm-dau-neo-max-mtp",
     # Código
     "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
-    # Classificação / tarefas simples (rápido)
-    "fast": "qwen2.5-1.5b-instruct-q4-k-m",
+    # Classificação / tarefas simples (rápido - CPU friendly)
+    "fast": "minicpm5-1b-claude-opus-fable5-v2-thinking",
     # Uso geral (equilíbrio qualidade/velocidade)
     "general": "llama-3.1-8b-q4-k-m",
     # Embeddings

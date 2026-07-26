@@ -17,13 +17,16 @@ from src.graphs.theme import aplicar_tema
     category="Inteligência Política",
     controls=[
         ControlSpec(
-            id="fonte_filter", label="Fonte da Publicação", options=["TODOS", "FEDERAL", "MUNICIPAL"], default="TODOS"
+            id="fonte_filter",
+            label="Fonte da Publicação",
+            options=["TODOS", "FEDERAL", "MUNICIPAL"],
+            default="TODOS",
         )
     ],
 )
 def chart_radar_diario_timeline(fonte_filter: str = "TODOS") -> go.Figure:
     where_clause = ""
-    params = ()
+    params: tuple = ()
     if fonte_filter != "TODOS":
         where_clause = "WHERE fonte = %s"
         params = (fonte_filter,)
@@ -40,25 +43,27 @@ def chart_radar_diario_timeline(fonte_filter: str = "TODOS") -> go.Figure:
         {where_clause}
         ORDER BY data_publicacao ASC
     """
-    
+
     df = query_df(query, params)
-    
+
     if df.empty:
         # Se não há dados, retorna figura vazia para o framework adicionar o aviso
         return go.Figure()
-        
+
     # Ajusta valor para escalar as bolhas no gráfico
     # Adicionamos um valor base pequeno para que atos sem valor (0) ainda apareçam
-    df["tamanho_bolha"] = df["valor_financeiro"].apply(lambda v: max(10, min(50, v/100000 + 10)) if v > 0 else 10)
-    
+    df["tamanho_bolha"] = df["valor_financeiro"].apply(
+        lambda v: max(10, min(50, v / 100000 + 10)) if v > 0 else 10
+    )
+
     # Prepara hover text HTML
     df["hover_text"] = df.apply(
         lambda r: f"<b>{r['tipo_ato']}</b><br>"
-                  f"Órgão: {r['orgao']}<br>"
-                  f"Data: {r['data_publicacao']}<br>"
-                  f"Valor: R$ {r['valor_financeiro']:,.2f}<br>"
-                  f"Resumo IA: {r['resumo_ia'][:100]}...", 
-        axis=1
+        f"Órgão: {r['orgao']}<br>"
+        f"Data: {r['data_publicacao']}<br>"
+        f"Valor: R$ {r['valor_financeiro']:,.2f}<br>"
+        f"Resumo IA: {r['resumo_ia'][:100]}...",
+        axis=1,
     )
 
     fig = px.scatter(
@@ -68,12 +73,12 @@ def chart_radar_diario_timeline(fonte_filter: str = "TODOS") -> go.Figure:
         size="tamanho_bolha",
         color="tipo_ato",
         hover_name="hover_text",
-        title="Atos do Diário Oficial no Tempo"
+        title="Atos do Diário Oficial no Tempo",
     )
 
     fig.update_traces(
         hovertemplate="%{hovertext}<extra></extra>",
-        marker=dict(line=dict(width=1, color="DarkSlateGrey"))
+        marker=dict(line=dict(width=1, color="DarkSlateGrey")),
     )
 
     fig.update_layout(
@@ -82,5 +87,5 @@ def chart_radar_diario_timeline(fonte_filter: str = "TODOS") -> go.Figure:
         showlegend=False,
         hovermode="closest",
     )
-    
+
     return aplicar_tema(fig, "Radar do Diário Oficial: Timeline de Atos Extraídos por IA")

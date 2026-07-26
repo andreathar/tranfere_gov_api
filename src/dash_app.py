@@ -111,94 +111,114 @@ def build_layout():
         )
     ]
 
-    # Iterar sobre todos os gráficos registrados no CHART_REGISTRY
+    # Agrupar gráficos por categoria
+    categories = {}
     for chart_id, spec in CHART_REGISTRY.items():
-        controls_html = []
-        default_kwargs = {}
-        for ctrl in spec.controls:
-            default_kwargs[ctrl.id] = ctrl.default
-            controls_html.append(
-                html.Div(
-                    style={"marginRight": "1.5rem", "marginBottom": "1rem"},
-                    children=[
-                        html.Label(
-                            ctrl.label,
-                            style={
-                                "display": "block",
-                                "fontSize": "0.85rem",
-                                "color": "#94a3b8",
-                                "marginBottom": "0.3rem",
-                            },
-                        ),
-                        dcc.Dropdown(
-                            id=f"ctrl-{chart_id}-{ctrl.id}",
-                            options=[{"label": opt, "value": opt} for opt in ctrl.options],
-                            value=ctrl.default,
-                            clearable=False,
-                            style={"width": "220px", "color": "#0f172a"},
-                        ),
-                    ],
+        if spec.category not in categories:
+            categories[spec.category] = []
+        categories[spec.category].append((chart_id, spec))
+
+    tabs = []
+    for cat, charts in categories.items():
+        tab_cards = []
+        for chart_id, spec in charts:
+            controls_html = []
+            default_kwargs = {}
+            for ctrl in spec.controls:
+                default_kwargs[ctrl.id] = ctrl.default
+                controls_html.append(
+                    html.Div(
+                        style={"marginRight": "1.5rem", "marginBottom": "1rem"},
+                        children=[
+                            html.Label(
+                                ctrl.label,
+                                style={
+                                    "display": "block",
+                                    "fontSize": "0.85rem",
+                                    "color": "#94a3b8",
+                                    "marginBottom": "0.3rem",
+                                },
+                            ),
+                            dcc.Dropdown(
+                                id=f"ctrl-{chart_id}-{ctrl.id}",
+                                options=[{"label": opt, "value": opt} for opt in ctrl.options],
+                                value=ctrl.default,
+                                clearable=False,
+                                style={"width": "220px", "color": "#0f172a"},
+                            ),
+                        ],
+                    )
                 )
+
+            # Pré-renderiza a figura inicial server-side para carregamento instantâneo
+            initial_figure = safe_build_chart(chart_id, **default_kwargs)
+
+            card = html.Div(
+                style={
+                    "backgroundColor": "#1e293b",
+                    "borderRadius": "12px",
+                    "padding": "1.5rem",
+                    "marginBottom": "2rem",
+                    "border": "1px solid #334155",
+                },
+                children=[
+                    html.Div(
+                        style={
+                            "display": "flex",
+                            "justifyContent": "space-between",
+                            "alignItems": "flex-start",
+                        },
+                        children=[
+                            html.Div(
+                                [
+                                    html.H2(
+                                        spec.title,
+                                        style={
+                                            "color": "#f8fafc",
+                                            "fontSize": "1.25rem",
+                                            "marginBottom": "0.3rem",
+                                        },
+                                    ),
+                                    html.P(
+                                        spec.description,
+                                        style={
+                                            "color": "#94a3b8",
+                                            "fontSize": "0.85rem",
+                                            "marginBottom": "1rem",
+                                        },
+                                    ),
+                                ]
+                            ),
+                            html.Span(
+                                spec.category,
+                                style={
+                                    "padding": "0.2rem 0.6rem",
+                                    "borderRadius": "4px",
+                                    "background": "#334155",
+                                    "color": "#cbd5e1",
+                                    "fontSize": "0.75rem",
+                                },
+                            ),
+                        ],
+                    ),
+                    html.Div(style={"display": "flex", "flexWrap": "wrap"}, children=controls_html)
+                    if controls_html
+                    else html.Div(),
+                    dcc.Graph(id=f"graph-{chart_id}", figure=initial_figure),
+                ],
             )
-
-        # Pré-renderiza a figura inicial server-side para carregamento instantâneo
-        initial_figure = safe_build_chart(chart_id, **default_kwargs)
-
-        card = html.Div(
-            style={
-                "backgroundColor": "#1e293b",
-                "borderRadius": "12px",
-                "padding": "1.5rem",
-                "marginBottom": "2rem",
-                "border": "1px solid #334155",
-            },
-            children=[
-                html.Div(
-                    style={
-                        "display": "flex",
-                        "justifyContent": "space-between",
-                        "alignItems": "flex-start",
-                    },
-                    children=[
-                        html.Div(
-                            [
-                                html.H2(
-                                    spec.title,
-                                    style={
-                                        "color": "#f8fafc",
-                                        "fontSize": "1.25rem",
-                                        "marginBottom": "0.3rem",
-                                    },
-                                ),
-                                html.P(
-                                    spec.description,
-                                    style={
-                                        "color": "#94a3b8",
-                                        "fontSize": "0.85rem",
-                                        "marginBottom": "1rem",
-                                    },
-                                ),
-                            ]
-                        ),
-                        html.Span(
-                            spec.category,
-                            style={
-                                "padding": "0.2rem 0.6rem",
-                                "borderRadius": "4px",
-                                "background": "#334155",
-                                "color": "#cbd5e1",
-                                "fontSize": "0.75rem",
-                            },
-                        ),
-                    ],
-                ),
-                html.Div(style={"display": "flex", "flexWrap": "wrap"}, children=controls_html)
-                if controls_html
-                else html.Div(),
-                dcc.Graph(id=f"graph-{chart_id}", figure=initial_figure),
-            ],
+            tab_cards.append(card)
+            
+        tabs.append(
+            dcc.Tab(
+                label=cat,
+                children=[html.Div(tab_cards, style={"paddingTop": "2rem"})],
+                style={"backgroundColor": "#1e293b", "color": "#94a3b8", "border": "none", "borderBottom": "1px solid #334155"},
+                selected_style={"backgroundColor": "#3b82f6", "color": "white", "border": "none", "fontWeight": "bold"}
+            )
         )
-        children.append(card)
+        
+    children.append(dcc.Tabs(tabs, style={"marginBottom": "2rem"}))
 
     return html.Div(
         style={
