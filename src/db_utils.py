@@ -41,37 +41,53 @@ def _get_pool() -> ThreadedConnectionPool:
     return _pool
 
 
-def _patch_conn_for_pool(conn: psycopg2.extensions.connection, pool: ThreadedConnectionPool) -> psycopg2.extensions.connection:
-    """Monkey-patch connection to return to pool on .close() or `with` exit."""
-    _orig_close = conn.close
-    _orig_exit = conn.__exit__
-    _released = [False]  # mutable flag shared across closures
+class _PooledConnection:
+    """Wrapper that returns a psycopg2 connection to the pool on close/exit.
 
-    def _release():
-        if _released[0]:
+    Delegates all attribute access to the real connection so it behaves
+    identically in every context (cursor(), execute(), etc.) without
+    mutating the C-extension object.
+    """
+
+    __slots__ = ("_conn", "_pool", "_released")
+
+    def __init__(self, conn: psycopg2.extensions.connection, pool: ThreadedConnectionPool) -> None:
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_released", [False])
+
+    def _release(self) -> None:
+        if self._released[0]:
             return
-        _released[0] = True
+        self._released[0] = True
         try:
-            _orig_close()
+            self._conn.close()
         except Exception:
             pass
-        pool.putconn(conn)
+        self._pool.putconn(self._conn)
 
-    def _patched_close():
-        _release()
+    def close(self) -> None:
+        self._release()
 
-    def _patched_exit(exc_type, exc_val, exc_tb):
-        result = _orig_exit(exc_type, exc_val, exc_tb)
-        # __exit__ handles commit/rollback; now return conn to pool
-        _release()
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        result = self._conn.__exit__(exc_type, exc_val, exc_tb)
+        self._release()
         return result
 
-    conn.close = _patched_close  # type: ignore[method-assign]
-    conn.__exit__ = _patched_exit  # type: ignore[method-assign]
-    return conn
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name: str, value):
+        setattr(self._conn, name, value)
+
+    def __repr__(self):
+        return f"<PooledConnection released={self._released[0]} conn={self._conn!r}>"
 
 
-def get_connection() -> psycopg2.extensions.connection:
+def get_connection() -> _PooledConnection:
     """Retorna uma conexão do pool. Usar com context manager:
 
     with get_connection() as conn:
@@ -79,15 +95,15 @@ def get_connection() -> psycopg2.extensions.connection:
     """
     pool = _get_pool()
     conn = pool.getconn()
-    return _patch_conn_for_pool(conn, pool)
+    return _PooledConnection(conn, pool)
 
 
-def get_real_dict_connection() -> psycopg2.extensions.connection:
+def get_real_dict_connection() -> _PooledConnection:
     """Retorna uma conexão do pool com RealDictCursor (linhas como dict)."""
     pool = _get_pool()
     conn = pool.getconn()
     conn.cursor_factory = RealDictCursor
-    return _patch_conn_for_pool(conn, pool)
+    return _PooledConnection(conn, pool)
 
 
 def query_df(sql: str, params: Any = None) -> pd.DataFrame:

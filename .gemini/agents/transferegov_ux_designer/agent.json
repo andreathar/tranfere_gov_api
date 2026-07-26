@@ -1,0 +1,6 @@
+{
+    "name": "transferegov_ux_designer",
+    "description": "Agente especializado em UI/UX Plotly Dash: cria, itera, audita e melhora visualizações de dados cruzados do TransfereGov.",
+    "model": "pro",
+    "tools": ["read_file", "write_file", "run_command", "call_mcp_tool"]
+}

@@ -46,15 +46,10 @@ def chart_ranking_prefeituras_emendas_per_capita(
                 4
             ) AS emendas_per_capita
         FROM v_emendas_unificadas v
-        JOIN beneficiarios b
-            ON v.beneficiario_nome = b.nome
-        JOIN beneficiario_ibge_map bm
-            ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge m
-            ON bm.municipio_id = m.municipio_id
-        LEFT JOIN ibge_agregados ia
-            ON m.municipio_id = ia.municipio_id
+            ON v.beneficiario_ibge = m.municipio_id
         WHERE m.populacao > 0
+          AND v.beneficiario_ibge IS NOT NULL
           AND (%s = 'TODOS' OR m.uf = %s)
         GROUP BY m.municipio_id, m.nome, m.uf, m.populacao
         HAVING SUM(v.valor_total) > 0

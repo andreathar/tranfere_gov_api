@@ -70,6 +70,19 @@ python3 -m src.enrichers.pipeline --fase 3
 python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 
 # ============================================================
+# REDATOR OFICIAL (src/redator_transferegov.py)
+# ============================================================
+./run.sh redator nota-tecnica --parlamentar "AFONSO FLORENCE" --ano 2026
+./run.sh redator oficio --dest "Governador" --cargo "Governador do Estado" --assunto "Relatório" --corpo "..."
+./run.sh redator parecer --processo "001/2026" --consulta "Análise de emendas impedidas"
+./run.sh redator despacho --assunto "Encaminhamento" --texto "Encaminho..."
+./run.sh redator validar --arquivo "docs/nota.txt" --tipo nota_tecnica
+./run.sh redator listar-tipos                     # listar tipos de documento suportados
+./run.sh redator --data                           # data por extenso (Brasília, 25 de julho de 2026.)
+./run.sh redator --pronomes "governador"          # pronome de tratamento
+./run.sh redator --numeracao oficio 142 SAA/SE/MT # numeração oficial
+
+# ============================================================
 # BANCO
 # ============================================================
 psql -U cognee -h 127.0.0.1 -d transferegov_db
@@ -118,6 +131,7 @@ tranfere_gov_api/
 │   ├── dashboard_cross_fiscal.py   Análise fiscal — DEPRECATED, usar dash_app.py
 │   ├── graph_generator.py          Gerador modular de gráficos — DEPRECATED, usar src/graphs/
 │   ├── deputado_followup.py        CLI interativo de followup por deputado
+│   ├── redator_transferegov.py     ← Redator oficial de documentos (nota-técnica, ofício, parecer, despacho)
 │   │
 │   ├── api/                        ← FastAPI Web App (ver src/api/AGENTS.md)
 │   │   ├── app.py                  App FastAPI principal
@@ -406,6 +420,61 @@ python3 src/prefeito_followup.py --ranking           # ranking top prefeituras p
 
 
 CLI interativo que consulta o PostgreSQL e mostra: perfil do deputado, trail de emendas, municípios beneficiários, comparação com outros deputados do mesmo partido/UF.
+
+---
+
+## Redator Oficial de Documentos (src/redator_transferegov.py)
+
+CLI standalone que gera documentos oficiais seguindo o Manual de Redação da Presidência da República, 3ª edição (2018).
+
+```bash
+# Nota técnica com dados reais do PostgreSQL
+./run.sh redator nota-tecnica --parlamentar "AFONSO FLORENCE" --ano 2026
+./run.sh redator nota-tecnica --ano 2026 --output docs/nota_impedidos.txt
+
+# Ofício
+./run.sh redator oficio --dest "Governador" --cargo "Governador do Estado" \
+  --assunto "Relatório de Emendas" --corpo "Segue em anexo..." --numero 142
+
+# Parecer técnico/jurídico
+./run.sh redator parecer --processo "001/2026" --consulta "Análise de emendas impedidas"
+
+# Despacho administrativo
+./run.sh redator despacho --assunto "Encaminhamento" --texto "Encaminho..."
+
+# Validação de documento existente
+./run.sh redator validar --arquivo "docs/nota.txt" --tipo nota_tecnica
+
+# Utilitários rápidos
+./run.sh redator --data                           # data por extenso (Brasília, 25 de julho de 2026.)
+./run.sh redator --pronomes "governador"          # pronome de tratamento correto
+./run.sh redator --numeracao oficio 142 SAA/SE/MT # numeração oficial
+./run.sh redator listar-tipos                     # tipos de documento suportados
+```
+
+### Regras Implementadas (Manual 3ª edição)
+- **Data por extenso**: `"Brasília, 25 de julho de 2026."` — ordinal para 1º, cardinal para o resto
+- **Pronomes de tratamento**: 27 entradas em 4 tiers — Excelentíssimo (3 chefes de estado), Vossa Excelência (ministros, senadores, governadores), Vossa Senhoria (diretores, coordenadores), Vossa Magnificência (reitores)
+- **Numeração**: `"OFÍCIO Nº 142/2026/SAA/SE/MT"` — siglas da menor para maior hierarquia
+- **Fechos**: APENAS "Respeitosamente," (superior) ou "Atenciosamente," (igual) — DD e Ilmo./Ilustríssimo foram ABOLIDOS
+- **Legado**: memorando/aviso → automaticamente convertido para OFÍCIO
+
+### Validação
+O comando `validar` verifica:
+- Uso de datas numéricas (DD/MM/AAAA) em vez de extenso
+- Presença de pronomes abolidos (Digníssimo, Ilmo., Ilustríssimo, DD)
+- Gerúndio excessivo (>3 ocorrências)
+- Uso de memorando/aviso (abolidos)
+
+### Tipos de Documento Suportados
+| Tipo | Prefixo | Uso |
+|------|---------|-----|
+| `oficio` | OFÍCIO | Comunicação entre órgãos |
+| `nota_tecnica` | NOTA TÉCNICA | Análise técnica com dados |
+| `parecer` | Parecer | Opinião técnica/jurídica |
+| `despacho` | Despacho | Decisão administrativa |
+| `portaria` | PORTARIA | Norma interna |
+| `ata` | ATA | Registro de reunião |
 
 ---
 

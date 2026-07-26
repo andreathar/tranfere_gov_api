@@ -25,6 +25,50 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# Diretório base para saída de documentos gerados
+_REDATOR_DIR = Path(__file__).parent / "redator"
+
+# Subpastas por tipo de documento
+_SUBPASTAS = {
+    "nota-tecnica": "notas_tecnicas",
+    "oficio": "oficios",
+    "parecer": "pareceres",
+    "despacho": "despachos",
+}
+
+def _gerar_caminhosaida(comando: str, texto: str) -> Path:
+    """Gera caminho automático em src/redator/<tipo>/ com data + id."""
+    hoje = datetime.now()
+    data_str = hoje.strftime("%Y%m%d")
+    hora_str = hoje.strftime("%H%M%S")
+    subpasta = _SUBPASTAS.get(comando, "outros")
+    # Extrair identificador do texto (primeira linha ou código)
+    if comando == "oficio":
+        # Pegar número do ofício se existir
+        import re
+        m = re.search(r"Nº (\d+)/", texto)
+        num = m.group(1) if m else "000"
+        nome = f"oficio_{data_str}_{num}.txt"
+    elif comando == "nota-tecnica":
+        # Pegar parlamentar se existir
+        import re
+        m = re.search(r"ASSUNTO:.*— (.+)", texto)
+        parlamentar = m.group(1).strip().replace(" ", "_").lower() if m else "geral"
+        nome = f"nota_tecnica_{data_str}_{parlamentar}.txt"
+    elif comando == "parecer":
+        import re
+        m = re.search(r"PROCESSO/REFERÊNCIA: (.+)", texto)
+        proc = m.group(1).strip().replace("/", "-") if m else "001"
+        nome = f"parecer_{data_str}_{proc}.txt"
+    elif comando == "despacho":
+        import re
+        m = re.search(r"Assunto: (.+)", texto)
+        assunto = m.group(1).strip().replace(" ", "_").lower()[:30] if m else "geral"
+        nome = f"despacho_{data_str}_{assunto}.txt"
+    else:
+        nome = f"doc_{data_str}_{hora_str}.txt"
+    return _REDATOR_DIR / subpasta / nome
 from typing import Any
 
 from src.db_utils import query_df
@@ -252,35 +296,35 @@ def buscar_planos_parlamentar(
 ) -> pd.DataFrame:
     """Busca planos de ação de um parlamentar, com opção de filtrar por ano."""
     sql = """
-        SELECT pa.plano_acao_codigo, pa.objeto_descricao, pa.beneficiario_nome,
-               pa.uf, pa.plano_acao_situacao, pa.valor_total,
-               pa.emenda_codigo, pa.motivo_impedimento
-        FROM planos_acao pa
-        WHERE UPPER(pa.parlamentar_nome) LIKE UPPER(%s)
+        SELECT plano_acao_codigo, objeto_descricao, beneficiario_nome,
+               beneficiario_uf AS uf, plano_acao_situacao, valor_total,
+               emenda_codigo, motivo_impedimento
+        FROM v_planos_completo
+        WHERE UPPER(parlamentar_nome) LIKE UPPER(%s)
     """
     params: list[Any] = [f"%{parlamentar_nome}%"]
     if ano:
-        sql += " AND pa.plano_acao_codigo LIKE %s"
-        params.append(f"{ano}%")
-    sql += " ORDER BY pa.valor_total DESC"
+        sql += " AND emenda_ano = %s"
+        params.append(ano)
+    sql += " ORDER BY valor_total DESC"
     return query_df(sql, params)
 
 
 def resumo_impedidos(ano: int | None = None) -> pd.DataFrame:
     """Retorna resumo de planos impedidos por UF e objeto."""
     sql = """
-        SELECT uf, objeto_descricao,
+        SELECT beneficiario_uf AS uf, objeto_descricao,
                COUNT(*) AS total,
                SUM(valor_total) AS valor_total,
                COUNT(DISTINCT parlamentar_nome) AS parlamentares
-        FROM planos_acao
+        FROM v_planos_completo
         WHERE plano_acao_situacao IN
             ('IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO', 'REPROVADO', 'CANCELADO')
     """
     params: list[Any] = []
     if ano:
-        sql += " AND plano_acao_codigo LIKE %s"
-        params.append(f"{ano}%")
+        sql += " AND emenda_ano = %s"
+        params.append(ano)
     sql += """
         GROUP BY uf, objeto_descricao
         ORDER BY valor_total DESC
@@ -304,12 +348,12 @@ def resumo_geral(ano: int | None = None) -> dict[str, Any]:
             SUM(valor_total) AS valor_total,
             COUNT(DISTINCT parlamentar_nome) AS parlamentares,
             COUNT(DISTINCT beneficiario_nome) AS beneficiarios
-        FROM planos_acao
+        FROM v_planos_completo
     """
     params: list[Any] = []
     if ano:
-        sql += " WHERE plano_acao_codigo LIKE %s"
-        params.append(f"{ano}%")
+        sql += " WHERE emenda_ano = %s"
+        params.append(ano)
     df = query_df(sql, params)
     if df.empty:
         return {}
@@ -319,18 +363,18 @@ def resumo_geral(ano: int | None = None) -> dict[str, Any]:
 def listar_parlamentares_impedidos(ano: int | None = None, limite: int = 20) -> pd.DataFrame:
     """Lista parlamentares com mais planos impedidos."""
     sql = """
-        SELECT parlamentar_nome, sigla_partido, uf,
+        SELECT parlamentar_nome, sigla_partido, beneficiario_uf AS uf,
                COUNT(*) AS total_impedidos,
                SUM(valor_total) AS valor_total
-        FROM planos_acao pa
+        FROM v_planos_completo pa
         LEFT JOIN parlamentares_dados pd ON UPPER(pa.parlamentar_nome) = UPPER(pd.nome)
         WHERE plano_acao_situacao IN
             ('IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO')
     """
     params: list[Any] = []
     if ano:
-        sql += " AND plano_acao_codigo LIKE %s"
-        params.append(f"{ano}%")
+        sql += " AND emenda_ano = %s"
+        params.append(ano)
     sql += """
         GROUP BY parlamentar_nome, sigla_partido, uf
         ORDER BY valor_total DESC
@@ -421,7 +465,7 @@ def gerar_nota_tecnica(
                 mot = row.get("motivo_impedimento", "")
                 doc.append(f"  • {cod} — {obj}")
                 doc.append(f"    Situação: {sit} | Valor: {val}")
-                if mot:
+                if mot and str(mot) != "nan":
                     doc.append(f"    Motivo: {mot}")
                 doc.append("")
 
@@ -826,11 +870,12 @@ def main() -> int:
 
     # Saída
     if args.output:
-        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.output).write_text(texto, encoding="utf-8")
-        print(f"📄 Documento salvo: {args.output}")
+        saida = Path(args.output)
     else:
-        print(texto)
+        saida = _gerar_caminhosaida(args.comando, texto)
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    saida.write_text(texto, encoding="utf-8")
+    print(f"📄 Documento salvo: {saida}")
 
     return 0
 

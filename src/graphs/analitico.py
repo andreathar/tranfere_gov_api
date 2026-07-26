@@ -100,13 +100,13 @@ def chart_tendencia_temporal(ano_filter: str = "TODOS") -> go.Figure:
         ),
         yaxis=dict(
             title="Valor Total (R$)",
-            titlefont=dict(color="#3b82f6"),
+            title_font=dict(color="#3b82f6"),
             tickfont=dict(color="#3b82f6"),
             gridcolor=THEME_GRID,
         ),
         yaxis2=dict(
             title="Parlamentares Distintos",
-            titlefont=dict(color="#f59e0b"),
+            title_font=dict(color="#f59e0b"),
             tickfont=dict(color="#f59e0b"),
             overlaying="y",
             side="right",
@@ -148,28 +148,20 @@ def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
             m.nome                                   AS municipio,
             m.uf,
             m.municipio_id,
-            COALESCE(mi.populacao, 0)                 AS populacao,
-            p.sigla_partido,
-            p.situacao,
-            COUNT(DISTINCT v.id)                      AS qtd_emendas,
+            COALESCE(m.populacao, 0)                 AS populacao,
+            pd.sigla_partido,
+            COUNT(*)                                  AS qtd_emendas,
             COALESCE(SUM(v.valor_total), 0)           AS total_emendas
         FROM v_emendas_unificadas v
-        JOIN beneficiarios b
-            ON v.beneficiario_nome = b.nome
-        JOIN beneficiario_ibge_map bm
-            ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge m
-            ON bm.municipio_id = m.municipio_id
-        LEFT JOIN parlamentares_dados p
-            ON v.parlamentar_nome ILIKE CONCAT('%%', p.nome_urna, '%%')
-        LEFT JOIN municipios_ibge mi
-            ON m.municipio_id = mi.municipio_id
+            ON v.beneficiario_ibge = m.municipio_id
+        LEFT JOIN parlamentares_dados pd
+            ON v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%')
         WHERE (%s = 'TODOS' OR m.uf = %s)
+          AND v.beneficiario_ibge IS NOT NULL
         GROUP BY
-            m.nome, m.uf, m.municipio_id,
-            mi.populacao,
-            p.sigla_partido, p.situacao
-        HAVING COUNT(DISTINCT v.id) > 0
+            m.nome, m.uf, m.municipio_id, m.populacao, pd.sigla_partido
+        HAVING COUNT(*) > 0
         ORDER BY total_emendas DESC;
     """
     df = query_df(query, (uf_filter, uf_filter))
@@ -194,8 +186,9 @@ def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
     )
     top_partidos = set(partido_totals.index[:10]) if len(partido_totals) >= 10 else set(partido_totals.index)
     df["partido_grupo"] = df["sigla_partido"].apply(
-        lambda x: x if x in top_partidos and x is not None else "OUTROS"
+        lambda x: x if (x in top_partidos and x is not None) else "OUTROS"
     )
+    df["populacao"] = df["populacao"].clip(lower=1)  # evita bolhas de tamanho 0
 
     fig = px.scatter(
         df,
@@ -204,7 +197,7 @@ def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
         size="populacao",
         color="partido_grupo",
         hover_name="municipio",
-        hover_data=["uf", "situacao", "populacao"],
+        hover_data=["uf", "populacao"],
         size_max=50,
         labels={
             "qtd_emendas": "Quantidade de Emendas",

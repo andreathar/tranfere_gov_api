@@ -198,25 +198,58 @@ def chart_treemap_investimentos_objetos(
             altura=550,
         )
 
+    # Build proper hierarchical treemap with region/UF parent nodes
+    REGIAO_CORES = {
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
+        "Sem Região": "#64748b",
+    }
+
+    ids: list[str] = []
+    labels: list[str] = []
+    parents: list[str] = []
+    values: list[float] = []
+    colors: list[str] = []
+
+    # Add root-level region nodes
+    for regiao in df["regiao"].unique():
+        cor = REGIAO_CORES.get(regiao, "#475569")
+        ids.append(regiao)
+        labels.append(regiao)
+        parents.append("")
+        values.append(0)
+        colors.append(cor)
+
+        # Add UF nodes under each region
+        ufs_regiao = df[df["regiao"] == regiao]["uf"].unique()
+        for uf in ufs_regiao:
+            uf_id = f"{regiao}/{uf}"
+            ids.append(uf_id)
+            labels.append(uf)
+            parents.append(regiao)
+            values.append(0)
+            colors.append(cor)
+
+    # Add leaf object nodes
+    for _, row in df.iterrows():
+        cor = REGIAO_CORES.get(row["regiao"], "#475569")
+        obj_id = f"{row['regiao']}/{row['uf']}/{row['objeto_nome']}"
+        ids.append(obj_id)
+        labels.append(row["objeto_nome"])
+        parents.append(f"{row['regiao']}/{row['uf']}")
+        values.append(float(row["total_emendas"]))
+        colors.append(cor)
+
     fig = go.Figure(
         go.Treemap(
-            ids=df.apply(
-                lambda r: f"{r['regiao']}/{r['uf']}/{r['objeto_nome']}",
-                axis=1,
-            ).tolist(),
-            labels=df["objeto_nome"].tolist(),
-            parents=df.apply(
-                lambda r: (
-                    f"{r['regiao']}/{r['uf']}"
-                    if r["regiao"] != "Sem Região" and r["uf"] != "XX"
-                    else r["regiao"]
-                    if r["regiao"] != "Sem Região"
-                    else ""
-                ),
-                axis=1,
-            ).tolist(),
-            values=df["total_emendas"].tolist(),
-            branchvalues="total",
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values,
+            branchvalues="remainder",
             textinfo="label+value+percent parent",
             texttemplate="<b>%{label}</b><br>R$ %{value:,.0f}<br>%{percentParent:.1%}",
             hovertemplate=(
@@ -226,8 +259,7 @@ def chart_treemap_investimentos_objetos(
                 "<extra></extra>"
             ),
             marker=dict(
-                colors=df["regiao"].tolist(),
-                colorscale="Set2",
+                colors=colors,
                 line=dict(width=1.5, color=THEME_CARD_BG),
             ),
             textfont=dict(size=12, color=THEME_TEXT),
@@ -236,7 +268,7 @@ def chart_treemap_investimentos_objetos(
 
     return aplicar_tema(
         fig, "27. Composição de Investimentos por Objeto",
-        altura=550,
+        altura=600,
     )
 
 

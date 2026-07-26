@@ -1,17 +1,21 @@
 """
 Enriquecimento de municipios via API SICONFI (Tesouro Nacional).
 
-Uso: python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO]
+Uso: python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO] [--rreo]
 
-Busca dados financeiros dos municipios mapeados via DCA (Declaracao de Contas Anuais):
-  - Receitas correntes/capital/orcamentarias
-  - Despesas correntes/capital/orcamentarias
-  - Resultado orcamentario/primario/financeiro
-  - Divida ativa/passiva
-  - Ativo imobilizado/patrimonio liquido
+Busca dados financeiros dos municipios mapeados via:
+  1. DCA (Declaracao de Contas Anuais) — dados agregados anuais:
+     - Receitas correntes/capital/orcamentarias
+     - Despesas correntes/capital/orcamentarias
+     - Resultado orcamentario/primario/financeiro
+     - Divida ativa/passiva, ativo imobilizado/patrimonio liquido
+  2. RREO Anexo 03 (Receita Corrente Liquida) — arrecadacao de impostos:
+     - IPTU, ISS, ITBI, IRRF
+     - Cota-partes: ICMS, IPVA, ITR, FPM
+     - Transferencias, receita de servicos/patrimonial
 
-Requer: tabela municipios_ibge populada (via ibge.py) e migration_007 aplicada.
-API: https://apidatalake.tesouro.gov.br/ords/siconfi/tt/dca
+Requer: tabela municipios_ibge populada (via ibge.py), migration_007 e migration_012.
+API: https://apidatalake.tesouro.gov.br/ords/siconfi/tt/
 Rate limit: 1 req/s (respeitado).
 """
 
@@ -33,6 +37,13 @@ from src.db_utils import get_connection
 # ---------------------------------------------------------------------------
 SICONFI_DCA_URL = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/dca"
 SICONFI_TIMEOUT = 30
+
+# ---------------------------------------------------------------------------
+# API SICONFI — RREO Anexo 03 (Receita Corrente Liquida)
+# ---------------------------------------------------------------------------
+SICONFI_RREO_URL = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/rreo"
+RREO_ANEXO_03 = "RREO-Anexo 03"
+RREO_PERIODO_ANUAL = 6  # 6o bimestre (Nov-Dez) consolida o ano
 
 # ---------------------------------------------------------------------------
 # Mapeamento: nome da conta no response DCA -> coluna no banco
@@ -83,6 +94,35 @@ DB_COLUMNS = [
     "divida_ativa", "divida_passiva", "ativo_imobilizado", "patrimonio_liquido",
 ]
 
+# ---------------------------------------------------------------------------
+# Mapeamento: conta RREO Anexo 03 -> coluna no banco (arrecadacao de impostos)
+# Fonte: RREO-Anexo 03 (Receita Corrente Liquida) — soma dos 6 bimestres
+# ---------------------------------------------------------------------------
+RREO_A03_CONTA_MAP: list[tuple[str, str]] = [
+    ("IPTU",                              "arrec_iptu"),
+    ("ISS",                               "arrec_iss"),
+    ("ITBI",                              "arrec_itbi"),
+    ("IRRF",                              "arrec_irrf"),
+    ("Cota-Parte do ICMS",                "arrec_cota_icms"),
+    ("Cota-Parte do IPVA",                "arrec_cota_ipva"),
+    ("Cota-Parte do ITR",                 "arrec_cota_itr"),
+    ("Cota-Parte do FPM",                 "arrec_cota_fpm"),
+    ("Impostos, Taxas e Contribuicoes",   "arrec_impostos_geral"),
+    ("Transferencias Correntes",          "arrec_transferencias"),
+    ("Receita de Servicos",               "arrec_receita_servicos"),
+    ("Receita Patrimonial",               "arrec_receita_patrimonial"),
+    ("RECEITAS CORRENTES",                "arrec_receitas_correntes"),
+]
+
+# Colunas de arrecadacao no banco (para INSERT/UPDATE)
+ARREC_DB_COLUMNS = [
+    "arrec_iptu", "arrec_iss", "arrec_itbi", "arrec_irrf",
+    "arrec_cota_icms", "arrec_cota_ipva", "arrec_cota_itr", "arrec_cota_fpm",
+    "arrec_impostos_geral", "arrec_transferencias",
+    "arrec_receita_servicos", "arrec_receita_patrimonial",
+    "arrec_receitas_correntes",
+]
+
 
 
 
@@ -115,6 +155,7 @@ class _SiconfiArgs(argparse.Namespace):
     uf: str = ""
     limit: int = 0
     ano: int = 0
+    rreo: bool = False
 
 
 def buscar_dca_municipio(
@@ -214,9 +255,121 @@ def upsert_financeiro(
     )
 
 
+# ---------------------------------------------------------------------------
+# RREO Anexo 03 — Arrecadacao de Impostos
+# ---------------------------------------------------------------------------
+
+def buscar_rreo_a03(
+    municipio_id: int,
+    exercicio: int,
+    periodo: int = RREO_PERIODO_ANUAL,
+    timeout: int = SICONFI_TIMEOUT,
+) -> Sequence[_ItemDCA]:
+    """Busca RREO Anexo 03 (RCL) de um municipio para um exercicio.
+
+    API: GET /rreo?an_exercicio={ano}&nr_periodo={periodo}
+         &co_tipo_demonstrativo=RREO&no_anexo=RREO-Anexo 03&id_ente={cod_ibge}
+    Response: {"items": [{"conta": ..., "coluna": ..., "valor": ..., ...}]}
+    """
+    params: dict[str, int | str] = {
+        "an_exercicio": exercicio,
+        "nr_periodo": periodo,
+        "co_tipo_demonstrativo": "RREO",
+        "no_anexo": RREO_ANEXO_03,
+        "id_ente": municipio_id,
+    }
+    try:
+        resp = requests.get(SICONFI_RREO_URL, params=params, timeout=timeout)
+        if resp.status_code != 200:
+            return []
+        data = cast(dict[str, object], resp.json())
+        raw_items = data.get("items", [])
+        if not isinstance(raw_items, list):
+            return []
+        return cast(
+            Sequence[_ItemDCA],
+            [i for i in raw_items if isinstance(i, dict)],
+        )
+    except (requests.RequestException, ValueError, KeyError):
+        return []
+
+
+def parse_rreo_a03_itens(
+    itens: Sequence[_ItemDCA],
+) -> dict[str, float | None]:
+    """Converte itens RREO Anexo 03 em dict coluna_banco -> valor (soma anual).
+
+    Para cada mapeamento em RREO_A03_CONTA_MAP, soma os valores de todos
+    os periodos (bimestres) para a mesma conta, retornando o total anual.
+    Usa normalizacao ASCII para lidar com acentos da API SICONFI.
+    """
+    import unicodedata
+
+    def _strip_accents(s: str) -> str:
+        """Remove acentos de uma string (NFKD decomposition + strip)."""
+        return "".join(
+            c for c in unicodedata.normalize("NFKD", s)
+            if unicodedata.category(c) != "Mn"
+        )
+
+    resultado: dict[str, float | None] = {col: None for col in ARREC_DB_COLUMNS}
+
+    for texto_conta, coluna_banco in RREO_A03_CONTA_MAP:
+        texto_lower = _strip_accents(texto_conta).lower()
+        total: float = 0.0
+        encontrado = False
+        for item in itens:
+            conta = _strip_accents(str(item.get("conta", ""))).lower()
+            if texto_lower in conta:
+                valor = item.get("valor")
+                if valor is not None:
+                    try:
+                        total += float(valor)
+                        encontrado = True
+                    except (ValueError, TypeError):
+                        continue
+        if encontrado and resultado[coluna_banco] is None:
+            resultado[coluna_banco] = total
+
+    return resultado
+
+
+def upsert_arrecadacao(
+    cur: psycopg2.extensions.cursor,
+    municipio_id: int,
+    exercicio: int,
+    dados: dict[str, float | None],
+    dry_run: bool = False,
+) -> None:
+    """Upsert de dados de arrecadacao de impostos no banco."""
+    if dry_run:
+        return
+
+    colunas_str = ", ".join(ARREC_DB_COLUMNS + ["arrec_fonte_rreo", "arrec_atualizado_em"])
+    placeholders = ", ".join(["%s"] * (len(ARREC_DB_COLUMNS) + 2))
+    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in ARREC_DB_COLUMNS)
+    update_str += ", arrec_fonte_rreo = EXCLUDED.arrec_fonte_rreo"
+    update_str += ", arrec_atualizado_em = EXCLUDED.arrec_atualizado_em"
+
+    valores: list[float | None | str] = [dados.get(c) for c in ARREC_DB_COLUMNS]
+    valores.append("SICONFI/RREO-A03")
+    valores.append(datetime.now(UTC))
+
+    cur.execute(
+        f"""
+        INSERT INTO municipios_financeiro
+            (municipio_id, exercicio, {colunas_str})
+        VALUES (%s, %s, {placeholders})
+        ON CONFLICT (municipio_id, exercicio) DO UPDATE SET
+            {update_str}
+        """,
+        (municipio_id, exercicio, *valores),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Enriquecer municipios com dados financeiros SICONFI (DCA)",
+        description="Enriquecer municipios com dados financeiros SICONFI (DCA + RREO)",
     )
     _ = parser.add_argument("--dry-run", action="store_true", help="Mostrar sem escrever no DB")
     _ = parser.add_argument("--uf", type=str, default="", help="UF especifica (vazio=todas)")
@@ -224,6 +377,10 @@ def main() -> None:
     _ = parser.add_argument(
         "--ano", type=int, default=0,
         help="Exercicio (0=ano mais recente disponivel)",
+    )
+    _ = parser.add_argument(
+        "--rreo", action="store_true",
+        help="Tambem buscar RREO Anexo 03 (arrecadacao de impostos por municipio)",
     )
     args: _SiconfiArgs = parser.parse_args(namespace=_SiconfiArgs())
 
@@ -329,14 +486,102 @@ def main() -> None:
     if not args.dry_run:
         conn.commit()
 
+    elapsed_dca = time.time() - inicio
+    print(f"\nDCA concluido em {elapsed_dca:.1f}s")
+    if args.dry_run:
+        print(f"  Municipios DCA: {len(municipios)} (dry-run, sem escrita)")
+    else:
+        print(f"  Atualizados DCA: {total_atualizados} | Sem dados: {total_sem_dados}")
+
+    # ========================================================================
+    # FASE 2 — RREO Anexo 03: Arrecadacao de Impostos
+    # ========================================================================
+    if not args.rreo:
+        print("\n[INFO] Use --rreo para buscar arrecadacao de impostos (RREO Anexo 03)")
+        conn.close()
+        return
+
+    print(f"\n{'='*60}")
+    print("FASE 2: RREO Anexo 03 — Arrecadacao de Impostos")
+    print(f"{'='*60}")
+
+    # Buscar municipios que ja tem financeiro DCA mas sem dados RREO
+    uf_filtro_rreo: str = args.uf.upper()
+    where_rreo = ""
+    params_rreo: list[str | int] = []
+    if uf_filtro_rreo:
+        where_rreo = " AND m.uf = %s"
+        params_rreo.append(uf_filtro_rreo)
+
+    cur.execute(
+        f"""
+        SELECT m.municipio_id, m.nome, m.uf, mf.exercicio
+        FROM municipios_financeiro mf
+        JOIN municipios_ibge m ON mf.municipio_id = m.municipio_id
+        WHERE mf.arrec_fonte_rreo IS NULL {where_rreo}
+        ORDER BY m.uf, m.nome
+        """,
+        params_rreo,
+    )
+    mun_rreo: list[tuple[int, str, str, int]] = cur.fetchall()
+    if args.limit > 0:
+        mun_rreo = mun_rreo[: args.limit]
+
+    print(f"Municipios para RREO: {len(mun_rreo)}")
+    if args.dry_run:
+        print("  [DRY-RUN] Nenhum dado sera escrito no banco")
+
+    total_rreo_ok = 0
+    total_rreo_vazio = 0
+    inicio_rreo = time.time()
+
+    for i, (mun_id, nome, uf, ano) in enumerate(mun_rreo):
+        itens_rreo = buscar_rreo_a03(mun_id, ano)
+        dados_rreo = parse_rreo_a03_itens(itens_rreo) if itens_rreo else {}
+        tem_dados_rreo = any(v is not None for v in dados_rreo.values())
+
+        if args.dry_run:
+            campos = sum(1 for v in dados_rreo.values() if v is not None)
+            status = "\u2713" if tem_dados_rreo else "\u2717"
+            # Mostrar impostos principais
+            impostos = [
+                f"IPTU={dados_rreo.get('arrec_iptu') or 0:,.0f}",
+                f"ISS={dados_rreo.get('arrec_iss') or 0:,.0f}",
+                f"ICMS={dados_rreo.get('arrec_cota_icms') or 0:,.0f}",
+                f"FPM={dados_rreo.get('arrec_cota_fpm') or 0:,.0f}",
+            ]
+            msg = (
+                f"  {status} {mun_id} - {nome} ({uf}) [{ano}]"
+                + f" | {campos} campos | {', '.join(impostos)}"
+            )
+            print(msg)
+        elif tem_dados_rreo:
+            upsert_arrecadacao(cur, mun_id, ano, dados_rreo)
+            total_rreo_ok += 1
+        else:
+            total_rreo_vazio += 1
+
+        # Rate limit (1 req/s — SICONFI e rigoroso)
+        if i < len(mun_rreo) - 1:
+            time.sleep(1.0)
+
+        # Progresso a cada 20 municipios
+        if (i + 1) % 20 == 0:
+            elapsed = time.time() - inicio_rreo
+            rate = (i + 1) / elapsed if elapsed > 0 else 0
+            print(f"  ... {i + 1}/{len(mun_rreo)} ({rate:.1f} mun/s)")
+
+    if not args.dry_run:
+        conn.commit()
+
     conn.close()
 
-    elapsed = time.time() - inicio
-    print(f"\nConcluido em {elapsed:.1f}s")
+    elapsed_rreo = time.time() - inicio_rreo
+    print(f"\nRREO concluido em {elapsed_rreo:.1f}s")
     if args.dry_run:
-        print(f"  Municipios: {len(municipios)} (dry-run, sem escrita)")
+        print(f"  Municipios RREO: {len(mun_rreo)} (dry-run, sem escrita)")
     else:
-        print(f"  Atualizados: {total_atualizados} | Sem dados: {total_sem_dados}")
+        print(f"  Atualizados RREO: {total_rreo_ok} | Sem dados: {total_rreo_vazio}")
 
 
 if __name__ == "__main__":

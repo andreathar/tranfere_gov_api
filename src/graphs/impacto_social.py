@@ -44,19 +44,17 @@ def chart_impacto_saude(regiao_filter: str = "TODOS") -> go.Figure:
             m.nome AS municipio,
             m.uf,
             COALESCE(NULLIF(m.regiao, ''), 'Outros') AS regiao,
-            COALESCE(ia.populacao, 0) AS populacao,
+            COALESCE(m.populacao, 0) AS populacao,
             COALESCE(sm.total_leitos, 0) AS total_leitos,
             COALESCE(SUM(v.valor_total), 0) AS total_emendas,
             COUNT(DISTINCT v.codigo_emenda) AS qtd_emendas
         FROM v_emendas_unificadas v
-        JOIN beneficiarios b ON v.beneficiario_nome = b.nome
-        JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
-        JOIN municipios_ibge m ON bm.municipio_id = m.municipio_id
+        JOIN municipios_ibge m ON v.beneficiario_ibge = m.municipio_id
         LEFT JOIN saude_municipios sm ON m.municipio_id = sm.municipio_id
-        LEFT JOIN ibge_agregados ia ON m.municipio_id = ia.municipio_id
         WHERE (%s = 'TODOS' OR m.regiao = %s)
-          AND COALESCE(ia.populacao, 0) > 0
-        GROUP BY m.nome, m.uf, m.regiao, ia.populacao, sm.total_leitos
+          AND v.beneficiario_ibge IS NOT NULL
+          AND COALESCE(m.populacao, 0) > 0
+        GROUP BY m.nome, m.uf, m.regiao, m.populacao, sm.total_leitos
         HAVING COALESCE(SUM(v.valor_total), 0) > 0
         ORDER BY total_emendas DESC
         LIMIT 120;

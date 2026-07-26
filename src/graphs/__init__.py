@@ -29,6 +29,7 @@ import src.graphs.impacto_social    # noqa: F401, E501
 import src.graphs.analitico         # noqa: F401, E501
 import src.graphs.hierarquico       # noqa: F401, E501
 import src.graphs.prefeitos         # noqa: F401, E501
+import src.graphs.economico         # noqa: F401, E501
 
 __all__ = [
     "CHART_REGISTRY",

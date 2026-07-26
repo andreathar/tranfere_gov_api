@@ -1,0 +1,95 @@
+NOTA TÉCNICA
+
+ASSUNTO: Análise de Planos de Ação Impedidos — MARCOS PEREIRA
+DATA: Brasília, 25 de julho de 2026.
+ÓRGÃO: Secretaria de Planejamento
+
+1. INTRODUÇÃO
+
+A presente nota técnica tem por objetivo analisar a situação dos Planos de Ação no âmbito do Programa de Transferências Especiais (Programa 25) do sistema Transferegov, com foco nos planos que apresentam situação de impedimento ou rejeição.
+
+2. ANÁLISE
+
+2.1 Panorama Geral
+
+O total de planos de ação registrados é de 9.598,
+abrangendo 470 parlamentares
+e 3.981 beneficiários.
+O valor total dos planos é R$ 6.779.708.728,64.
+
+A distribuição por situação é a seguinte:
+
+  • Aprovados:          0
+  • Em Execução:         0
+  • Concluídos:          0
+  • Impedidos:           970
+  • Reprovados:          0
+  • Cancelados:          0
+
+2.2 Planos de MARCOS PEREIRA
+
+Foram encontrados 25 planos de ação para o(a) parlamentar MARCOS PEREIRA.
+
+  • 09032026-090210 — 501 - Fomento aos Eventos Turísticos - Ministério do Turismo
+    Situação: CIENTE | Valor: R$ 1.990.000,00
+
+  • 09032026-096618 — 663 - Pavimentação: Adequação De Vias, Pontes, Travessias e Obras de Artes Especiais em Área Urbana - Ministério das Cidades
+    Situação: CIENTE | Valor: R$ 995.000,00
+
+  • 09032026-096601 — 663 - Pavimentação: Adequação De Vias, Pontes, Travessias e Obras de Artes Especiais em Área Urbana - Ministério das Cidades
+    Situação: CIENTE | Valor: R$ 995.000,00
+
+  • 09032026-096615 — 663 - Pavimentação: Adequação De Vias, Pontes, Travessias e Obras de Artes Especiais em Área Urbana - Ministério das Cidades
+    Situação: CIENTE | Valor: R$ 995.000,00
+
+  • 09032026-090212 — 795 - Reforma de Pré-Escola (Capital) - Fundo Nacional de Desenvolvimento da Educação
+    Situação: CIENTE | Valor: R$ 597.000,00
+
+  • 09032026-090209 — 793 - Reforma de Creche (Capital) - Fundo Nacional de Desenvolvimento da Educação
+    Situação: IMPEDIDO | Valor: R$ 597.000,00
+    Motivo: Impedimento por falta de complementação/ajuste do plano de trabalho no prazo previsto no COMUNICADO nº 16/2026 – ALTERAÇÃO DOS PRAZOS ESTABELECIDOS PELO COMUNICADO Nº 15/2026, QUE ALTEROU O COMUNICADO Nº 4/2026 - CRONOGRAMA_EMENDAS INDIVIDUAIS RP6_TRANSFERÊNCIA ESPECIAL- ORÇAMENTO 2026 - 1º CICLO.
+
+  • 09032026-096619 — 663 - Pavimentação: Adequação De Vias, Pontes, Travessias e Obras de Artes Especiais em Área Urbana - Ministério das Cidades
+    Situação: IMPEDIDO | Valor: R$ 547.250,00
+    Motivo: Impedimento por falta de complementação/ajuste do plano de trabalho no prazo previsto no COMUNICADO nº 16/2026 – ALTERAÇÃO DOS PRAZOS ESTABELECIDOS PELO COMUNICADO Nº 15/2026, QUE ALTEROU O COMUNICADO Nº 4/2026 - CRONOGRAMA_EMENDAS INDIVIDUAIS RP6_TRANSFERÊNCIA ESPECIAL- ORÇAMENTO 2026 - 1º CICLO.
+
+  • 09032026-096604 — 182 - Aquisição de Máquinas e Equipamentos (GND 4) - Ministério da Agricultura e Pecuária
+    Situação: CIENTE | Valor: R$ 547.250,00
+
+  • 09032026-096603 — 662 - Pavimentação Urbana - Ministério das Cidades
+    Situação: CIENTE | Valor: R$ 497.500,00
+
+  • 09032026-096606 — 358 - Construção, Reforma Ou Ampliação De Espaços De Esporte E Lazer  - Ministério do Esporte
+    Situação: IMPEDIDO | Valor: R$ 497.500,00
+    Motivo: Impedimento por falta de complementação/ajuste do plano de trabalho no prazo previsto no COMUNICADO nº 16/2026 – ALTERAÇÃO DOS PRAZOS ESTABELECIDOS PELO COMUNICADO Nº 15/2026, QUE ALTEROU O COMUNICADO Nº 4/2026 - CRONOGRAMA_EMENDAS INDIVIDUAIS RP6_TRANSFERÊNCIA ESPECIAL- ORÇAMENTO 2026 - 1º CICLO.
+
+  (... e mais 15 planos)
+
+2.3 Concentração de Impedimentos por UF
+
+  • MA: 25 planos — R$ 27.964.477,99
+  • MG: 48 planos — R$ 26.566.500,00
+  • AL: 2 planos — R$ 25.372.500,00
+  • SP: 3 planos — R$ 20.697.990,00
+  • SC: 22 planos — R$ 19.651.250,00
+  • AM: 2 planos — R$ 19.030.372,99
+  • BA: 18 planos — R$ 18.359.746,97
+  • AC: 6 planos — R$ 14.925.000,00
+  • AP: 8 planos — R$ 13.034.500,00
+  • RJ: 1 planos — R$ 9.560.161,99
+
+3. CONCLUSÃO E RECOMENDAÇÕES
+
+Diante dos dados apresentados, recomenda-se:
+
+  I — Priorizar a análise dos planos com situação IMPEDIDO por Restrição Técnica, verificando a possibilidade de regularização;
+  II — Articular com os parlamentares autores para atualização dos planos de ação que estejam com informações desatualizadas;
+  III — Acompanhar a evolução dos planos em Execução para garantir a regularidade da aplicação dos recursos;
+  IV — Disponibilizar relatório atualizado mensalmente para cias de controle e órgãos gestores.
+
+Brasília, 25 de julho de 2026.
+
+
+________________________________________
+Secretário de Planejamento
+Secretaria de Planejamento

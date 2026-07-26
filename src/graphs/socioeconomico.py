@@ -47,40 +47,102 @@ def chart_socioeconomico_idhm() -> go.Figure:
 
 @register_chart(
     id="investimento_per_capita_idhm",
-    title="6. Repasse Per Capita (R$/hab) vs. IDHM Municipal",
-    description="Análise demográfica de equidade fiscal: mede a proporção do investimento por habitante em relação ao IDHM do município.",
+    title="6. Repasse Per Capita (R$/hab) vs. Dependência Fiscal Municipal",
+    description=(
+        "Scatter plot cruzando o repasse per capita de emendas parlamentares "
+        "com o índice de dependência fiscal do município (% receitas provenientes "
+        "de transferências). Tamanho da bolha = população."
+    ),
     category="Socioeconômico",
-    controls=[ControlSpec(id="regiao_filter", label="Filtrar por Região", options=["TODOS", "Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"], default="TODOS")],
+    controls=[ControlSpec(
+        id="regiao_filter",
+        label="Filtrar por Região",
+        options=["TODOS", "Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"],
+        default="TODOS",
+    )],
 )
 def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
     query = """
         SELECT
-            municipio_nome,
-            COALESCE(NULLIF(ibge_regiao, ''), 'Outros') as regiao,
-            ibge_populacao, ibge_idhm,
-            SUM(valor_total) as valor_total,
-            ROUND(SUM(valor_total) / NULLIF(ibge_populacao, 0), 2) as valor_per_capita
-        FROM v_planos_enriquecidos
-        WHERE ibge_populacao IS NOT NULL AND ibge_populacao > 0
-          AND (%s = 'TODOS' OR ibge_regiao = %s)
-        GROUP BY municipio_nome, regiao, ibge_populacao, ibge_idhm
-        HAVING SUM(valor_total) > 0
-        ORDER BY valor_per_capita DESC LIMIT 40;
+            m.nome AS municipio,
+            m.uf,
+            COALESCE(NULLIF(m.regiao, ''), 'Outros') AS regiao,
+            m.populacao,
+            COALESCE(SUM(v.valor_total), 0)           AS total_emendas,
+            ROUND(COALESCE(SUM(v.valor_total), 0) / NULLIF(m.populacao, 0), 2) AS valor_per_capita,
+            mf.receitas_correntes,
+            mf.receitas_transferencias,
+            ROUND(
+                100.0 * mf.receitas_transferencias / NULLIF(mf.receitas_correntes, 0),
+                1
+            ) AS pct_dependencia
+        FROM v_emendas_unificadas v
+        JOIN municipios_ibge m ON v.beneficiario_ibge = m.municipio_id
+        LEFT JOIN municipios_financeiro mf ON m.municipio_id = mf.municipio_id
+        WHERE v.beneficiario_ibge IS NOT NULL
+          AND m.populacao > 0
+          AND mf.receitas_correntes > 0
+          AND (%s = 'TODOS' OR m.regiao = %s)
+        GROUP BY m.nome, m.uf, m.regiao, m.populacao,
+                 mf.receitas_correntes, mf.receitas_transferencias
+        HAVING COALESCE(SUM(v.valor_total), 0) > 0
+          AND mf.receitas_transferencias > 0
+        ORDER BY valor_per_capita DESC LIMIT 80;
     """
     df = query_df(query, (regiao_filter, regiao_filter))
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Sem dados demográficos suficientes para esta região", showarrow=False, font=dict(size=16, color="#64748b"))
-        return aplicar_tema(fig, "6. Repasse Per Capita (R$/hab) vs. IDHM Municipal")
+        fig.add_annotation(
+            text="Sem dados fiscais municipais para esta região",
+            showarrow=False, font=dict(size=16, color="#64748b"),
+        )
+        return aplicar_tema(fig, "6. Repasse Per Capita vs. Dependência Fiscal")
 
     df["regiao"] = df["regiao"].astype(str).fillna("Não Informado")
+    df["populacao"] = df["populacao"].clip(lower=1)
+    df["pct_dependencia"] = pd.to_numeric(df["pct_dependencia"], errors="coerce").fillna(0)
+
     fig = px.scatter(
-        df, x="ibge_idhm", y="valor_per_capita", size="valor_total",
-        hover_name="municipio_nome", hover_data=["ibge_populacao", "valor_total"],
-        labels={"ibge_idhm": "IDHM (Índice de Desenv. Humano)", "valor_per_capita": "Valor Per Capita (R$/hab)", "regiao": "Região"},
+        df,
+        x="pct_dependencia",
+        y="valor_per_capita",
+        size="populacao",
+        color="regiao",
+        hover_name="municipio",
+        hover_data={
+            "uf": True,
+            "populacao": ":,.0f",
+            "total_emendas": ":,.0f",
+            "pct_dependencia": ":.1f",
+            "valor_per_capita": ":,.2f",
+            "regiao": False,
+        },
+        size_max=45,
+        color_discrete_sequence=px.colors.qualitative.Set2,
+        labels={
+            "pct_dependencia": "Dependência Fiscal (% receitas de transferências)",
+            "valor_per_capita": "Emenda Per Capita (R$/hab)",
+            "regiao": "Região",
+            "populacao": "População",
+        },
     )
-    return aplicar_tema(fig, "6. Repasse Per Capita (R$/hab) vs. IDHM Municipal")
+
+    # Reference line at 50% dependency
+    fig.add_vline(
+        x=50,
+        line_dash="dash",
+        line_color="#f59e0b",
+        line_width=1.5,
+    )
+    fig.add_annotation(
+        x=50, y=0.97, xref="x", yref="paper",
+        text="50% dependência", showarrow=False,
+        font=dict(size=10, color="#f59e0b"), xanchor="left",
+    )
+
+    return aplicar_tema(fig, "6. Repasse Per Capita vs. Dependência Fiscal Municipal", 500)
+
 
 
 @register_chart(
@@ -98,13 +160,13 @@ def chart_vulnerabilidade_social(uf_filter: str = "TODOS") -> go.Figure:
             mf.receitas_correntes, mf.receitas_transferencias,
             sm.total_leitos, em.ideb_initial_years
         FROM v_emendas_unificadas v
-        JOIN beneficiarios b ON v.beneficiario_nome = b.nome
-        JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
-        JOIN municipios_ibge m ON bm.municipio_id = m.municipio_id
+        JOIN municipios_ibge m ON v.beneficiario_ibge = m.municipio_id
         LEFT JOIN municipios_financeiro mf ON m.municipio_id = mf.municipio_id
         LEFT JOIN saude_municipios sm ON m.municipio_id = sm.municipio_id
         LEFT JOIN educacao_municipios em ON m.municipio_id = em.municipio_id
-        WHERE (%s = 'TODOS' OR m.uf = %s) AND mf.receitas_correntes > 0
+        WHERE v.beneficiario_ibge IS NOT NULL
+          AND mf.receitas_correntes > 0
+          AND (%s = 'TODOS' OR m.uf = %s)
         GROUP BY m.nome, m.uf, m.populacao, mf.receitas_correntes,
                  mf.receitas_transferencias, sm.total_leitos, em.ideb_initial_years
         HAVING COALESCE(SUM(v.valor_total), 0) > 0

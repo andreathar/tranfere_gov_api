@@ -51,22 +51,20 @@ def _load_brazil_geojson() -> dict:
     ],
 )
 def chart_choropleth_emendas(uf_filter: str = "TODOS") -> go.Figure:
+    # Aggregate to UF level for choropleth (municipality lat/lon not in DB)
     query = """
         SELECT
-            m.municipio_id,
-            m.nome AS municipio,
             m.uf,
             COALESCE(SUM(v.valor_total), 0) AS valor_total,
-            COUNT(v.codigo_emenda) AS qtd_emendas
+            COUNT(v.codigo_emenda)           AS qtd_emendas,
+            COUNT(DISTINCT m.municipio_id)   AS qtd_municipios
         FROM v_emendas_unificadas v
-        JOIN beneficiarios b ON v.beneficiario_nome = b.nome
-        JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
-        JOIN municipios_ibge m ON bm.municipio_id = m.municipio_id
-        WHERE (%s = 'TODOS' OR m.uf = %s)
-        GROUP BY m.municipio_id, m.nome, m.uf
+        JOIN municipios_ibge m ON v.beneficiario_ibge = m.municipio_id
+        WHERE v.beneficiario_ibge IS NOT NULL
+          AND (%s = 'TODOS' OR m.uf = %s)
+        GROUP BY m.uf
         HAVING COALESCE(SUM(v.valor_total), 0) > 0
-        ORDER BY valor_total DESC
-        LIMIT 200;
+        ORDER BY valor_total DESC;
     """
     df = query_df(query, (uf_filter, uf_filter))
 
@@ -81,51 +79,57 @@ def chart_choropleth_emendas(uf_filter: str = "TODOS") -> go.Figure:
             fig, "18. Mapa Coroplético: Emendas Parlamentares por Município",
         )
 
-    df["municipio_label"] = df["municipio"] + " (" + df["uf"] + ")"
-    df["valor_fmt"] = df["valor_total"].apply(
-        lambda x: f"R$ {x:,.0f}".replace(",", "."),
-    )
+    df["uf"] = df["uf"].str.strip().str.upper()
+    df["valor_fmt"] = df["valor_total"].apply(lambda x: f"R$ {x:,.0f}".replace(",", "."))
 
-    fig = px.scatter_geo(
-        df,
-        lat=[0] * len(df),
-        lon=[0] * len(df),
-        hover_name="municipio_label",
-        size="valor_total",
-        color="valor_total",
-        color_continuous_scale="YlOrRd",
-        size_max=40,
-        labels={
-            "valor_total": "Valor Total (R$)",
-            "qtd_emendas": "Qtd. Emendas",
-        },
-    )
+    geojson = _load_brazil_geojson()
+    if geojson:
+        fig = px.choropleth(
+            df,
+            geojson=geojson,
+            locations="uf",
+            featureidkey="properties.sigla",
+            color="valor_total",
+            color_continuous_scale="Blues",
+            hover_name="uf",
+            hover_data={
+                "valor_total": ":,.0f",
+                "qtd_emendas": ":,",
+                "qtd_municipios": ":,",
+            },
+            labels={
+                "valor_total": "Valor Total (R$)",
+                "qtd_emendas": "Qtd. Emendas",
+                "qtd_municipios": "Municípios Beneficiados",
+            },
+        )
+        fig.update_geos(fitbounds="locations", visible=False)
+    else:
+        # Fallback: bar chart by UF if GeoJSON not available
+        fig = px.bar(
+            df.sort_values("valor_total", ascending=True),
+            x="valor_total", y="uf",
+            orientation="h",
+            color="valor_total",
+            color_continuous_scale="Blues",
+            labels={"valor_total": "Valor Total (R$)", "uf": "Estado"},
+        )
 
-    fig.update_geos(
-        scope="south america",
-        center=dict(lat=-14.2, lon=-51.9),
-        projection_scale=3.5,
-        showlakes=True,
-        lakecolor="rgb(30, 41, 59)",
-        bgcolor=THEME_CARD_BG,
-        landcolor=THEME_GRID,
-        countrycolor="#475569",
-    )
-
-    fig.update_traces(
-        hovertemplate=(
-            "<b>%{hovertext}</b><br>"
-            "Valor: R$ %{customdata[0]:,.0f}<br>"
-            "Emendas: %{customdata[1]}<extra></extra>"
+    fig.update_layout(
+        paper_bgcolor=THEME_CARD_BG,
+        geo=dict(bgcolor=THEME_CARD_BG),
+        coloraxis_colorbar=dict(
+            title="Valor (R$)",
+            tickfont=dict(color="#f8fafc"),
+            title_font=dict(color="#f8fafc"),
         ),
-        customdata=df[["valor_total", "qtd_emendas"]].values,
     )
 
     return aplicar_tema(
-        fig,
-        "18. Mapa Coroplético: Emendas Parlamentares por Município",
-        altura=600,
+        fig, "18. Mapa Coroplético: Emendas Parlamentares por Estado (UF)",
     )
+
+
 
 
 # ---------------------------------------------------------------------------
