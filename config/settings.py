@@ -45,18 +45,18 @@ HEADERS = {
 #   &planoTrabalhoSituacao=ENVIADO_PARA_ANALISE&politicasPublicas=4
 #   &objetoExecucao=1&objetoExecucaoAno=2026&pageSize=100&pageNumber=1
 API_PARAMS_KNOWN = [
-    "uf",                        # UF do beneficiário (ex: AL, SP, PI)
-    "beneficiario",              # ID do beneficiário
-    "parlamentar",               # ID do parlamentar autor
-    "emenda",                    # ID da emenda
-    "programaId",                # ID do programa (25 = Transferências Especiais)
-    "planoAcaoSituacao",         # Situação do plano (underscores, sem acento)
-    "planoTrabalhoSituacao",     # Situação do plano de trabalho
-    "politicasPublicas",         # Código da política pública
-    "objetoExecucao",            # Código do objeto de execução
-    "objetoExecucaoAno",         # Ano exercício
-    "pageSize",                  # Itens por página (máx: 100)
-    "pageNumber",                # Página atual (1-indexed)
+    "uf",  # UF do beneficiário (ex: AL, SP, PI)
+    "beneficiario",  # ID do beneficiário
+    "parlamentar",  # ID do parlamentar autor
+    "emenda",  # ID da emenda
+    "programaId",  # ID do programa (25 = Transferências Especiais)
+    "planoAcaoSituacao",  # Situação do plano (underscores, sem acento)
+    "planoTrabalhoSituacao",  # Situação do plano de trabalho
+    "politicasPublicas",  # Código da política pública
+    "objetoExecucao",  # Código do objeto de execução
+    "objetoExecucaoAno",  # Ano exercício
+    "pageSize",  # Itens por página (máx: 100)
+    "pageNumber",  # Página atual (1-indexed)
 ]
 
 # Situações de plano de ação (valores reais da API, com underscores)
@@ -76,13 +76,19 @@ SITUACOES_TRANSFEREGOV = {
 }
 
 # Situações que indicam plano negado/perdido
-SITUACOES_NEGADAS = {"REPROVADO", "IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO", "CANCELADO", "NAO_CUMPROU"}
+SITUACOES_NEGADAS = {
+    "REPROVADO",
+    "IMPEDIDO",
+    "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
+    "CANCELADO",
+    "NAO_CUMPROU",
+}
 
 # ---------------------------------------------------------------------------
 DEFAULT_PAGE_SIZE = 100
-DEFAULT_TIMEOUT = 60       # segundos
+DEFAULT_TIMEOUT = 60  # segundos
 MAX_RETRIES = 3
-RETRY_BACKOFF = 2.0        # base do backoff exponencial
+RETRY_BACKOFF = 2.0  # base do backoff exponencial
 SLEEP_BETWEEN_PAGES = 1.0  # segundos — cortesia ao servidor gov
 
 SITUACOES_CONHECIDAS = {
@@ -126,6 +132,7 @@ ENRICH_BATCH_SIZE = int(os.getenv("ENRICH_BATCH_SIZE", "50"))
 BRASILAPI_BASE = "https://brasilapi.com.br/api"
 IBGE_API_BASE = "https://servicodados.ibge.gov.br/api/v1"
 CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"
+SENADO_API_BASE = "https://legis.senado.leg.br/dadosabertos"
 
 # ---------------------------------------------------------------------------
 # LocalAI — Modelos locais via API compatível OpenAI

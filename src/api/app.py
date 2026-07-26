@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routes import deputados, prefeitos, analytics, auditoria, diario, compras
+from src.api.routes import analytics, auditoria, compras, deputados, diario, prefeitos
 
 # ---------------------------------------------------------------------------
 # App
@@ -27,12 +27,13 @@ from src.api.routes import deputados, prefeitos, analytics, auditoria, diario, c
 app = FastAPI(
     title="TransfereGov — Painel de Inteligência Parlamentar & Municipal",
     description="API REST para consulta de deputados, prefeitos, emendas pix, despesas CEAP, "
-                "comissões, votações e proposições legislativas.",
+    "comissões, votações e proposições legislativas.",
     version="1.0.0",
 )
 
 # CORS — configurable via env var; permissive only in dev
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(","
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(
+    ","
 )
 allow_all = "*" in CORS_ORIGINS
 

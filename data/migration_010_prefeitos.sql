@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_prefeitos_uf ON prefeitos_dados (uf);
 -- 3. View Canônica Enriquecida de Prefeitos e Gestão Municipal
 DROP VIEW IF EXISTS v_prefeitos_completo CASCADE;
 CREATE VIEW v_prefeitos_completo AS
-SELECT 
+SELECT
     p.municipio_id,
     p.municipio_nome,
     p.uf,
@@ -71,7 +71,7 @@ LEFT JOIN (
     ORDER BY municipio_id, exercicio DESC
 ) mf ON p.municipio_id = mf.municipio_id
 LEFT JOIN (
-    SELECT 
+    SELECT
         bm.municipio_id,
         COUNT(pa.id) AS total_emendas,
         SUM(pa.valor_total) AS valor_total_emendas,

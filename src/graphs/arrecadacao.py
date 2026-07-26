@@ -14,6 +14,7 @@ from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
 # Chart 32 — Arrecadação de Impostos: Top 20 Municípios
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="arrecadacao_impostos_municipios",
     title="32. Arrecadação de Impostos: Top 20 Municípios",
@@ -32,7 +33,9 @@ from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
     ],
 )
 def chart_arrecadacao_impostos_municipios(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -71,12 +74,14 @@ def chart_arrecadacao_impostos_municipios(uf_filter: str = "TODOS") -> go.Figure
         var_name="Imposto",
         value_name="Valor (R$)",
     )
-    df_melt["Imposto"] = df_melt["Imposto"].map({
-        "iptu": "IPTU",
-        "iss": "ISS",
-        "cota_icms": "Cota-Parte ICMS",
-        "cota_fpm": "Cota-Parte FPM",
-    })
+    df_melt["Imposto"] = df_melt["Imposto"].map(
+        {
+            "iptu": "IPTU",
+            "iss": "ISS",
+            "cota_icms": "Cota-Parte ICMS",
+            "cota_fpm": "Cota-Parte FPM",
+        }
+    )
 
     cores_impostos = {
         "IPTU": "#f59e0b",
@@ -102,6 +107,7 @@ def chart_arrecadacao_impostos_municipios(uf_filter: str = "TODOS") -> go.Figure
 # Chart 33 — Dependência de Transferências vs. Impostos Próprios
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="arrecadacao_dependencia_transferencias",
     title="33. Dependência de Transferências vs. Impostos Próprios",
@@ -121,7 +127,9 @@ def chart_arrecadacao_impostos_municipios(uf_filter: str = "TODOS") -> go.Figure
     ],
 )
 def chart_arrecadacao_dependencia(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -154,6 +162,7 @@ def chart_arrecadacao_dependencia(uf_filter: str = "TODOS") -> go.Figure:
 
     # Bubble size: log of receitas_correntes for visual balance
     import numpy as np
+
     df["tamanho"] = np.log10(df["receitas_correntes"].clip(lower=1)) * 3
 
     fig = px.scatter(
@@ -183,14 +192,22 @@ def chart_arrecadacao_dependencia(uf_filter: str = "TODOS") -> go.Figure:
 
     # Quadrant labels
     fig.add_annotation(
-        x=75, y=5, text="<b>Autônomo</b><br>Alta arrecadação<br>Baixa dependência",
-        showarrow=False, font=dict(size=10, color="#22c55e"),
-        bgcolor="rgba(34,197,94,0.1)", borderwidth=0,
+        x=75,
+        y=5,
+        text="<b>Autônomo</b><br>Alta arrecadação<br>Baixa dependência",
+        showarrow=False,
+        font=dict(size=10, color="#22c55e"),
+        bgcolor="rgba(34,197,94,0.1)",
+        borderwidth=0,
     )
     fig.add_annotation(
-        x=25, y=95, text="<b>Dependente</b><br>Baixa arrecadação<br>Alta dependência",
-        showarrow=False, font=dict(size=10, color="#ef4444"),
-        bgcolor="rgba(239,68,68,0.1)", borderwidth=0,
+        x=25,
+        y=95,
+        text="<b>Dependente</b><br>Baixa arrecadação<br>Alta dependência",
+        showarrow=False,
+        font=dict(size=10, color="#ef4444"),
+        bgcolor="rgba(239,68,68,0.1)",
+        borderwidth=0,
     )
 
     return aplicar_tema(
@@ -203,6 +220,7 @@ def chart_arrecadacao_dependencia(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 34 — Composição da Receita por UF (Stacked)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrecadacao_composicao_uf",
@@ -251,24 +269,30 @@ def chart_arrecadacao_composicao_uf() -> go.Figure:
 
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        x=df["uf"],
-        y=df["media_impostos_proprios"],
-        name="Impostos Próprios",
-        marker_color="#f59e0b",
-    ))
-    fig.add_trace(go.Bar(
-        x=df["uf"],
-        y=df["media_cotas_partes"],
-        name="Cotas-Partes (ICMS/IPVA/FPM)",
-        marker_color="#3b82f6",
-    ))
-    fig.add_trace(go.Bar(
-        x=df["uf"],
-        y=df["media_transferencias"],
-        name="Transferências",
-        marker_color="#10b981",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=df["uf"],
+            y=df["media_impostos_proprios"],
+            name="Impostos Próprios",
+            marker_color="#f59e0b",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=df["uf"],
+            y=df["media_cotas_partes"],
+            name="Cotas-Partes (ICMS/IPVA/FPM)",
+            marker_color="#3b82f6",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=df["uf"],
+            y=df["media_transferencias"],
+            name="Transferências",
+            marker_color="#10b981",
+        )
+    )
 
     fig.update_layout(barmode="stack")
     fig.update_yaxes(title_text="Receita Média por Município (R$)")
@@ -284,6 +308,7 @@ def chart_arrecadacao_composicao_uf() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 35 — Evolução da Arrecadação IPTU por UF (Temporal)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_evolucao_iptu_uf",
@@ -304,7 +329,9 @@ def chart_arrecadacao_composicao_uf() -> go.Figure:
     ],
 )
 def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -326,7 +353,8 @@ def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de IPTU disponíveis (execute siconfi --rreo)",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "35. Evolução da Arrecadação IPTU por UF")
 
@@ -334,12 +362,7 @@ def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
 
     if uf_filter == "TODOS":
         # Top 10 UFs by total IPTU
-        top_ufs = (
-            df.groupby("uf")["total_iptu"]
-            .sum()
-            .nlargest(10)
-            .index.tolist()
-        )
+        top_ufs = df.groupby("uf")["total_iptu"].sum().nlargest(10).index.tolist()
         df = df[df["uf"].isin(top_ufs)]
 
     cores = px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
@@ -347,24 +370,30 @@ def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
     fig = go.Figure()
     for i, uf in enumerate(sorted(df["uf"].unique())):
         df_uf = df[df["uf"] == uf].sort_values("exercicio")
-        fig.add_trace(go.Scatter(
-            x=df_uf["exercicio"],
-            y=df_uf["total_iptu"],
-            mode="lines+markers",
-            name=uf,
-            line=dict(color=cores[i % len(cores)], width=2),
-            marker=dict(size=6),
-            hovertemplate=(
-                f"<b>{uf}</b><br>"
-                "Exercício: %{x}<br>"
-                "IPTU arrecadado: R$ %{y:,.0f}<br>"
-                "<extra></extra>"
-            ),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df_uf["exercicio"],
+                y=df_uf["total_iptu"],
+                mode="lines+markers",
+                name=uf,
+                line=dict(color=cores[i % len(cores)], width=2),
+                marker=dict(size=6),
+                hovertemplate=(
+                    f"<b>{uf}</b><br>"
+                    "Exercício: %{x}<br>"
+                    "IPTU arrecadado: R$ %{y:,.0f}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
 
     fig.update_layout(
         xaxis=dict(title="Exercício", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
-        yaxis=dict(title="Arrecadação IPTU Total (R$)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        yaxis=dict(
+            title="Arrecadação IPTU Total (R$)",
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
+        ),
         legend=dict(font=dict(size=10)),
     )
     return aplicar_tema(fig, "35. Evolução da Arrecadação IPTU por UF", altura=500)
@@ -373,6 +402,7 @@ def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 36 — Impostos Próprios Per Capita por Município (Top 25)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_impostos_per_capita",
@@ -393,7 +423,9 @@ def chart_arrec_evolucao_iptu_uf(uf_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_arrec_impostos_per_capita(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -423,12 +455,14 @@ def chart_arrec_impostos_per_capita(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de arrecadação disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "36. Impostos Próprios Per Capita por Município")
 
     # Color by quartile
     import pandas as pd
+
     df["impostos_per_capita"] = pd.to_numeric(df["impostos_per_capita"], errors="coerce").fillna(0)
     quartis = df["impostos_per_capita"].quantile([0.25, 0.5, 0.75])
 
@@ -444,20 +478,18 @@ def chart_arrec_impostos_per_capita(uf_filter: str = "TODOS") -> go.Figure:
     df["cor"] = df["impostos_per_capita"].apply(_color)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["impostos_per_capita"],
-        y=df["municipio_uf"],
-        orientation="h",
-        marker_color=df["cor"],
-        text=df["impostos_per_capita"].apply(lambda x: f"R$ {x:,.2f}"),
-        textposition="outside",
-        textfont=dict(size=10, color=THEME_TEXT),
-        hovertemplate=(
-            "<b>%{y}</b><br>"
-            "Impostos per capita: R$ %{x:,.2f}<br>"
-            "<extra></extra>"
-        ),
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=df["impostos_per_capita"],
+            y=df["municipio_uf"],
+            orientation="h",
+            marker_color=df["cor"],
+            text=df["impostos_per_capita"].apply(lambda x: f"R$ {x:,.2f}"),
+            textposition="outside",
+            textfont=dict(size=10, color=THEME_TEXT),
+            hovertemplate=("<b>%{y}</b><br>Impostos per capita: R$ %{x:,.2f}<br><extra></extra>"),
+        )
+    )
 
     fig.update_layout(
         yaxis={"categoryorder": "total ascending"},
@@ -474,6 +506,7 @@ def chart_arrec_impostos_per_capita(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 37 — Receita Patrimonial vs Receita de Serviços (Scatter)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_patrimonial_vs_servicos",
@@ -494,7 +527,9 @@ def chart_arrec_impostos_per_capita(uf_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_arrec_patrimonial_vs_servicos(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -519,7 +554,8 @@ def chart_arrec_patrimonial_vs_servicos(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de receita patrimonial/serviços disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "37. Receita Patrimonial vs Receita de Serviços")
 
@@ -527,6 +563,7 @@ def chart_arrec_patrimonial_vs_servicos(uf_filter: str = "TODOS") -> go.Figure:
 
     # Ratio for color
     import pandas as pd
+
     df["receita_patrimonial"] = pd.to_numeric(df["receita_patrimonial"], errors="coerce").fillna(0)
     df["receita_servicos"] = pd.to_numeric(df["receita_servicos"], errors="coerce").fillna(0)
     df["ratio_pat_serv"] = np.where(
@@ -568,14 +605,16 @@ def chart_arrec_patrimonial_vs_servicos(uf_filter: str = "TODOS") -> go.Figure:
         df["receita_patrimonial"].max(),
         1,
     )
-    fig.add_trace(go.Scatter(
-        x=[0, max_val],
-        y=[0, max_val],
-        mode="lines",
-        name="Linha de igualdade",
-        line=dict(color="#475569", width=1, dash="dot"),
-        showlegend=True,
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=[0, max_val],
+            y=[0, max_val],
+            mode="lines",
+            name="Linha de igualdade",
+            line=dict(color="#475569", width=1, dash="dot"),
+            showlegend=True,
+        )
+    )
 
     return aplicar_tema(fig, "37. Receita Patrimonial vs Receita de Serviços", 550)
 
@@ -583,6 +622,7 @@ def chart_arrec_patrimonial_vs_servicos(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 38 — Heatmap: Arrecadação IPTU × ISS por UF
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_heatmap_iptu_iss_uf",
@@ -613,38 +653,43 @@ def chart_arrec_heatmap_iptu_iss_uf() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de IPTU/ISS disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "38. Heatmap: IPTU vs ISS por Estado")
 
-    fig = go.Figure(go.Heatmap(
-        z=[df["total_iptu"].tolist(), df["total_iss"].tolist()],
-        x=df["uf"].tolist(),
-        y=["IPTU (Propriedade)", "ISS (Serviços)"],
-        text=[
-            [f"R$ {v/1e9:.1f}bi" if v >= 1e9 else f"R$ {v/1e6:.0f}mi" for v in df["total_iptu"]],
-            [f"R$ {v/1e9:.1f}bi" if v >= 1e9 else f"R$ {v/1e6:.0f}mi" for v in df["total_iss"]],
-        ],
-        texttemplate="%{text}",
-        textfont=dict(size=11, color=THEME_TEXT),
-        colorscale=[
-            [0.0, "#0f172a"],
-            [0.3, "#1e3a5f"],
-            [0.6, "#3b82f6"],
-            [1.0, "#f59e0b"],
-        ],
-        hovertemplate=(
-            "<b>%{x}</b> — %{y}<br>"
-            "Arrecadação: R$ %{z:,.0f}<br>"
-            "<extra></extra>"
-        ),
-        showscale=True,
-        colorbar=dict(
-            title="Arrecadação (R$)",
-            title_font=dict(color=THEME_TEXT),
-            tickfont=dict(color=THEME_TEXT),
-        ),
-    ))
+    fig = go.Figure(
+        go.Heatmap(
+            z=[df["total_iptu"].tolist(), df["total_iss"].tolist()],
+            x=df["uf"].tolist(),
+            y=["IPTU (Propriedade)", "ISS (Serviços)"],
+            text=[
+                [
+                    f"R$ {v / 1e9:.1f}bi" if v >= 1e9 else f"R$ {v / 1e6:.0f}mi"
+                    for v in df["total_iptu"]
+                ],
+                [
+                    f"R$ {v / 1e9:.1f}bi" if v >= 1e9 else f"R$ {v / 1e6:.0f}mi"
+                    for v in df["total_iss"]
+                ],
+            ],
+            texttemplate="%{text}",
+            textfont=dict(size=11, color=THEME_TEXT),
+            colorscale=[
+                [0.0, "#0f172a"],
+                [0.3, "#1e3a5f"],
+                [0.6, "#3b82f6"],
+                [1.0, "#f59e0b"],
+            ],
+            hovertemplate=("<b>%{x}</b> — %{y}<br>Arrecadação: R$ %{z:,.0f}<br><extra></extra>"),
+            showscale=True,
+            colorbar=dict(
+                title="Arrecadação (R$)",
+                title_font=dict(color=THEME_TEXT),
+                tickfont=dict(color=THEME_TEXT),
+            ),
+        )
+    )
 
     fig.update_layout(
         xaxis=dict(title="Estado (UF)", tickfont=dict(color=THEME_TEXT)),
@@ -657,6 +702,7 @@ def chart_arrec_heatmap_iptu_iss_uf() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 39 — Decomposição: Composição Percentual dos Impostos por UF (Donut)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_composicao_percentual_impostos",
@@ -677,7 +723,9 @@ def chart_arrec_heatmap_iptu_iss_uf() -> go.Figure:
     ],
 )
 def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -708,16 +756,20 @@ def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.F
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de composição de impostos",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "39. Composição Percentual dos Impostos por UF")
 
     # Calcular totais e percentuais
     import pandas as pd
+
     for col in ["iptu", "iss", "itbi", "irrf", "cota_icms", "cota_ipva", "cota_fpm", "cota_itr"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    df["total"] = df[["iptu", "iss", "itbi", "irrf", "cota_icms", "cota_ipva", "cota_fpm", "cota_itr"]].sum(axis=1)
+    df["total"] = df[
+        ["iptu", "iss", "itbi", "irrf", "cota_icms", "cota_ipva", "cota_fpm", "cota_itr"]
+    ].sum(axis=1)
     df = df[df["total"] > 0]
 
     # Calcular percentuais
@@ -725,8 +777,14 @@ def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.F
         df[f"{col}_pct"] = 100.0 * df[col] / df["total"]
 
     cores = {
-        "IPTU": "#f59e0b", "ISS": "#3b82f6", "ITBI": "#06b6d4", "IRRF": "#8b5cf6",
-        "Cota ICMS": "#10b981", "Cota IPVA": "#ec4899", "Cota FPM": "#a855f7", "Cota ITR": "#64748b",
+        "IPTU": "#f59e0b",
+        "ISS": "#3b82f6",
+        "ITBI": "#06b6d4",
+        "IRRF": "#8b5cf6",
+        "Cota ICMS": "#10b981",
+        "Cota IPVA": "#ec4899",
+        "Cota FPM": "#a855f7",
+        "Cota ITR": "#64748b",
     }
 
     fig = go.Figure()
@@ -741,12 +799,14 @@ def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.F
         ("cota_itr_pct", "Cota ITR", cores["Cota ITR"]),
     ]:
         if df[col_name].sum() > 0:
-            fig.add_trace(go.Bar(
-                x=df["uf"],
-                y=df[col_name],
-                name=label,
-                marker_color=color,
-            ))
+            fig.add_trace(
+                go.Bar(
+                    x=df["uf"],
+                    y=df[col_name],
+                    name=label,
+                    marker_color=color,
+                )
+            )
 
     fig.update_layout(
         barmode="stack",
@@ -758,7 +818,11 @@ def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.F
         ),
         xaxis=dict(title="Estado (UF)", tickfont=dict(color=THEME_TEXT)),
         legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
             font=dict(size=9, color=THEME_TEXT),
         ),
     )
@@ -769,6 +833,7 @@ def chart_arrec_composicao_percentual_impostos(uf_filter: str = "TODOS") -> go.F
 # ---------------------------------------------------------------------------
 # Chart 40 — Cota-Parte ICMS: Top 15 Estados (Barra + Texto)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_cota_icms_ranking",
@@ -801,7 +866,8 @@ def chart_arrec_cota_icms_ranking() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de cota-parte ICMS disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "40. Cota-Parte ICMS: Top 15 Estados")
 
@@ -831,6 +897,7 @@ def chart_arrec_cota_icms_ranking() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 41 — IPTU per Capita vs IDHM (Scatter)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_iptu_vs_idhm",
@@ -879,46 +946,57 @@ def chart_arrec_iptu_vs_idhm(regiao_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados suficientes de IPTU/PIB",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "41. IPTU per Capita vs PIB per Capita")
 
     import pandas as pd
+
     df["pib_per_capita"] = pd.to_numeric(df["pib_per_capita"], errors="coerce").fillna(0)
     df["iptu_per_capita"] = pd.to_numeric(df["iptu_per_capita"], errors="coerce").fillna(0)
     df["populacao"] = df["populacao"].clip(lower=1)
 
     REGIAO_CORES = {
-        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
-        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
     }
 
     fig = go.Figure()
     for regiao in df["regiao"].dropna().unique():
         dfr = df[df["regiao"] == regiao]
-        fig.add_trace(go.Scatter(
-            x=dfr["pib_per_capita"],
-            y=dfr["iptu_per_capita"],
-            mode="markers",
-            name=regiao,
-            marker=dict(
-                size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 40 + 8,
-                color=REGIAO_CORES.get(regiao, "#64748b"),
-                opacity=0.75,
-                line=dict(width=1, color="#1e293b"),
-            ),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "PIB/hab: R$ %{x:,.0f}<br>"
-                "IPTU/hab: R$ %{y:,.2f}<br>"
-                "<extra></extra>"
-            ),
-            customdata=dfr[["municipio"]].values,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=dfr["pib_per_capita"],
+                y=dfr["iptu_per_capita"],
+                mode="markers",
+                name=regiao,
+                marker=dict(
+                    size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 40 + 8,
+                    color=REGIAO_CORES.get(regiao, "#64748b"),
+                    opacity=0.75,
+                    line=dict(width=1, color="#1e293b"),
+                ),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "PIB/hab: R$ %{x:,.0f}<br>"
+                    "IPTU/hab: R$ %{y:,.2f}<br>"
+                    "<extra></extra>"
+                ),
+                customdata=dfr[["municipio"]].values,
+            )
+        )
 
     fig.update_layout(
-        xaxis=dict(title="PIB per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
-        yaxis=dict(title="IPTU per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        xaxis=dict(
+            title="PIB per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+        ),
+        yaxis=dict(
+            title="IPTU per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+        ),
     )
 
     return aplicar_tema(fig, "41. IPTU per Capita vs PIB per Capita", 520)
@@ -927,6 +1005,7 @@ def chart_arrec_iptu_vs_idhm(regiao_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 42 — Box Plot: Distribuição IPTU por Região
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_iptu_distribuicao_regiao",
@@ -955,11 +1034,13 @@ def chart_arrec_iptu_distribuicao_regiao() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de IPTU por região",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "42. Distribuição do IPTU por Região")
 
     import pandas as pd
+
     df["arrec_iptu"] = pd.to_numeric(df["arrec_iptu"], errors="coerce").fillna(0)
 
     fig = px.box(
@@ -984,6 +1065,7 @@ def chart_arrec_iptu_distribuicao_regiao() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 43 — FPM: Cota-Parte por Faixa Populacional
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_fpm_faixa_populacional",
@@ -1031,44 +1113,52 @@ def chart_arrec_fpm_faixa_populacional() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de FPM disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "43. Cota-Parte FPM por Faixa Populacional")
 
     import pandas as pd
+
     df["media_fpm"] = pd.to_numeric(df["media_fpm"], errors="coerce").fillna(0)
     df["fpm_per_capita"] = pd.to_numeric(df["fpm_per_capita"], errors="coerce").fillna(0)
 
     fig = go.Figure()
 
     # Barras: FPM médio por município
-    fig.add_trace(go.Bar(
-        x=df["faixa_pop"],
-        y=df["media_fpm"],
-        name="FPM Médio por Município",
-        marker_color="#3b82f6",
-        yaxis="y",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=df["faixa_pop"],
+            y=df["media_fpm"],
+            name="FPM Médio por Município",
+            marker_color="#3b82f6",
+            yaxis="y",
+        )
+    )
 
     # Linha: FPM per capita
-    fig.add_trace(go.Scatter(
-        x=df["faixa_pop"],
-        y=df["fpm_per_capita"],
-        name="FPM per Capita (R$/hab)",
-        mode="lines+markers",
-        line=dict(color="#f59e0b", width=3),
-        marker=dict(size=10),
-        yaxis="y2",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df["faixa_pop"],
+            y=df["fpm_per_capita"],
+            name="FPM per Capita (R$/hab)",
+            mode="lines+markers",
+            line=dict(color="#f59e0b", width=3),
+            marker=dict(size=10),
+            yaxis="y2",
+        )
+    )
 
     # Anotação: número de municípios
     for _, row in df.iterrows():
         fig.add_annotation(
-            x=row["faixa_pop"], y=row["media_fpm"],
+            x=row["faixa_pop"],
+            y=row["media_fpm"],
             text=f"{int(row['num_municipios'])} mun.",
             showarrow=False,
             font=dict(size=9, color="#94a3b8"),
-            yshift=15, yref="y",
+            yshift=15,
+            yref="y",
         )
 
     fig.update_layout(
@@ -1086,7 +1176,11 @@ def chart_arrec_fpm_faixa_populacional() -> go.Figure:
         ),
         xaxis=dict(title="Faixa Populacional", tickfont=dict(color=THEME_TEXT)),
         legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
             font=dict(size=10, color=THEME_TEXT),
         ),
     )
@@ -1097,6 +1191,7 @@ def chart_arrec_fpm_faixa_populacional() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 44 — IPTU vs ISS: Especialização Fiscal por Região
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="arrec_iptu_iss_regiao",
@@ -1132,68 +1227,95 @@ def chart_arrec_iptu_iss_regiao() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados suficientes de IPTU/ISS",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "44. IPTU vs ISS por Região")
 
     import pandas as pd
+
     df["iptu"] = pd.to_numeric(df["iptu"], errors="coerce").fillna(0)
     df["iss"] = pd.to_numeric(df["iss"], errors="coerce").fillna(0)
     df["populacao"] = df["populacao"].clip(lower=1)
 
     REGIAO_CORES = {
-        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
-        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
     }
 
     fig = go.Figure()
     for regiao in df["regiao"].dropna().unique():
         dfr = df[df["regiao"] == regiao]
-        fig.add_trace(go.Scatter(
-            x=dfr["iptu"],
-            y=dfr["iss"],
-            mode="markers",
-            name=regiao,
-            marker=dict(
-                size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 35 + 6,
-                color=REGIAO_CORES.get(regiao, "#64748b"),
-                opacity=0.7,
-                line=dict(width=1, color="#1e293b"),
-            ),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "IPTU: R$ %{x:,.0f}<br>"
-                "ISS: R$ %{y:,.0f}<br>"
-                "<extra></extra>"
-            ),
-            customdata=dfr[["municipio"]].values,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=dfr["iptu"],
+                y=dfr["iss"],
+                mode="markers",
+                name=regiao,
+                marker=dict(
+                    size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 35 + 6,
+                    color=REGIAO_CORES.get(regiao, "#64748b"),
+                    opacity=0.7,
+                    line=dict(width=1, color="#1e293b"),
+                ),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "IPTU: R$ %{x:,.0f}<br>"
+                    "ISS: R$ %{y:,.0f}<br>"
+                    "<extra></extra>"
+                ),
+                customdata=dfr[["municipio"]].values,
+            )
+        )
 
     # Diagonal de referência
     max_val = max(df["iptu"].max(), df["iss"].max(), 1)
-    fig.add_trace(go.Scatter(
-        x=[0, max_val], y=[0, max_val],
-        mode="lines", name="IPTU = ISS",
-        line=dict(color="#475569", width=1, dash="dot"),
-        showlegend=True,
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=[0, max_val],
+            y=[0, max_val],
+            mode="lines",
+            name="IPTU = ISS",
+            line=dict(color="#475569", width=1, dash="dot"),
+            showlegend=True,
+        )
+    )
 
     fig.add_annotation(
-        x=max_val * 0.05, y=max_val * 0.9,
+        x=max_val * 0.05,
+        y=max_val * 0.9,
         text="<b>主导 ISS</b><br>Economia de serviços",
-        showarrow=False, font=dict(size=10, color="#3b82f6"),
-        bgcolor="rgba(59,130,246,0.08)", borderwidth=0,
+        showarrow=False,
+        font=dict(size=10, color="#3b82f6"),
+        bgcolor="rgba(59,130,246,0.08)",
+        borderwidth=0,
     )
     fig.add_annotation(
-        x=max_val * 0.9, y=max_val * 0.05,
+        x=max_val * 0.9,
+        y=max_val * 0.05,
         text="<b>主导 IPTU</b><br>Economia imobiliária",
-        showarrow=False, font=dict(size=10, color="#f59e0b"),
-        bgcolor="rgba(245,158,11,0.08)", borderwidth=0,
+        showarrow=False,
+        font=dict(size=10, color="#f59e0b"),
+        bgcolor="rgba(245,158,11,0.08)",
+        borderwidth=0,
     )
 
     fig.update_layout(
-        xaxis=dict(title="IPTU Arrecadado (R$)", type="log", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
-        yaxis=dict(title="ISS Arrecadado (R$)", type="log", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        xaxis=dict(
+            title="IPTU Arrecadado (R$)",
+            type="log",
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
+        ),
+        yaxis=dict(
+            title="ISS Arrecadado (R$)",
+            type="log",
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
+        ),
     )
 
     return aplicar_tema(fig, "44. IPTU vs ISS por Região: Especialização Fiscal", 550)

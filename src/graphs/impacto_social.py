@@ -20,6 +20,7 @@ META_IDEB_NACIONAL = 5.0
 # Chart 20 — Impacto na Saúde: Leitos por R$ Repassado via Emendas
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="impacto_saude",
     title="20. Impacto na Saúde: Leitos por R$ Repassado via Emendas",
@@ -65,13 +66,11 @@ def chart_impacto_saude(regiao_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Nenhum dado de saúde encontrado para a região selecionado. "
-                 "Execute o enriquecedor de saúde primeiro.",
+            "Execute o enriquecedor de saúde primeiro.",
             showarrow=False,
             font=dict(size=16, color="#64748b"),
         )
-        return aplicar_tema(
-            fig, "20. Impacto na Saúde: Leitos por R$ Repassado via Emendas"
-        )
+        return aplicar_tema(fig, "20. Impacto na Saúde: Leitos por R$ Repassado via Emendas")
 
     # Computed metrics
     df["leitos_por_10k"] = (df["total_leitos"] / df["populacao"]) * 10_000
@@ -122,14 +121,13 @@ def chart_impacto_saude(regiao_filter: str = "TODOS") -> go.Figure:
         yshift=12,
     )
 
-    return aplicar_tema(
-        fig, "20. Impacto na Saúde: Leitos por R$ Repassado via Emendas"
-    )
+    return aplicar_tema(fig, "20. Impacto na Saúde: Leitos por R$ Repassado via Emendas")
 
 
 # ---------------------------------------------------------------------------
 # Chart 21 — IDEB × Investimento em Educação via Emendas
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="ideb_vs_emendas",
@@ -177,13 +175,11 @@ def chart_ideb_vs_emendas(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Nenhum dado educacional (IDEB) encontrado para o estado selecionado. "
-                 "Execute o enriquecedor de educação primeiro.",
+            "Execute o enriquecedor de educação primeiro.",
             showarrow=False,
             font=dict(size=16, color="#64748b"),
         )
-        return aplicar_tema(
-            fig, "21. IDEB × Investimento em Educação via Emendas"
-        )
+        return aplicar_tema(fig, "21. IDEB × Investimento em Educação via Emendas")
 
     # IDEB médio = (anos iniciais + anos finais) / 2
     df["ideb_medio"] = (df["ideb_initial_years"] + df["ideb_final_years"]) / 2
@@ -231,6 +227,4 @@ def chart_ideb_vs_emendas(uf_filter: str = "TODOS") -> go.Figure:
         yshift=12,
     )
 
-    return aplicar_tema(
-        fig, "21. IDEB × Investimento em Educação via Emendas"
-    )
+    return aplicar_tema(fig, "21. IDEB × Investimento em Educação via Emendas")

@@ -1,7 +1,7 @@
 # Handoff Report — CI/CD & Pre-Commit Infrastructure (Requirement R1)
 
-**Agent**: Explorer (`teamwork_preview_explorer_survey_2`)  
-**Date**: 2026-07-25  
+**Agent**: Explorer (`teamwork_preview_explorer_survey_2`)
+**Date**: 2026-07-25
 
 ---
 

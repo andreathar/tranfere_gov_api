@@ -26,10 +26,20 @@ from src.db_utils import get_connection
 
 CNES_API_BASE = "https://cnes.datasus.gov.br"
 IDEB_REGION_RANGES: dict[str, tuple[float, float]] = {
-    "Norte": (3.0, 2.8), "Nordeste": (3.5, 3.0), "Centro-Oeste": (4.5, 4.0),
-    "Sudeste": (5.5, 5.0), "Sul": (5.5, 5.0),
+    "Norte": (3.0, 2.8),
+    "Nordeste": (3.5, 3.0),
+    "Centro-Oeste": (4.5, 4.0),
+    "Sudeste": (5.5, 5.0),
+    "Sul": (5.5, 5.0),
 }
-HEALTH_PER_10K = {"estab": 1.5, "leitos": 2.1, "prof": 5.0, "hosp": 0.15, "ubs": 0.60, "caps": 0.03}
+HEALTH_PER_10K = {
+    "estab": 1.5,
+    "leitos": 2.1,
+    "prof": 5.0,
+    "hosp": 0.15,
+    "ubs": 0.60,
+    "caps": 0.03,
+}
 
 _UF_REGIAO: dict[str, str] = {}
 for _ufs, _reg in [
@@ -41,8 +51,6 @@ for _ufs, _reg in [
 ]:
     for _uf in _ufs:
         _UF_REGIAO[_uf] = _reg
-
-
 
 
 def _create_tables(cur) -> None:
@@ -67,7 +75,8 @@ def _create_tables(cur) -> None:
 
 
 def _upsert_saude(cur, mun_id: int, d: dict) -> None:
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO saude_municipios
             (municipio_id, total_estabelecimentos, estabelecimentos_ativos,
              total_leitos, leitos_sus, total_profissionais,
@@ -80,13 +89,24 @@ def _upsert_saude(cur, mun_id: int, d: dict) -> None:
             total_profissionais = EXCLUDED.total_profissionais,
             hospitais = EXCLUDED.hospitais, ubs = EXCLUDED.ubs, caps = EXCLUDED.caps,
             extracted_at = NOW()
-    """, (mun_id, d["total_estabelecimentos"], d["estabelecimentos_ativos"],
-          d["total_leitos"], d["leitos_sus"], d["total_profissionais"],
-          d["hospitais"], d["ubs"], d["caps"]))
+    """,
+        (
+            mun_id,
+            d["total_estabelecimentos"],
+            d["estabelecimentos_ativos"],
+            d["total_leitos"],
+            d["leitos_sus"],
+            d["total_profissionais"],
+            d["hospitais"],
+            d["ubs"],
+            d["caps"],
+        ),
+    )
 
 
 def _upsert_educacao(cur, mun_id: int, d: dict) -> None:
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO educacao_municipios
             (municipio_id, ideb_initial_years, ideb_final_years,
              taxa_aprovacao, taxa_abandono, media_tap,
@@ -99,9 +119,18 @@ def _upsert_educacao(cur, mun_id: int, d: dict) -> None:
             media_tap = EXCLUDED.media_tap,
             escolas_totais = EXCLUDED.escolas_totais, matriculas_totais = EXCLUDED.matriculas_totais,
             extracted_at = NOW()
-    """, (mun_id, d["ideb_initial_years"], d["ideb_final_years"],
-          d.get("taxa_aprovacao"), d.get("taxa_abandono"), d.get("media_tap"),
-          d["escolas_totais"], d["matriculas_totais"]))
+    """,
+        (
+            mun_id,
+            d["ideb_initial_years"],
+            d["ideb_final_years"],
+            d.get("taxa_aprovacao"),
+            d.get("taxa_abandono"),
+            d.get("media_tap"),
+            d["escolas_totais"],
+            d["matriculas_totais"],
+        ),
+    )
 
 
 def _hash_variance(mun_id: int, salt: str) -> float:
@@ -115,7 +144,8 @@ def fetch_cnes(mun_id: int) -> dict | None:
     try:
         resp = requests.get(
             f"{CNES_API_BASE}/api/reestabelecimento",
-            params={"municipio": str(mun_id), "limit": 200}, timeout=15,
+            params={"municipio": str(mun_id), "limit": "200"},
+            timeout=15,
         )
         if resp.status_code != 200:
             return None
@@ -145,9 +175,14 @@ def _parse_cnes(items: list) -> dict:
         leitos_sus += int(e.get("qtdLeitosSUS", 0) or 0)
         prof += int(e.get("qtdProfissionais", 0) or 0)
     return {
-        "total_estabelecimentos": total, "estabelecimentos_ativos": ativos,
-        "total_leitos": leitos, "leitos_sus": leitos_sus,
-        "total_profissionais": prof, "hospitais": hosp, "ubs": ubs, "caps": caps,
+        "total_estabelecimentos": total,
+        "estabelecimentos_ativos": ativos,
+        "total_leitos": leitos,
+        "leitos_sus": leitos_sus,
+        "total_profissionais": prof,
+        "hospitais": hosp,
+        "ubs": ubs,
+        "caps": caps,
     }
 
 
@@ -160,11 +195,16 @@ def estimate_health(pop: int | None, mun_id: int) -> dict:
     leitos = max(1, round(f * HEALTH_PER_10K["leitos"] * (1 + v)))
     ativos = max(1, round(estab * 0.85))
     prof = max(2, round(f * HEALTH_PER_10K["prof"] * (1 + v)))
-    return {"total_estabelecimentos": estab, "estabelecimentos_ativos": ativos,
-            "total_leitos": leitos, "leitos_sus": max(1, round(leitos * 0.7)),
-            "total_profissionais": prof, "hospitais": max(1, round(estab * HEALTH_PER_10K["hosp"])),
-            "ubs": max(1, round(estab * HEALTH_PER_10K["ubs"])),
-            "caps": max(0, round(estab * HEALTH_PER_10K["caps"]))}
+    return {
+        "total_estabelecimentos": estab,
+        "estabelecimentos_ativos": ativos,
+        "total_leitos": leitos,
+        "leitos_sus": max(1, round(leitos * 0.7)),
+        "total_profissionais": prof,
+        "hospitais": max(1, round(estab * HEALTH_PER_10K["hosp"])),
+        "ubs": max(1, round(estab * HEALTH_PER_10K["ubs"])),
+        "caps": max(0, round(estab * HEALTH_PER_10K["caps"])),
+    }
 
 
 def fetch_ideb(mun_id: int) -> dict | None:
@@ -172,7 +212,8 @@ def fetch_ideb(mun_id: int) -> dict | None:
     try:
         resp = requests.get(
             "https://inepdata.inep.gov.br/indiceduc/api/v1/ideb",
-            params={"codigo": str(mun_id)}, timeout=15,
+            params={"codigo": str(mun_id)},
+            timeout=15,
         )
         if resp.status_code != 200:
             return None
@@ -182,7 +223,8 @@ def fetch_ideb(mun_id: int) -> dict | None:
         if ai == 0 and af == 0:
             return None
         return {
-            "ideb_initial_years": ai, "ideb_final_years": af,
+            "ideb_initial_years": ai,
+            "ideb_final_years": af,
             "taxa_aprovacao": float(d.get("taxa_aprovacao", 0) or 0) or None,
             "taxa_abandono": float(d.get("taxa_abandono", 0) or 0) or None,
             "media_tap": float(d.get("media_tap", 0) or 0) or None,
@@ -198,17 +240,21 @@ def estimate_education(mun_id: int, uf: str) -> dict:
     region = _UF_REGIAO.get(uf, "Sudeste")
     base_ai, base_af = IDEB_REGION_RANGES.get(region, (4.5, 4.0))
     v = _hash_variance(mun_id, "ideb")
-    return {"ideb_initial_years": round(max(1.0, min(8.0, base_ai + v)), 2),
-            "ideb_final_years": round(max(1.0, min(8.0, base_af + v)), 2),
-            "taxa_aprovacao": round(max(60.0, min(99.0, 85.0 + v * 15)), 2),
-            "taxa_abandono": round(max(0.5, min(25.0, 8.0 - v * 10)), 2),
-            "media_tap": round(max(3.0, min(8.0, 5.5 + v * 2)), 2),
-            "escolas_totais": 0, "matriculas_totais": 0}
+    return {
+        "ideb_initial_years": round(max(1.0, min(8.0, base_ai + v)), 2),
+        "ideb_final_years": round(max(1.0, min(8.0, base_af + v)), 2),
+        "taxa_aprovacao": round(max(60.0, min(99.0, 85.0 + v * 15)), 2),
+        "taxa_abandono": round(max(0.5, min(25.0, 8.0 - v * 10)), 2),
+        "media_tap": round(max(3.0, min(8.0, 5.5 + v * 2)), 2),
+        "escolas_totais": 0,
+        "matriculas_totais": 0,
+    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Enriquecer municípios com dados de saúde (CNES) e educação (IDEB)")
+        description="Enriquecer municípios com dados de saúde (CNES) e educação (IDEB)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Mostrar sem escrever no DB")
     parser.add_argument("--limit", type=int, default=0, help="Máx. municípios (0=todos)")
     args = parser.parse_args()
@@ -223,7 +269,7 @@ def main() -> None:
         ORDER BY m.uf, m.nome""")
     municipios = cur.fetchall()
     if args.limit > 0:
-        municipios = municipios[:args.limit]
+        municipios = municipios[: args.limit]
 
     print(f"Municípios para processar: {len(municipios)}")
     if args.dry_run:
@@ -257,9 +303,11 @@ def main() -> None:
             lt = s_data["total_leitos"]
             bai = e_data["ideb_initial_years"]
             baf = e_data["ideb_final_years"]
-            print(f"  [{i+1}/{len(municipios)}] {mun_id} - {nome} ({uf})"
-                  f" | Saúde({s_src}): {est} estab, {lt} leitos"
-                  f" | Edu({e_src}): IDEB AI={bai} AF={baf}")
+            print(
+                f"  [{i + 1}/{len(municipios)}] {mun_id} - {nome} ({uf})"
+                f" | Saúde({s_src}): {est} estab, {lt} leitos"
+                f" | Edu({e_src}): IDEB AI={bai} AF={baf}"
+            )
         else:
             _upsert_saude(cur, mun_id, s_data)
             _upsert_educacao(cur, mun_id, e_data)
@@ -269,7 +317,7 @@ def main() -> None:
                 conn.commit()
             elapsed = time.time() - inicio
             rate = (i + 1) / elapsed if elapsed > 0 else 0
-            print(f"  ... {i+1}/{len(municipios)} ({rate:.1f} mun/s)")
+            print(f"  ... {i + 1}/{len(municipios)} ({rate:.1f} mun/s)")
 
         time.sleep(ENRICH_RATE_LIMIT)
 

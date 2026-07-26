@@ -1564,5 +1564,3 @@ externo com a API Transferegov.br, por favor entre em contato com o Ministério 
 da Inovação em Serviços Públicos através do seguinte canal de comunicação: E-mail: seges.apimodulodeobras@gestao.gov.br.
 
 https://www.gov.br/transferegov/pt-br/sobre/apis-integracao/sistemas-de-obras
-
-

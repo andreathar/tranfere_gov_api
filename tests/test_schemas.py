@@ -10,6 +10,7 @@ from src.schemas import PlanoAcaoSchema, validate_records
 # PlanoAcaoSchema — construction & validation
 # ---------------------------------------------------------------------------
 
+
 class TestPlanoAcaoSchema:
     """Unit tests for the PlanoAcaoSchema model."""
 
@@ -26,21 +27,15 @@ class TestPlanoAcaoSchema:
             PlanoAcaoSchema.model_validate({})
 
     def test_uf_normalized_to_upper(self):
-        plano = PlanoAcaoSchema.model_validate(
-            {**self.MINIMAL_VALID, "uf": "  al  "}
-        )
+        plano = PlanoAcaoSchema.model_validate({**self.MINIMAL_VALID, "uf": "  al  "})
         assert plano.uf == "AL"
 
     def test_uf_none_becomes_empty(self):
-        plano = PlanoAcaoSchema.model_validate(
-            {**self.MINIMAL_VALID, "uf": None}
-        )
+        plano = PlanoAcaoSchema.model_validate({**self.MINIMAL_VALID, "uf": None})
         assert plano.uf == ""
 
     def test_valor_custeio_from_string(self):
-        plano = PlanoAcaoSchema.model_validate(
-            {**self.MINIMAL_VALID, "valorCusteio": "1.234,56"}
-        )
+        plano = PlanoAcaoSchema.model_validate({**self.MINIMAL_VALID, "valorCusteio": "1.234,56"})
         assert plano.valorCusteio == pytest.approx(1234.56)
 
     def test_valor_investimento_from_string_brl(self):
@@ -50,15 +45,11 @@ class TestPlanoAcaoSchema:
         assert plano.valorInvestimento == pytest.approx(10000.0)
 
     def test_valor_none_defaults_to_zero(self):
-        plano = PlanoAcaoSchema.model_validate(
-            {**self.MINIMAL_VALID, "valorTotal": None}
-        )
+        plano = PlanoAcaoSchema.model_validate({**self.MINIMAL_VALID, "valorTotal": None})
         assert plano.valorTotal == 0.0
 
     def test_valor_invalid_string_defaults_to_zero(self):
-        plano = PlanoAcaoSchema.model_validate(
-            {**self.MINIMAL_VALID, "valorCusteio": "abc"}
-        )
+        plano = PlanoAcaoSchema.model_validate({**self.MINIMAL_VALID, "valorCusteio": "abc"})
         assert plano.valorCusteio == 0.0
 
     def test_extra_fields_ignored(self):
@@ -113,6 +104,7 @@ class TestPlanoAcaoSchema:
 # ---------------------------------------------------------------------------
 # validate_records — batch validation
 # ---------------------------------------------------------------------------
+
 
 class TestValidateRecords:
     """Tests for the validate_records helper."""

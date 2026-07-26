@@ -75,14 +75,9 @@ ORDEM_REGIOES = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"]
 # ═══════════════════════════════════════════════════════════════════════
 
 
-
-
 def query_df(conn, sql):
     """Executa query e retorna DataFrame."""
     return pd.read_sql(sql, conn)
-
-
-
 
 
 def estilo_fig(fig, height=500):
@@ -95,16 +90,16 @@ def estilo_fig(fig, height=500):
         height=height,
         margin=dict(l=60, r=30, t=55, b=60),
         hovermode="closest",
-        legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)
-        ),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)),
     )
     fig.update_xaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     fig.update_yaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     return fig
@@ -315,32 +310,32 @@ def grafico_cards_resumo(df_resumo):
     <div class="cards-row">
       <div class="card">
         <div class="card-icon">📊</div>
-        <div class="card-num">{fmt_num(r['total_planos'])}</div>
+        <div class="card-num">{fmt_num(r["total_planos"])}</div>
         <div class="card-label">Total de Planos</div>
       </div>
       <div class="card">
         <div class="card-icon">👤</div>
-        <div class="card-num">{fmt_num(r['parlamentares'])}</div>
+        <div class="card-num">{fmt_num(r["parlamentares"])}</div>
         <div class="card-label">Parlamentares</div>
       </div>
       <div class="card">
         <div class="card-icon">📝</div>
-        <div class="card-num">{fmt_num(r['emendas'])}</div>
+        <div class="card-num">{fmt_num(r["emendas"])}</div>
         <div class="card-label">Emendas Únicas</div>
       </div>
       <div class="card">
         <div class="card-icon">💰</div>
-        <div class="card-num">R$ {r['valor_total_bi']} Bi</div>
+        <div class="card-num">R$ {r["valor_total_bi"]} Bi</div>
         <div class="card-label">Valor Total</div>
       </div>
       <div class="card">
         <div class="card-icon">✅</div>
-        <div class="card-num">{fmt_pct(r['taxa_ciente_geral'])}</div>
+        <div class="card-num">{fmt_pct(r["taxa_ciente_geral"])}</div>
         <div class="card-label">Taxa Ciente</div>
       </div>
       <div class="card">
         <div class="card-icon">❌</div>
-        <div class="card-num">{fmt_num(r['negados'])}</div>
+        <div class="card-num">{fmt_num(r["negados"])}</div>
         <div class="card-label">Negados</div>
       </div>
     </div>
@@ -355,35 +350,41 @@ def grafico_1_success_rates(df):
 
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        name="Cientes",
-        y=df["parlamentar_nome"],
-        x=df["cientes"],
-        orientation="h",
-        marker_color=CORES_STATUS["CIENTE"],
-        text=df["cientes"],
-        textposition="auto",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Cientes",
+            y=df["parlamentar_nome"],
+            x=df["cientes"],
+            orientation="h",
+            marker_color=CORES_STATUS["CIENTE"],
+            text=df["cientes"],
+            textposition="auto",
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        name="Impedidos",
-        y=df["parlamentar_nome"],
-        x=df["impedidos"],
-        orientation="h",
-        marker_color=CORES_STATUS["IMPEDIDO"],
-        text=df["impedidos"],
-        textposition="auto",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Impedidos",
+            y=df["parlamentar_nome"],
+            x=df["impedidos"],
+            orientation="h",
+            marker_color=CORES_STATUS["IMPEDIDO"],
+            text=df["impedidos"],
+            textposition="auto",
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        name="Rejeitados",
-        y=df["parlamentar_nome"],
-        x=df["rejeitados"],
-        orientation="h",
-        marker_color=CORES_STATUS["IMPEDIDO_REJEICAO_PLANO_TRABALHO"],
-        text=df["rejeitados"],
-        textposition="auto",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Rejeitados",
+            y=df["parlamentar_nome"],
+            x=df["rejeitados"],
+            orientation="h",
+            marker_color=CORES_STATUS["IMPEDIDO_REJEICAO_PLANO_TRABALHO"],
+            text=df["rejeitados"],
+            textposition="auto",
+        )
+    )
 
     fig.update_layout(
         barmode="stack",
@@ -400,36 +401,42 @@ def grafico_2_denial_patterns(df):
     """Gráfico 2: Padrões de negativa por região (barras agrupadas)."""
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        name="Impedidos",
-        x=df["regiao"],
-        y=df["impedidos"],
-        marker_color=CORES_STATUS["IMPEDIDO"],
-        text=df["impedidos"],
-        textposition="auto",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Impedidos",
+            x=df["regiao"],
+            y=df["impedidos"],
+            marker_color=CORES_STATUS["IMPEDIDO"],
+            text=df["impedidos"],
+            textposition="auto",
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        name="Rejeitados",
-        x=df["regiao"],
-        y=df["rejeitados"],
-        marker_color=CORES_STATUS["IMPEDIDO_REJEICAO_PLANO_TRABALHO"],
-        text=df["rejeitados"],
-        textposition="auto",
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Rejeitados",
+            x=df["regiao"],
+            y=df["rejeitados"],
+            marker_color=CORES_STATUS["IMPEDIDO_REJEICAO_PLANO_TRABALHO"],
+            text=df["rejeitados"],
+            textposition="auto",
+        )
+    )
 
     # Adicionar linha de taxa média
-    fig.add_trace(go.Scatter(
-        x=df["regiao"],
-        y=df["taxa_negativa"],
-        mode="lines+markers+text",
-        name="Taxa Negativa %",
-        yaxis="y2",
-        line=dict(color=TEMA["accent5"], width=2, dash="dash"),
-        text=df["taxa_negativa"].round(1).astype(str) + "%",
-        textposition="top center",
-        textfont=dict(size=10, color=TEMA["accent5"]),
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df["regiao"],
+            y=df["taxa_negativa"],
+            mode="lines+markers+text",
+            name="Taxa Negativa %",
+            yaxis="y2",
+            line=dict(color=TEMA["accent5"], width=2, dash="dash"),
+            text=df["taxa_negativa"].round(1).astype(str) + "%",
+            textposition="top center",
+            textfont=dict(size=10, color=TEMA["accent5"]),
+        )
+    )
 
     fig.update_layout(
         barmode="group",
@@ -453,7 +460,11 @@ def grafico_3_parliamentar_performance(df):
     # Criar hover text com fotos
     hover_text = []
     for _, row in df.iterrows():
-        foto_html = f'<br><img src="{row["url_foto"]}" width="50" height="50" style="border-radius:50%;">' if pd.notna(row.get("url_foto")) else ""
+        foto_html = (
+            f'<br><img src="{row["url_foto"]}" width="50" height="50" style="border-radius:50%;">'
+            if pd.notna(row.get("url_foto"))
+            else ""
+        )
         hover_text.append(
             f"<b>{row['parlamentar_nome']}</b>{foto_html}<br>"
             f"Partido: {row.get('sigla_partido', 'N/A')}<br>"
@@ -465,24 +476,26 @@ def grafico_3_parliamentar_performance(df):
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=df["valor_total_milhao"],
-        y=df["taxa_ciente"],
-        mode="markers+text",
-        marker=dict(
-            size=df["total_planos"] * 2,
-            color=df["taxa_ciente"],
-            colorscale="RdYlGn",
-            showscale=True,
-            colorbar=dict(title="Taxa Ciente %"),
-            line=dict(width=1, color=TEMA["border"]),
-        ),
-        text=df["parlamentar_nome"].str.split().str[-1],  # Último nome
-        textposition="top center",
-        textfont=dict(size=9, color=TEMA["text_muted"]),
-        hovertext=hover_text,
-        hoverinfo="text",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df["valor_total_milhao"],
+            y=df["taxa_ciente"],
+            mode="markers+text",
+            marker=dict(
+                size=df["total_planos"] * 2,
+                color=df["taxa_ciente"],
+                colorscale="RdYlGn",
+                showscale=True,
+                colorbar=dict(title="Taxa Ciente %"),
+                line=dict(width=1, color=TEMA["border"]),
+            ),
+            text=df["parlamentar_nome"].str.split().str[-1],  # Último nome
+            textposition="top center",
+            textfont=dict(size=9, color=TEMA["text_muted"]),
+            hovertext=hover_text,
+            hoverinfo="text",
+        )
+    )
 
     # Adicionar linhas de referência
     med_valor = df["valor_total_milhao"].median()
@@ -491,9 +504,11 @@ def grafico_3_parliamentar_performance(df):
     fig.add_vline(x=med_valor, line_dash="dash", line_color=TEMA["text_muted"], opacity=0.4)
 
     fig.add_annotation(
-        x=med_valor * 0.1, y=med_ciente + 5,
+        x=med_valor * 0.1,
+        y=med_ciente + 5,
         text="Baixo valor<br>Alta aprovação",
-        showarrow=False, font=dict(color=TEMA["accent3"], size=9),
+        showarrow=False,
+        font=dict(color=TEMA["accent3"], size=9),
     )
 
     fig.update_layout(
@@ -509,36 +524,42 @@ def grafico_3_parliamentar_performance(df):
 def grafico_4_object_distribution(df):
     """Gráfico 4: Distribuição por objeto (treemap)."""
     # Agrupar por objeto (somar valores)
-    df_grouped = df.groupby("objeto_descricao").agg({
-        "valor_total_milhao": "sum",
-        "total_planos": "sum",
-        "taxa_ciente": "mean",
-    }).reset_index()
+    df_grouped = (
+        df.groupby("objeto_descricao")
+        .agg(
+            {
+                "valor_total_milhao": "sum",
+                "total_planos": "sum",
+                "taxa_ciente": "mean",
+            }
+        )
+        .reset_index()
+    )
 
     # Pegar top 15
     df_top = df_grouped.nlargest(15, "valor_total_milhao")
 
-    fig = go.Figure(go.Treemap(
-        labels=df_top["objeto_descricao"],
-        parents=[""] * len(df_top),
-        values=df_top["valor_total_milhao"],
-        text=df_top.apply(
-            lambda r: f"R$ {r['valor_total_milhao']:.0f} Mi<br>{r['total_planos']} planos<br>Ciente: {r['taxa_ciente']:.0f}%",
-            axis=1,
-        ),
-        textinfo="label+text",
-        hovertemplate=(
-            "<b>%{label}</b><br>"
-            "Valor: R$ %{value:.0f} Mi<br>"
-            "<extra></extra>"
-        ),
-        marker=dict(
-            colors=df_top["taxa_ciente"],
-            colorscale="RdYlGn",
-            showscale=True,
-            colorbar=dict(title="Taxa Ciente %"),
-        ),
-    ))
+    fig = go.Figure(
+        go.Treemap(
+            labels=df_top["objeto_descricao"],
+            parents=[""] * len(df_top),
+            values=df_top["valor_total_milhao"],
+            text=df_top.apply(
+                lambda r: (
+                    f"R$ {r['valor_total_milhao']:.0f} Mi<br>{r['total_planos']} planos<br>Ciente: {r['taxa_ciente']:.0f}%"
+                ),
+                axis=1,
+            ),
+            textinfo="label+text",
+            hovertemplate=("<b>%{label}</b><br>Valor: R$ %{value:.0f} Mi<br><extra></extra>"),
+            marker=dict(
+                colors=df_top["taxa_ciente"],
+                colorscale="RdYlGn",
+                showscale=True,
+                colorbar=dict(title="Taxa Ciente %"),
+            ),
+        )
+    )
 
     estilo_fig(fig, height=500)
     return fig.to_html(full_html=False, include_plotlyjs=False)
@@ -547,7 +568,8 @@ def grafico_4_object_distribution(df):
 def grafico_5_regional_analysis(df):
     """Gráfico 5: Análise regional (barras agrupadas)."""
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=1,
+        cols=2,
         subplot_titles=("Valor Total (R$ milhões)", "Taxa Ciente (%)"),
         horizontal_spacing=0.12,
     )
@@ -562,7 +584,8 @@ def grafico_5_regional_analysis(df):
             textposition="auto",
             showlegend=False,
         ),
-        row=1, col=1,
+        row=1,
+        col=1,
     )
 
     # Gráfico de taxa
@@ -575,7 +598,8 @@ def grafico_5_regional_analysis(df):
             textposition="auto",
             showlegend=False,
         ),
-        row=1, col=2,
+        row=1,
+        col=2,
     )
 
     fig.update_xaxes(title_text="Região", row=1, col=1)
@@ -593,14 +617,16 @@ def grafico_6_value_distribution(df):
 
     for situacao in df["plano_acao_situacao"].unique():
         df_sit = df[df["plano_acao_situacao"] == situacao]
-        fig.add_trace(go.Box(
-            y=df_sit["valor_milhar"],
-            name=situacao,
-            marker_color=CORES_STATUS.get(situacao, "#64748b"),
-            boxpoints="outliers",
-            jitter=0.3,
-            pointpos=-1.8,
-        ))
+        fig.add_trace(
+            go.Box(
+                y=df_sit["valor_milhar"],
+                name=situacao,
+                marker_color=CORES_STATUS.get(situacao, "#64748b"),
+                boxpoints="outliers",
+                jitter=0.3,
+                pointpos=-1.8,
+            )
+        )
 
     fig.update_layout(
         yaxis_title="Valor (R$ milhar)",
@@ -619,8 +645,7 @@ def grafico_7_parliamentar_object_matrix(df):
     top_objetos = df.groupby("objeto_descricao")["total_planos"].sum().nlargest(10).index
 
     df_filtered = df[
-        df["parlamentar_nome"].isin(top_parlamentares) &
-        df["objeto_descricao"].isin(top_objetos)
+        df["parlamentar_nome"].isin(top_parlamentares) & df["objeto_descricao"].isin(top_objetos)
     ]
 
     pivot = df_filtered.pivot_table(
@@ -633,22 +658,21 @@ def grafico_7_parliamentar_object_matrix(df):
     # Limitar nomes dos objetos
     pivot.columns = [c[:40] + "..." if len(c) > 40 else c for c in pivot.columns]
 
-    fig = go.Figure(data=go.Heatmap(
-        z=pivot.values,
-        x=pivot.columns,
-        y=pivot.index,
-        colorscale="YlOrRd",
-        text=pivot.values.round(1).astype(str),
-        texttemplate="%{text}",
-        textfont=dict(size=9),
-        colorbar=dict(title="R$ milhões"),
-        hovertemplate=(
-            "Parlamentar: %{y}<br>"
-            "Objeto: %{x}<br>"
-            "Valor: R$ %{z:.1f} Mi<br>"
-            "<extra></extra>"
-        ),
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.values,
+            x=pivot.columns,
+            y=pivot.index,
+            colorscale="YlOrRd",
+            text=pivot.values.round(1).astype(str),
+            texttemplate="%{text}",
+            textfont=dict(size=9),
+            colorbar=dict(title="R$ milhões"),
+            hovertemplate=(
+                "Parlamentar: %{y}<br>Objeto: %{x}<br>Valor: R$ %{z:.1f} Mi<br><extra></extra>"
+            ),
+        )
+    )
 
     fig.update_layout(
         xaxis_title="Objeto",
@@ -663,7 +687,8 @@ def grafico_7_parliamentar_object_matrix(df):
 def grafico_8_temporal_patterns(df):
     """Gráfico 8: Padrões temporais (linhas)."""
     fig = make_subplots(
-        rows=1, cols=2,
+        rows=1,
+        cols=2,
         subplot_titles=("Planos por Mês", "Valor Total por Mês (R$ milhões)"),
         horizontal_spacing=0.12,
     )
@@ -676,7 +701,8 @@ def grafico_8_temporal_patterns(df):
             name="Planos",
             line=dict(width=2, color=TEMA["accent"]),
         ),
-        row=1, col=1,
+        row=1,
+        col=1,
     )
 
     fig.add_trace(
@@ -688,7 +714,8 @@ def grafico_8_temporal_patterns(df):
             showlegend=False,
             line=dict(width=2, color=TEMA["accent2"]),
         ),
-        row=1, col=2,
+        row=1,
+        col=2,
     )
 
     fig.update_xaxes(title_text="Mês", row=1, col=1)
@@ -709,9 +736,18 @@ def gerar_html(data_str, cards, charts):
     """Monta o HTML completo do dashboard."""
     chart_html = ""
     titulos = [
-        ("Taxas de Sucesso por Tipo de Emenda", "Distribuição de planos aprovados, negados e em execução por tipo de emenda"),
-        ("Padrões de Negativa por Tipo × Região", "Taxa de negativa por tipo de emenda e região geográfica"),
-        ("Performance por Parlamentar", "Valor total vs taxa de sucesso (tamanho = quantidade de planos)"),
+        (
+            "Taxas de Sucesso por Tipo de Emenda",
+            "Distribuição de planos aprovados, negados e em execução por tipo de emenda",
+        ),
+        (
+            "Padrões de Negativa por Tipo × Região",
+            "Taxa de negativa por tipo de emenda e região geográfica",
+        ),
+        (
+            "Performance por Parlamentar",
+            "Valor total vs taxa de sucesso (tamanho = quantidade de planos)",
+        ),
         ("Distribuição por Objeto", "Alocação de emendas por tipo de objeto (treemap)"),
         ("Análise Regional", "Métricas de emendas por região geográfica"),
         ("Distribuição de Valores", "Box plot de valores por situação do plano"),
@@ -735,8 +771,7 @@ def gerar_html(data_str, cards, charts):
         """
 
     nav_items = "".join(
-        f'<a href="#g{i}" class="nav-item">{t[0]}</a>'
-        for i, t in enumerate(titulos, 1)
+        f'<a href="#g{i}" class="nav-item">{t[0]}</a>' for i, t in enumerate(titulos, 1)
     )
 
     return f"""<!DOCTYPE html>
@@ -749,8 +784,8 @@ def gerar_html(data_str, cards, charts):
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    background: {TEMA['bg']};
-    color: {TEMA['text']};
+    background: {TEMA["bg"]};
+    color: {TEMA["text"]};
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     line-height: 1.5;
   }}
@@ -758,19 +793,19 @@ def gerar_html(data_str, cards, charts):
   .hero {{
     text-align: center;
     padding: 40px 20px 20px;
-    background: linear-gradient(135deg, {TEMA['card']}, {TEMA['card_alt']});
+    background: linear-gradient(135deg, {TEMA["card"]}, {TEMA["card_alt"]});
     border-radius: 16px;
     margin-bottom: 20px;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
-  .hero h1 {{ font-size: 28px; color: {TEMA['accent']}; margin-bottom: 8px; }}
-  .subtitle {{ color: {TEMA['text_muted']}; font-size: 14px; }}
+  .hero h1 {{ font-size: 28px; color: {TEMA["accent"]}; margin-bottom: 8px; }}
+  .subtitle {{ color: {TEMA["text_muted"]}; font-size: 14px; }}
   .cards-row {{
     display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin: 20px 0;
   }}
   .card {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 20px 24px;
     min-width: 140px;
@@ -780,33 +815,33 @@ def gerar_html(data_str, cards, charts):
   }}
   .card-icon {{ font-size: 24px; margin-bottom: 4px; }}
   .card-num {{
-    font-size: 22px; font-weight: 700; color: {TEMA['accent']};
+    font-size: 22px; font-weight: 700; color: {TEMA["accent"]};
     line-height: 1.2;
   }}
   .card-label {{
-    font-size: 11px; color: {TEMA['text_muted']};
+    font-size: 11px; color: {TEMA["text_muted"]};
     text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;
   }}
   .nav {{
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-    padding: 16px; background: {TEMA['card']};
+    padding: 16px; background: {TEMA["card"]};
     border-radius: 12px; margin: 20px 0;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
     position: sticky; top: 10px; z-index: 100;
   }}
   .nav-item {{
     padding: 6px 14px; border-radius: 8px;
-    background: {TEMA['bg']}; color: {TEMA['text_muted']};
+    background: {TEMA["bg"]}; color: {TEMA["text_muted"]};
     text-decoration: none; font-size: 12px; font-weight: 500;
     transition: all 0.2s;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
   .nav-item:hover {{
-    background: {TEMA['accent']}; color: white; border-color: {TEMA['accent']};
+    background: {TEMA["accent"]}; color: white; border-color: {TEMA["accent"]};
   }}
   .section {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 24px;
     margin: 20px 0;
@@ -815,25 +850,25 @@ def gerar_html(data_str, cards, charts):
     display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
   }}
   .section-num {{
-    background: {TEMA['accent']}; color: white;
+    background: {TEMA["accent"]}; color: white;
     width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 16px; flex-shrink: 0;
   }}
   .section-header h2 {{
-    font-size: 18px; color: {TEMA['text']}; margin: 0;
+    font-size: 18px; color: {TEMA["text"]}; margin: 0;
   }}
   .section-desc {{
-    font-size: 12px; color: {TEMA['text_muted']}; margin: 2px 0 0;
+    font-size: 12px; color: {TEMA["text_muted"]}; margin: 2px 0 0;
   }}
   .chart-container {{
     width: 100%; overflow-x: auto;
   }}
   .footer {{
-    text-align: center; padding: 30px; color: {TEMA['text_muted']};
-    font-size: 12px; border-top: 1px solid {TEMA['border']}; margin-top: 30px;
+    text-align: center; padding: 30px; color: {TEMA["text_muted"]};
+    font-size: 12px; border-top: 1px solid {TEMA["border"]}; margin-top: 30px;
   }}
-  .footer strong {{ color: {TEMA['accent']}; }}
+  .footer strong {{ color: {TEMA["accent"]}; }}
   @media (max-width: 768px) {{
     .cards-row {{ flex-direction: column; align-items: stretch; }}
     .card {{ max-width: 100%; }}
@@ -870,8 +905,9 @@ def main():
         description="Dashboard de Emendas Parlamentares - TransfereGov"
     )
     parser.add_argument(
-        "--output", default="output/dashboard_emendas.html",
-        help="Caminho do arquivo HTML de saída"
+        "--output",
+        default="output/dashboard_emendas.html",
+        help="Caminho do arquivo HTML de saída",
     )
     args = parser.parse_args()
 

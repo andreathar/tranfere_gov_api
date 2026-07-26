@@ -1,9 +1,9 @@
 # Analysis & Onboarding Blueprint — TransfereGov API
 
-**Milestone**: M2 (Requirement R2: Project Documentation & Onboarding)  
-**Target Document**: `docs/ONBOARDING.md`  
-**Author**: Explorer Subagent M2.2  
-**Date**: 2026-07-25  
+**Milestone**: M2 (Requirement R2: Project Documentation & Onboarding)
+**Target Document**: `docs/ONBOARDING.md`
+**Author**: Explorer Subagent M2.2
+**Date**: 2026-07-25
 
 ---
 
@@ -156,11 +156,11 @@ python3 -m src.enrichers.pipeline --fase all --dry-run --limit 100
 
 #### Fases Individuais do Pipeline:
 - **Fase 1 (Validação & IBGE)**:
-  `python3 -m src.enrichers.validacao` (CNPJs via BrasilAPI)  
-  `python3 -m src.enrichers.ibge` (Dados de municípios IBGE)  
-  `python3 -m src.enrichers.mapear_municipios` (Mapeamento beneficiário → IBGE)  
+  `python3 -m src.enrichers.validacao` (CNPJs via BrasilAPI)
+  `python3 -m src.enrichers.ibge` (Dados de municípios IBGE)
+  `python3 -m src.enrichers.mapear_municipios` (Mapeamento beneficiário → IBGE)
 - **Fase 2 (Câmara dos Deputados)**:
-  `python3 -m src.enrichers.camara` (Perfil dos parlamentares)  
+  `python3 -m src.enrichers.camara` (Perfil dos parlamentares)
 - **Fase 3 (Agregação & Vinculação)**:
   `python3 -m src.enrichers.pipeline --fase 3` (Cruzamento parlamentar × beneficiário × emenda)
 

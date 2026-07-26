@@ -30,6 +30,9 @@ pipeline.py  ← orquestrador, executa fases via subprocess
 | 1e | `siconfi.py` | SICONFI/Tesouro Nacional (DCA + RREO A03) | `municipios_financeiro` | Dados financeiros + arrecadação de impostos (IPTU/ISS/ICMS/FPM) |
 | 2 | `camara.py` | Câmara dos Deputados | `parlamentares_dados` | Perfil completo dos deputados autores |
 | 3 | `pipeline.py` (--fase 3) | SQL JOIN | `parlamentar_beneficiario` | Agrega valor total por parlamentar×município×emenda |
+| 7 | `tse_prefeitos.py` | TSE (DuckDB local) | `prefeitos_dados` | Prefeitos eleitos (2020/2024) |
+| 7 | `tse_vereadors.py` | TSE (DuckDB local) | `vereadores_dados` | Vereadores candidatos (2020/2024) |
+| 8 | `senado.py` | Senado API REST | `senadores_dados` | Perfil completo senadores em exercício |
 
 ### Scripts auxiliares
 
@@ -91,12 +94,14 @@ python3 -m src.enrichers.discricionarias_sync
 10. DCA (Declaração de Contas Anuais) costuma ter 1-2 anos de atraso — o script tenta automaticamente 2025→2023 quando `--ano` não é informado
 11. RREO Anexo 03 (`--rreo`) contém arrecadação de impostos por município — usa `nr_periodo=6` (consolidação anual, 6º bimestre)
 12. RREO retorna texto com acentos (ex: 'Transferências') — o parser usa `unicodedata.normalize('NFKD')` para normalizar
+13. `tse_vereadors.py` usa `qt_votos_nominais` (não `qt_votos`) no dataset `tse_votacao` — coluna é VARCHAR, requer `CAST(... AS BIGINT)`
+14. `tse_vereadors.py` pode falhar silenciosamente nos votos se o dataset `tse_votacao` não estiver ativo — o enricher continua com votos zerados
 
 ---
 
 ## Tabelas de banco usadas
 
-**Leitura**: `planos_acao`, `beneficiarios`, `parlamentares`, `objetos`, `programas`
-**Escrita**: `validacao_cnpj`, `municipios_ibge`, `beneficiario_ibge_map`, `parlamentares_dados`, `parlamentar_beneficiario`, `municipios_financeiro`
+**Leitura**: `planos_acao`, `beneficiarios`, `parlamentares`, `objetos`, `programas`, `municipios_ibge`
+**Escrita**: `validacao_cnpj`, `municipios_ibge`, `beneficiario_ibge_map`, `parlamentares_dados`, `parlamentar_beneficiario`, `municipios_financeiro`, `prefeitos_dados`, `vereadores_dados`, `senadores_dados`
 
-Schema completo em `data/migration_002_relatorios.sql`.
+Schema completo em `data/migration_002_relatorios.sql` + migrations 002-015.

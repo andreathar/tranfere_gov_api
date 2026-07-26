@@ -19,7 +19,7 @@ Investigate codebase for Requirement R1 (Code Quality, Formatting & Typing): env
 
 ## Investigation State
 - **Explored paths**: `pyproject.toml`, `requirements.txt`, `.github/workflows/ci.yml`, `src/`, `config/`, `scripts/`, `tests/`
-- **Key findings**: 
+- **Key findings**:
   - Missing `.pre-commit-config.yaml`
   - Critical `F821` bug in `src/graph_tools.py:155` (`query_df` missing import)
   - Invalid type annotation in `src/api/services/camara_service.py` (`any` instead of `typing.Any`)

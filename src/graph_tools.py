@@ -13,8 +13,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash.mcp import mcp_enabled
 
-from src.graph_factory import CHART_REGISTRY, aplicar_tema, register_chart
 from src.db_utils import fig_has_data, query_df
+from src.graph_factory import CHART_REGISTRY, aplicar_tema, register_chart
 
 log = logging.getLogger("graph_tools")
 
@@ -28,21 +28,18 @@ def list_registered_charts() -> list[dict[str, Any]]:
     charts = []
     for chart_id, spec in CHART_REGISTRY.items():
         controls = [
-            {
-                "id": ctrl.id,
-                "label": ctrl.label,
-                "options": ctrl.options,
-                "default": ctrl.default
-            }
+            {"id": ctrl.id, "label": ctrl.label, "options": ctrl.options, "default": ctrl.default}
             for ctrl in spec.controls
         ]
-        charts.append({
-            "id": chart_id,
-            "title": spec.title,
-            "description": spec.description,
-            "category": spec.category,
-            "controls": controls
-        })
+        charts.append(
+            {
+                "id": chart_id,
+                "title": spec.title,
+                "description": spec.description,
+                "category": spec.category,
+                "controls": controls,
+            }
+        )
     return charts
 
 
@@ -53,7 +50,11 @@ def inspect_chart_health(chart_id: str | None = None) -> list[dict[str, Any]]:
     Retorna se o gráfico é válido (is_ok), número de traces, total de pontos de dados
     e se há algum erro de SQL ou renderização.
     """
-    targets = {chart_id: CHART_REGISTRY[chart_id]} if chart_id and chart_id in CHART_REGISTRY else CHART_REGISTRY
+    targets = (
+        {chart_id: CHART_REGISTRY[chart_id]}
+        if chart_id and chart_id in CHART_REGISTRY
+        else CHART_REGISTRY
+    )
     health_report = []
 
     for c_id, spec in targets.items():
@@ -77,31 +78,37 @@ def inspect_chart_health(chart_id: str | None = None) -> list[dict[str, Any]]:
                             total_points += len(val)
                     total_points += sankey_pts
 
-            health_report.append({
-                "chart_id": c_id,
-                "title": spec.title,
-                "category": spec.category,
-                "is_ok": has_data,
-                "num_traces": num_traces,
-                "total_points": total_points,
-                "status": "OPERACIONAL" if has_data else "SEM DADOS (EMPTY)"
-            })
+            health_report.append(
+                {
+                    "chart_id": c_id,
+                    "title": spec.title,
+                    "category": spec.category,
+                    "is_ok": has_data,
+                    "num_traces": num_traces,
+                    "total_points": total_points,
+                    "status": "OPERACIONAL" if has_data else "SEM DADOS (EMPTY)",
+                }
+            )
         except Exception as e:
-            health_report.append({
-                "chart_id": c_id,
-                "title": spec.title,
-                "category": spec.category,
-                "is_ok": False,
-                "num_traces": 0,
-                "total_points": 0,
-                "status": f"ERRO: {str(e)}"
-            })
+            health_report.append(
+                {
+                    "chart_id": c_id,
+                    "title": spec.title,
+                    "category": spec.category,
+                    "is_ok": False,
+                    "num_traces": 0,
+                    "total_points": 0,
+                    "status": f"ERRO: {str(e)}",
+                }
+            )
 
     return health_report
 
 
 @mcp_enabled(name="get_chart_data_summary", expose_docstring=True)
-def get_chart_data_summary(chart_id: str, uf_filter: str = "TODOS", regiao_filter: str = "TODOS") -> dict[str, Any]:
+def get_chart_data_summary(
+    chart_id: str, uf_filter: str = "TODOS", regiao_filter: str = "TODOS"
+) -> dict[str, Any]:
     """
     Executa o gráfico especificado e retorna um resumo estruturado dos dados (resumo estatístico,
     quantidade de registros, traces e categorias) em formato JSON para fácil interpretação pela IA.
@@ -127,7 +134,7 @@ def get_chart_data_summary(chart_id: str, uf_filter: str = "TODOS", regiao_filte
             "category": spec.category,
             "applied_params": kwargs,
             "num_traces": len(fig.data) if fig and hasattr(fig, "data") else 0,
-            "trace_names": [t.name for t in fig.data if hasattr(t, "name") and t.name]
+            "trace_names": [t.name for t in fig.data if hasattr(t, "name") and t.name],
         }
         return summary
     except Exception as e:
@@ -143,7 +150,7 @@ def register_custom_graph(
     sql_query: str,
     chart_type: str = "bar",
     x_col: str = "",
-    y_col: str = ""
+    y_col: str = "",
 ) -> dict[str, Any]:
     """
     Permite que Agentes de IA criem e registrem dinamicamente um novo gráfico baseado em consulta SQL.
@@ -151,15 +158,24 @@ def register_custom_graph(
     O novo gráfico é imediatamente adicionado ao dashboard e exposto via MCP!
     """
     try:
+
         def dynamic_builder() -> go.Figure:
             df = query_df(sql_query)
             if df.empty:
                 fig = go.Figure()
-                fig.add_annotation(text="Sem dados retornados para a consulta SQL", showarrow=False, font=dict(size=16, color="#64748b"))
+                fig.add_annotation(
+                    text="Sem dados retornados para a consulta SQL",
+                    showarrow=False,
+                    font=dict(size=16, color="#64748b"),
+                )
                 return aplicar_tema(fig, title)
 
             x = x_col if x_col and x_col in df.columns else df.columns[0]
-            y = y_col if y_col and y_col in df.columns else (df.columns[1] if len(df.columns) > 1 else df.columns[0])
+            y = (
+                y_col
+                if y_col and y_col in df.columns
+                else (df.columns[1] if len(df.columns) > 1 else df.columns[0])
+            )
 
             if chart_type.lower() == "scatter":
                 fig = px.scatter(df, x=x, y=y, title=title)
@@ -167,23 +183,20 @@ def register_custom_graph(
                 fig = px.pie(df, names=x, values=y, title=title)
             elif chart_type.lower() == "line":
                 fig = px.line(df, x=x, y=y, title=title)
-            else: # default bar
+            else:  # default bar
                 fig = px.bar(df, x=x, y=y, title=title)
 
             return aplicar_tema(fig, title)
 
-        register_chart(
-            id=id,
-            title=title,
-            description=description,
-            category=category
-        )(dynamic_builder)
+        register_chart(id=id, title=title, description=description, category=category)(
+            dynamic_builder
+        )
 
         log.info("Novo gráfico dinâmico '%s' registrado com sucesso por Agente MCP!", id)
         return {
             "success": True,
             "message": f"Gráfico '{title}' registrado com sucesso!",
-            "chart_id": id
+            "chart_id": id,
         }
 
     except Exception as e:

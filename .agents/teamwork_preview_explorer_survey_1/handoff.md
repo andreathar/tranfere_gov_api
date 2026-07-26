@@ -1,8 +1,8 @@
 # Handoff Report — Requirement R1 (Code Quality, Formatting & Typing Survey)
 
-**Agent**: Explorer Subagent (`teamwork_preview_explorer_survey_1`)  
-**Target Milestone**: Survey Phase for Requirement R1  
-**Working Directory**: `/mnt/data/Projects_SSD/tranfere_gov_api/.agents/teamwork_preview_explorer_survey_1`  
+**Agent**: Explorer Subagent (`teamwork_preview_explorer_survey_1`)
+**Target Milestone**: Survey Phase for Requirement R1
+**Working Directory**: `/mnt/data/Projects_SSD/tranfere_gov_api/.agents/teamwork_preview_explorer_survey_1`
 
 ---
 

@@ -11,7 +11,7 @@
   --danger: #ef4444;
   --warning: #f59e0b;
   --info: #3b82f6;
-  
+
   --font-family: 'Inter', sans-serif;
 }
 
@@ -471,4 +471,3 @@ tr:hover { background: rgba(255,255,255,0.02); }
   color: var(--danger);
   background: rgba(239, 68, 68, 0.15);
 }
-

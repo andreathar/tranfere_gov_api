@@ -14,6 +14,7 @@ from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
 # Chart 31 — Emendas × Infraestrutura de Saúde (Leitos/10k por município)
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="saude_leitos_emendas",
     title="31. Emendas × Infraestrutura de Saúde (Leitos/10k hab.)",
@@ -60,7 +61,8 @@ def chart_saude_leitos_emendas(regiao_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de saúde disponíveis para esta região.",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "31. Emendas × Infraestrutura de Saúde")
 
@@ -97,12 +99,21 @@ def chart_saude_leitos_emendas(regiao_filter: str = "TODOS") -> go.Figure:
 
     # Linha de referência: média nacional de leitos (2.1/10k)
     fig.add_hline(
-        y=2.1, line_dash="dash", line_color="#f59e0b", line_width=1.5,
+        y=2.1,
+        line_dash="dash",
+        line_color="#f59e0b",
+        line_width=1.5,
     )
     fig.add_annotation(
-        x=0.98, y=2.1, xref="paper", yref="y",
-        text="Média Nacional: 2.1 leitos/10k", showarrow=False,
-        font=dict(size=10, color="#f59e0b"), xanchor="right", yshift=10,
+        x=0.98,
+        y=2.1,
+        xref="paper",
+        yref="y",
+        text="Média Nacional: 2.1 leitos/10k",
+        showarrow=False,
+        font=dict(size=10, color="#f59e0b"),
+        xanchor="right",
+        yshift=10,
     )
 
     return aplicar_tema(fig, "31. Emendas × Infraestrutura de Saúde (Leitos/10k hab.)", 520)
@@ -111,6 +122,7 @@ def chart_saude_leitos_emendas(regiao_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 32 — Emendas × Resultado Orçamentário Municipal (Superávit/Déficit)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="emendas_resultado_orcamentario",
@@ -161,11 +173,13 @@ def chart_emendas_resultado_orcamentario(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados fiscais para o filtro selecionado.",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "32. Emendas × Resultado Orçamentário Municipal")
 
     import pandas as pd
+
     df["resultado_primario"] = pd.to_numeric(df["resultado_primario"], errors="coerce").fillna(0)
     df["situacao_fiscal"] = df["resultado_primario"].apply(
         lambda x: "✅ Superávit" if x > 0 else "🔴 Déficit"
@@ -203,9 +217,15 @@ def chart_emendas_resultado_orcamentario(uf_filter: str = "TODOS") -> go.Figure:
 
     fig.add_vline(x=0, line_dash="solid", line_color="#475569", line_width=1)
     fig.add_annotation(
-        x=0, y=0.99, xref="x", yref="paper",
-        text="Equilíbrio Fiscal", showarrow=False,
-        font=dict(size=10, color="#94a3b8"), xanchor="left", yshift=8,
+        x=0,
+        y=0.99,
+        xref="x",
+        yref="paper",
+        text="Equilíbrio Fiscal",
+        showarrow=False,
+        font=dict(size=10, color="#94a3b8"),
+        xanchor="left",
+        yshift=8,
     )
 
     return aplicar_tema(fig, "32. Emendas × Resultado Orçamentário Municipal", 520)
@@ -214,6 +234,7 @@ def chart_emendas_resultado_orcamentario(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 33 — Ranking: Receita Per Capita × Emenda Per Capita por UF
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="receita_vs_emenda_per_capita_uf",
@@ -248,18 +269,23 @@ def chart_receita_vs_emenda_per_capita_uf() -> go.Figure:
     if df.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text="Sem dados disponíveis.", showarrow=False,
+            text="Sem dados disponíveis.",
+            showarrow=False,
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "33. Receita vs. Emenda Per Capita por UF")
 
     import pandas as pd
+
     df["receita_pc_media"] = pd.to_numeric(df["receita_pc_media"], errors="coerce").fillna(0)
     df["emenda_pc"] = pd.to_numeric(df["emenda_pc"], errors="coerce").fillna(0)
 
     REGIAO_CORES = {
-        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
-        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
     }
     df["cor"] = df["regiao"].map(REGIAO_CORES).fillna("#64748b")
 
@@ -267,36 +293,40 @@ def chart_receita_vs_emenda_per_capita_uf() -> go.Figure:
 
     for regiao in df["regiao"].dropna().unique():
         dfr = df[df["regiao"] == regiao]
-        fig.add_trace(go.Scatter(
-            x=dfr["receita_pc_media"],
-            y=dfr["emenda_pc"],
-            mode="markers+text",
-            name=regiao,
-            text=dfr["uf"],
-            textposition="top center",
-            textfont=dict(size=10, color=THEME_TEXT),
-            marker=dict(
-                size=14,
-                color=REGIAO_CORES.get(regiao, "#64748b"),
-                line=dict(width=1, color="#1e293b"),
-                opacity=0.85,
-            ),
-            hovertemplate=(
-                "<b>%{text}</b><br>"
-                "Receita per capita: R$ %{x:,.0f}<br>"
-                "Emenda per capita: R$ %{y:,.2f}<br>"
-                "<extra></extra>"
-            ),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=dfr["receita_pc_media"],
+                y=dfr["emenda_pc"],
+                mode="markers+text",
+                name=regiao,
+                text=dfr["uf"],
+                textposition="top center",
+                textfont=dict(size=10, color=THEME_TEXT),
+                marker=dict(
+                    size=14,
+                    color=REGIAO_CORES.get(regiao, "#64748b"),
+                    line=dict(width=1, color="#1e293b"),
+                    opacity=0.85,
+                ),
+                hovertemplate=(
+                    "<b>%{text}</b><br>"
+                    "Receita per capita: R$ %{x:,.0f}<br>"
+                    "Emenda per capita: R$ %{y:,.2f}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
 
     fig.update_layout(
         xaxis=dict(
             title="Receita Corrente Per Capita Média (R$/hab)",
-            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
         ),
         yaxis=dict(
             title="Emenda Per Capita (R$/hab)",
-            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
         ),
     )
 
@@ -306,6 +336,7 @@ def chart_receita_vs_emenda_per_capita_uf() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 34 — Heatmap: Distribuição de Emendas por Situação × Região
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="heatmap_situacao_regiao",
@@ -336,7 +367,8 @@ def chart_heatmap_situacao_regiao() -> go.Figure:
     if df.empty:
         fig = go.Figure()
         fig.add_annotation(
-            text="Sem dados disponíveis.", showarrow=False,
+            text="Sem dados disponíveis.",
+            showarrow=False,
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "34. Heatmap: Emendas por Situação × Região")
@@ -353,37 +385,32 @@ def chart_heatmap_situacao_regiao() -> go.Figure:
     pivot = pivot.loc[pivot.sum(axis=1).sort_values(ascending=False).index]
 
     z_vals = pivot.values.tolist()
-    text_vals = [
-        [f"R$ {v/1e6:.1f}M" if v > 0 else "" for v in row]
-        for row in z_vals
-    ]
+    text_vals = [[f"R$ {v / 1e6:.1f}M" if v > 0 else "" for v in row] for row in z_vals]
 
-    fig = go.Figure(go.Heatmap(
-        z=z_vals,
-        x=pivot.columns.tolist(),
-        y=pivot.index.tolist(),
-        text=text_vals,
-        texttemplate="%{text}",
-        textfont=dict(size=11, color=THEME_TEXT),
-        colorscale=[
-            [0.0, "#0f172a"],
-            [0.2, "#1e3a5f"],
-            [0.5, "#1d4ed8"],
-            [0.8, "#22c55e"],
-            [1.0, "#f59e0b"],
-        ],
-        hovertemplate=(
-            "<b>%{y}</b> — %{x}<br>"
-            "Valor: R$ %{z:,.0f}<br>"
-            "<extra></extra>"
-        ),
-        showscale=True,
-        colorbar=dict(
-            title="Valor (R$)",
-            title_font=dict(color=THEME_TEXT),
-            tickfont=dict(color=THEME_TEXT),
-        ),
-    ))
+    fig = go.Figure(
+        go.Heatmap(
+            z=z_vals,
+            x=pivot.columns.tolist(),
+            y=pivot.index.tolist(),
+            text=text_vals,
+            texttemplate="%{text}",
+            textfont=dict(size=11, color=THEME_TEXT),
+            colorscale=[
+                [0.0, "#0f172a"],
+                [0.2, "#1e3a5f"],
+                [0.5, "#1d4ed8"],
+                [0.8, "#22c55e"],
+                [1.0, "#f59e0b"],
+            ],
+            hovertemplate=("<b>%{y}</b> — %{x}<br>Valor: R$ %{z:,.0f}<br><extra></extra>"),
+            showscale=True,
+            colorbar=dict(
+                title="Valor (R$)",
+                title_font=dict(color=THEME_TEXT),
+                tickfont=dict(color=THEME_TEXT),
+            ),
+        )
+    )
 
     fig.update_layout(
         xaxis=dict(title="Região", tickfont=dict(color=THEME_TEXT)),
@@ -396,6 +423,7 @@ def chart_heatmap_situacao_regiao() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 35 — PIB per Capita vs Emendas per Capita por UF
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="econ_pib_emendas",
@@ -435,53 +463,62 @@ def chart_econ_pib_emendas() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de PIB disponíveis para cruzamento",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "35. PIB per Capita vs Emendas per Capita por UF")
 
     import pandas as pd
+
     df["pib_per_capita"] = pd.to_numeric(df["pib_per_capita"], errors="coerce").fillna(0)
     df["emenda_per_capita"] = pd.to_numeric(df["emenda_per_capita"], errors="coerce").fillna(0)
     df["populacao_total"] = df["populacao_total"].clip(lower=1)
 
     REGIAO_CORES = {
-        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
-        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
     }
 
     fig = go.Figure()
     for regiao in df["regiao"].dropna().unique():
         dfr = df[df["regiao"] == regiao]
-        fig.add_trace(go.Scatter(
-            x=dfr["pib_per_capita"],
-            y=dfr["emenda_per_capita"],
-            mode="markers+text",
-            name=regiao,
-            text=dfr["uf"],
-            textposition="top center",
-            textfont=dict(size=10, color=THEME_TEXT),
-            marker=dict(
-                size=np.sqrt(dfr["populacao_total"] / dfr["populacao_total"].max()) * 50 + 10,
-                color=REGIAO_CORES.get(regiao, "#64748b"),
-                line=dict(width=1, color="#1e293b"),
-                opacity=0.85,
-            ),
-            hovertemplate=(
-                "<b>%{text}</b><br>"
-                "PIB/hab: R$ %{x:,.0f}<br>"
-                "Emendas/hab: R$ %{y:,.2f}<br>"
-                "<extra></extra>"
-            ),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=dfr["pib_per_capita"],
+                y=dfr["emenda_per_capita"],
+                mode="markers+text",
+                name=regiao,
+                text=dfr["uf"],
+                textposition="top center",
+                textfont=dict(size=10, color=THEME_TEXT),
+                marker=dict(
+                    size=np.sqrt(dfr["populacao_total"] / dfr["populacao_total"].max()) * 50 + 10,
+                    color=REGIAO_CORES.get(regiao, "#64748b"),
+                    line=dict(width=1, color="#1e293b"),
+                    opacity=0.85,
+                ),
+                hovertemplate=(
+                    "<b>%{text}</b><br>"
+                    "PIB/hab: R$ %{x:,.0f}<br>"
+                    "Emendas/hab: R$ %{y:,.2f}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
 
     fig.update_layout(
         xaxis=dict(
             title="PIB per Capita Médio (R$/hab)",
-            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
         ),
         yaxis=dict(
             title="Emendas per Capita (R$/hab)",
-            gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT),
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
         ),
     )
 
@@ -491,6 +528,7 @@ def chart_econ_pib_emendas() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 36 — IDHM vs Dependência de Transferências
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="econ_idhm_transferencias",
@@ -539,46 +577,57 @@ def chart_econ_idhm_transferencias(regiao_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de PIB/IPTU suficientes",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "36. PIB per Capita vs IPTU Arrecadado por Município")
 
     import pandas as pd
+
     df["pib_per_capita"] = pd.to_numeric(df["pib_per_capita"], errors="coerce").fillna(0)
     df["iptu_per_capita"] = pd.to_numeric(df["iptu_per_capita"], errors="coerce").fillna(0)
     df["populacao"] = df["populacao"].clip(lower=1)
 
     REGIAO_CORES = {
-        "Norte": "#0ea5e9", "Nordeste": "#f59e0b", "Sudeste": "#22c55e",
-        "Sul": "#a855f7", "Centro-Oeste": "#ef4444",
+        "Norte": "#0ea5e9",
+        "Nordeste": "#f59e0b",
+        "Sudeste": "#22c55e",
+        "Sul": "#a855f7",
+        "Centro-Oeste": "#ef4444",
     }
 
     fig = go.Figure()
     for regiao in df["regiao"].dropna().unique():
         dfr = df[df["regiao"] == regiao]
-        fig.add_trace(go.Scatter(
-            x=dfr["pib_per_capita"],
-            y=dfr["iptu_per_capita"],
-            mode="markers",
-            name=regiao,
-            marker=dict(
-                size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 40 + 8,
-                color=REGIAO_CORES.get(regiao, "#64748b"),
-                opacity=0.7,
-                line=dict(width=1, color="#1e293b"),
-            ),
-            hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "PIB/hab: R$ %{x:,.0f}<br>"
-                "IPTU/hab: R$ %{y:,.2f}<br>"
-                "<extra></extra>"
-            ),
-            customdata=dfr[["municipio"]].values,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=dfr["pib_per_capita"],
+                y=dfr["iptu_per_capita"],
+                mode="markers",
+                name=regiao,
+                marker=dict(
+                    size=np.sqrt(dfr["populacao"] / dfr["populacao"].max()) * 40 + 8,
+                    color=REGIAO_CORES.get(regiao, "#64748b"),
+                    opacity=0.7,
+                    line=dict(width=1, color="#1e293b"),
+                ),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "PIB/hab: R$ %{x:,.0f}<br>"
+                    "IPTU/hab: R$ %{y:,.2f}<br>"
+                    "<extra></extra>"
+                ),
+                customdata=dfr[["municipio"]].values,
+            )
+        )
 
     fig.update_layout(
-        xaxis=dict(title="PIB per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
-        yaxis=dict(title="IPTU per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        xaxis=dict(
+            title="PIB per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+        ),
+        yaxis=dict(
+            title="IPTU per Capita (R$/hab)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+        ),
     )
 
     return aplicar_tema(fig, "36. PIB per Capita vs IPTU Arrecadado por Município", 550)
@@ -587,6 +636,7 @@ def chart_econ_idhm_transferencias(regiao_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 37 — Ranking de Autonomia Fiscal Municipal (Top 30)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="econ_ranking_autonomia",
@@ -607,7 +657,9 @@ def chart_econ_idhm_transferencias(regiao_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_econ_ranking_autonomia(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -634,14 +686,14 @@ def chart_econ_ranking_autonomia(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados suficientes para ranking de autonomia fiscal",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "37. Ranking de Autonomia Fiscal Municipal")
 
     import pandas as pd
-    df["receita_per_capita"] = pd.to_numeric(
-        df["receita_per_capita"], errors="coerce"
-    ).fillna(0)
+
+    df["receita_per_capita"] = pd.to_numeric(df["receita_per_capita"], errors="coerce").fillna(0)
 
     cores = []
     for val in df["receita_per_capita"]:
@@ -655,23 +707,25 @@ def chart_econ_ranking_autonomia(uf_filter: str = "TODOS") -> go.Figure:
             cores.append("#f59e0b")
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["receita_per_capita"],
-        y=df["municipio_uf"],
-        orientation="h",
-        marker_color=cores,
-        text=df["receita_per_capita"].apply(lambda x: f"R$ {x:,.0f}"),
-        textposition="outside",
-        textfont=dict(size=10, color=THEME_TEXT),
-        hovertemplate=(
-            "<b>%{y}</b><br>"
-            "Receita per capita: R$ %{x:,.0f}<br>"
-            "Receita corrente: R$ %{customdata[0]:,.0f}<br>"
-            "Receita capital: R$ %{customdata[1]:,.0f}<br>"
-            "<extra></extra>"
-        ),
-        customdata=df[["receitas_correntes", "receitas_capital"]].values,
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=df["receita_per_capita"],
+            y=df["municipio_uf"],
+            orientation="h",
+            marker_color=cores,
+            text=df["receita_per_capita"].apply(lambda x: f"R$ {x:,.0f}"),
+            textposition="outside",
+            textfont=dict(size=10, color=THEME_TEXT),
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "Receita per capita: R$ %{x:,.0f}<br>"
+                "Receita corrente: R$ %{customdata[0]:,.0f}<br>"
+                "Receita capital: R$ %{customdata[1]:,.0f}<br>"
+                "<extra></extra>"
+            ),
+            customdata=df[["receitas_correntes", "receitas_capital"]].values,
+        )
+    )
 
     fig.update_layout(
         yaxis={"categoryorder": "total ascending"},

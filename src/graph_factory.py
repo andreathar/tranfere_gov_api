@@ -16,11 +16,11 @@ o decorador @register_chart — ele será importado automaticamente.
 # Re-exportar infraestrutura pública (tokens, decorator, registry, dataclasses)
 from src.graphs import (  # noqa: F401
     CHART_REGISTRY,
+    CORES_SITUACAO,
+    THEME_CARD_BG,
+    TODAS_UFS,
     ChartSpec,
     ControlSpec,
-    CORES_SITUACAO,
-    TODAS_UFS,
-    THEME_CARD_BG,
     aplicar_tema,
     register_chart,
 )

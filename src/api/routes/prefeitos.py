@@ -5,6 +5,7 @@ Endpoints para busca, perfil, ranking e emendas de prefeitos.
 """
 
 from fastapi import APIRouter, HTTPException
+
 from src.api.services import db_service
 
 router = APIRouter()
@@ -35,5 +36,3 @@ async def get_perfil(municipio_id: int):
 async def get_emendas(municipio_id: int, ano: int | None = None, limit: int = 100):
     """Retorna as emendas recebidas pelo município com os deputados autores, opcionalmente filtrado por ano."""
     return db_service.get_emendas_municipio(municipio_id, ano=ano, limit=limit)
-
-

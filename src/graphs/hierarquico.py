@@ -8,17 +8,16 @@ from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
 from src.graphs.theme import (
     CORES_SITUACAO,
-    TODAS_UFS,
     THEME_CARD_BG,
-    THEME_GRID,
     THEME_TEXT,
+    TODAS_UFS,
     aplicar_tema,
 )
-
 
 # ---------------------------------------------------------------------------
 # Chart 26 — Hierarquia de Recursos: Região → UF → Parlamentar
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="sunburst_drilldown_recursos",
@@ -39,10 +38,7 @@ from src.graphs.theme import (
 )
 def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
     params: tuple[str, ...]
-    if ano_filter != "TODOS":
-        params = (ano_filter, ano_filter)
-    else:
-        params = (ano_filter, "9999")
+    params = (ano_filter, ano_filter) if ano_filter != "TODOS" else (ano_filter, "9999")
 
     query = """
         SELECT
@@ -80,7 +76,8 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(
-            fig, "26. Hierarquia de Recursos: Região → UF → Parlamentar",
+            fig,
+            "26. Hierarquia de Recursos: Região → UF → Parlamentar",
             altura=550,
         )
 
@@ -91,11 +88,7 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
                 axis=1,
             ).tolist(),
             labels=df.apply(
-                lambda r: (
-                    r["parlamentar_nome"]
-                    if r["regiao"] != "Sem Região"
-                    else r["regiao"]
-                ),
+                lambda r: r["parlamentar_nome"] if r["regiao"] != "Sem Região" else r["regiao"],
                 axis=1,
             ).tolist(),
             parents=df.apply(
@@ -111,11 +104,7 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
             values=df["total_emendas"].tolist(),
             branchvalues="remainder",
             maxdepth=3,
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Valor: R$ %{value:,.2f}<br>"
-                "<extra></extra>"
-            ),
+            hovertemplate=("<b>%{label}</b><br>Valor: R$ %{value:,.2f}<br><extra></extra>"),
             marker=dict(
                 colorscale="Viridis",
                 line=dict(width=1, color=THEME_CARD_BG),
@@ -126,7 +115,8 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
     )
 
     return aplicar_tema(
-        fig, "26. Hierarquia de Recursos: Região → UF → Parlamentar",
+        fig,
+        "26. Hierarquia de Recursos: Região → UF → Parlamentar",
         altura=550,
     )
 
@@ -134,6 +124,7 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 27 — Composição de Investimentos por Objeto
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="treemap_investimentos_objetos",
@@ -156,10 +147,7 @@ def chart_treemap_investimentos_objetos(
     uf_filter: str = "TODOS",
 ) -> go.Figure:
     params: tuple[str, ...]
-    if uf_filter != "TODOS":
-        params = (uf_filter, uf_filter)
-    else:
-        params = (uf_filter, "XX")
+    params = (uf_filter, uf_filter) if uf_filter != "TODOS" else (uf_filter, "XX")
 
     query = """
         SELECT
@@ -194,7 +182,8 @@ def chart_treemap_investimentos_objetos(
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(
-            fig, "27. Composição de Investimentos por Objeto",
+            fig,
+            "27. Composição de Investimentos por Objeto",
             altura=550,
         )
 
@@ -267,7 +256,8 @@ def chart_treemap_investimentos_objetos(
     )
 
     return aplicar_tema(
-        fig, "27. Composição de Investimentos por Objeto",
+        fig,
+        "27. Composição de Investimentos por Objeto",
         altura=600,
     )
 
@@ -275,6 +265,7 @@ def chart_treemap_investimentos_objetos(
 # ---------------------------------------------------------------------------
 # Chart 28 — Fluxo Financeiro: Parlamentar → Beneficiário → Status
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="sankey_fluxo_financeiro",
@@ -295,10 +286,7 @@ def chart_treemap_investimentos_objetos(
 )
 def chart_sankey_fluxo_financeiro(uf_filter: str = "TODOS") -> go.Figure:
     params: tuple[str, ...]
-    if uf_filter != "TODOS":
-        params = (uf_filter, uf_filter)
-    else:
-        params = (uf_filter, "XX")
+    params = (uf_filter, uf_filter) if uf_filter != "TODOS" else (uf_filter, "XX")
 
     query = """
         SELECT
@@ -344,8 +332,8 @@ def chart_sankey_fluxo_financeiro(uf_filter: str = "TODOS") -> go.Figure:
 
     # Node colors
     node_colors = (
-        ["#22c55e"] * len(parlamentares)     # green for parliamentarians
-        + ["#3b82f6"] * len(beneficiarios)   # blue for beneficiaries
+        ["#22c55e"] * len(parlamentares)  # green for parliamentarians
+        + ["#3b82f6"] * len(beneficiarios)  # blue for beneficiaries
         + [CORES_SITUACAO.get(s, "#64748b") for s in situacoes]
     )
 
@@ -393,8 +381,7 @@ def chart_sankey_fluxo_financeiro(uf_filter: str = "TODOS") -> go.Figure:
                 value=values,
                 color=link_colors,
                 hovertemplate=(
-                    "%{source.label} → %{target.label}<br>"
-                    "Valor: R$ %{value:,.2f}<extra></extra>"
+                    "%{source.label} → %{target.label}<br>Valor: R$ %{value:,.2f}<extra></extra>"
                 ),
             ),
         )

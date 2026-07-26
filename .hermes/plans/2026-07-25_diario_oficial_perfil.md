@@ -4,7 +4,7 @@
 
 **Goal:** Adicionar botão "📰 Diário Oficial" nos perfis de deputado e prefeito que busca citações do nome no DOU (federal) e Querido Diário (municipal), exibindo os resultados em um modal dedicado.
 
-**Architecture:** 
+**Architecture:**
 - Backend: endpoint `POST /api/v1/diario/buscar-perfil` que aceita `{q, escopo, uf_municipio?}` e chama o MCP tool `diario_oficial_buscar_diario_unificado`. Para prefeitos com UF, usar `diario_oficial_buscar_diarios` (Querido Diário) quando `escopo=municipal`.
 - Frontend: botão no profile card do deputado (sidebar) e no modal do prefeito. Ao clicar, abre `modal-diario-perfil` com resultados parseados do MCP (JSON → cards legíveis).
 - Reutiliza o MCP client existente em `src/api/services/mcp_service.py` e o client `MCPBrasilClient` com cache TTL.
@@ -47,7 +47,7 @@ async def buscar_diario_perfil(
     data_fim: str | None = None,
 ) -> dict:
     """Busca citações de um nome no Diário Oficial (DOU + Querido Diário).
-    
+
     Returns dict com keys:
       - federal: list de publicações DOU
       - municipal: list de publicações Querido Diário
@@ -55,9 +55,9 @@ async def buscar_diario_perfil(
       - total: soma de resultados
     """
     import json as _json
-    
+
     results = {"federal": [], "municipal": [], "query": nome, "total": 0}
-    
+
     # Busca DOU federal
     if escopo in ("ambos", "federal"):
         try:
@@ -66,7 +66,7 @@ async def buscar_diario_perfil(
                 dou_args["data_inicio"] = data_inicio
             if data_fim:
                 dou_args["data_fim"] = data_fim
-            
+
             res = await _mcp_client.call_tool(
                 "diario_oficial_dou_buscar", dou_args
             )
@@ -79,14 +79,14 @@ async def buscar_diario_perfil(
         except Exception as e:
             log.warning(f"Erro busca DOU federal para '{nome}': {e}")
             results["federal_error"] = str(e)
-    
+
     # Busca Querido Diário (municipal)
     if escopo in ("ambos", "municipal"):
         try:
             qd_args = {"texto": nome}
             if uf_municipio:
                 qd_args["uf"] = uf_municipio
-            
+
             res = await _mcp_client.call_tool(
                 "diario_oficial_buscar_diarios", qd_args
             )
@@ -99,7 +99,7 @@ async def buscar_diario_perfil(
         except Exception as e:
             log.warning(f"Erro busca Querido Diário para '{nome}': {e}")
             results["municipal_error"] = str(e)
-    
+
     results["total"] = len(results["federal"]) + len(results["municipal"])
     return results
 ```
@@ -112,18 +112,18 @@ Adicionar após a rota existente `/buscar`:
 @router.post("/buscar-perfil", response_model=Dict[str, Any])
 async def buscar_diario_perfil(payload: dict):
     """Busca citações de um político no Diário Oficial (DOU + Querido Diário).
-    
+
     Body: {q: str, escopo: str, uf_municipio?: str, data_inicio?: str, data_fim?: str}
     """
     q = payload.get("q", "").strip()
     if not q:
         raise HTTPException(status_code=400, detail="Campo 'q' é obrigatório")
-    
+
     escopo = payload.get("escopo", "ambos")
     uf = payload.get("uf_municipio")
     data_inicio = payload.get("data_inicio")
     data_fim = payload.get("data_fim")
-    
+
     try:
         result = await mcp_service.buscar_diario_perfil(
             nome=q, escopo=escopo, uf_municipio=uf,
@@ -166,7 +166,7 @@ Expected: 0 errors, syntax OK.
             <span class="close-modal" onclick="closeModal('modal-diario-perfil')">&times;</span>
         </div>
         <p id="modal-diario-perfil-subtitle" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;"></p>
-        
+
         <!-- Filtros internos -->
         <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap;">
             <select id="diario-escopo-select" style="background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem;">
@@ -178,7 +178,7 @@ Expected: 0 errors, syntax OK.
             <input type="date" id="diario-data-fim" style="background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.85rem;" placeholder="Data fim">
             <button id="btn-buscar-diario-perfil" style="background: var(--accent-blue); color: #fff; border: none; padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem;">🔍 Buscar</button>
         </div>
-        
+
         <div id="diario-perfil-results" class="modal-body" style="min-height: 120px; background: #0f172a; border-radius: 8px; padding: 1rem; max-height: 55vh; overflow-y: auto;">
             <p style="color: var(--text-muted); text-align: center; padding: 2rem;">Clique em "Buscar" para consultar o Diário Oficial.</p>
         </div>

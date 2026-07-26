@@ -1,6 +1,6 @@
 -- migration_011_tse_deputados.sql: Adiciona colunas eleitorais TSE na tabela parlamentares_dados
 
-ALTER TABLE parlamentares_dados 
+ALTER TABLE parlamentares_dados
 ADD COLUMN IF NOT EXISTS ano_eleicao INTEGER DEFAULT 2022,
 ADD COLUMN IF NOT EXISTS situacao_eleitoral TEXT,
 ADD COLUMN IF NOT EXISTS coligacao TEXT,

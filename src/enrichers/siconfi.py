@@ -25,7 +25,7 @@ import argparse
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 import psycopg2
 import requests
@@ -86,12 +86,23 @@ CONTA_MAP: list[tuple[str, str]] = [
 
 # Colunas do banco (para INSERT/UPDATE)
 DB_COLUMNS = [
-    "receitas_correntes", "receitas_capital", "receitas_orcamentarias",
-    "receitas_transferencias", "receitas_nao_operacionais",
-    "despesas_correntes", "despesas_capital", "despesas_orcamentarias",
-    "despesas_financeiras", "despesas_totais",
-    "resultado_orcamentario", "resultado_primario", "resultado_financeiro",
-    "divida_ativa", "divida_passiva", "ativo_imobilizado", "patrimonio_liquido",
+    "receitas_correntes",
+    "receitas_capital",
+    "receitas_orcamentarias",
+    "receitas_transferencias",
+    "receitas_nao_operacionais",
+    "despesas_correntes",
+    "despesas_capital",
+    "despesas_orcamentarias",
+    "despesas_financeiras",
+    "despesas_totais",
+    "resultado_orcamentario",
+    "resultado_primario",
+    "resultado_financeiro",
+    "divida_ativa",
+    "divida_passiva",
+    "ativo_imobilizado",
+    "patrimonio_liquido",
 ]
 
 # ---------------------------------------------------------------------------
@@ -99,31 +110,37 @@ DB_COLUMNS = [
 # Fonte: RREO-Anexo 03 (Receita Corrente Liquida) — soma dos 6 bimestres
 # ---------------------------------------------------------------------------
 RREO_A03_CONTA_MAP: list[tuple[str, str]] = [
-    ("IPTU",                              "arrec_iptu"),
-    ("ISS",                               "arrec_iss"),
-    ("ITBI",                              "arrec_itbi"),
-    ("IRRF",                              "arrec_irrf"),
-    ("Cota-Parte do ICMS",                "arrec_cota_icms"),
-    ("Cota-Parte do IPVA",                "arrec_cota_ipva"),
-    ("Cota-Parte do ITR",                 "arrec_cota_itr"),
-    ("Cota-Parte do FPM",                 "arrec_cota_fpm"),
-    ("Impostos, Taxas e Contribuicoes",   "arrec_impostos_geral"),
-    ("Transferencias Correntes",          "arrec_transferencias"),
-    ("Receita de Servicos",               "arrec_receita_servicos"),
-    ("Receita Patrimonial",               "arrec_receita_patrimonial"),
-    ("RECEITAS CORRENTES",                "arrec_receitas_correntes"),
+    ("IPTU", "arrec_iptu"),
+    ("ISS", "arrec_iss"),
+    ("ITBI", "arrec_itbi"),
+    ("IRRF", "arrec_irrf"),
+    ("Cota-Parte do ICMS", "arrec_cota_icms"),
+    ("Cota-Parte do IPVA", "arrec_cota_ipva"),
+    ("Cota-Parte do ITR", "arrec_cota_itr"),
+    ("Cota-Parte do FPM", "arrec_cota_fpm"),
+    ("Impostos, Taxas e Contribuicoes", "arrec_impostos_geral"),
+    ("Transferencias Correntes", "arrec_transferencias"),
+    ("Receita de Servicos", "arrec_receita_servicos"),
+    ("Receita Patrimonial", "arrec_receita_patrimonial"),
+    ("RECEITAS CORRENTES", "arrec_receitas_correntes"),
 ]
 
 # Colunas de arrecadacao no banco (para INSERT/UPDATE)
 ARREC_DB_COLUMNS = [
-    "arrec_iptu", "arrec_iss", "arrec_itbi", "arrec_irrf",
-    "arrec_cota_icms", "arrec_cota_ipva", "arrec_cota_itr", "arrec_cota_fpm",
-    "arrec_impostos_geral", "arrec_transferencias",
-    "arrec_receita_servicos", "arrec_receita_patrimonial",
+    "arrec_iptu",
+    "arrec_iss",
+    "arrec_itbi",
+    "arrec_irrf",
+    "arrec_cota_icms",
+    "arrec_cota_ipva",
+    "arrec_cota_itr",
+    "arrec_cota_fpm",
+    "arrec_impostos_geral",
+    "arrec_transferencias",
+    "arrec_receita_servicos",
+    "arrec_receita_patrimonial",
     "arrec_receitas_correntes",
 ]
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +276,7 @@ def upsert_financeiro(
 # RREO Anexo 03 — Arrecadacao de Impostos
 # ---------------------------------------------------------------------------
 
+
 def buscar_rreo_a03(
     municipio_id: int,
     exercicio: int,
@@ -308,8 +326,7 @@ def parse_rreo_a03_itens(
     def _strip_accents(s: str) -> str:
         """Remove acentos de uma string (NFKD decomposition + strip)."""
         return "".join(
-            c for c in unicodedata.normalize("NFKD", s)
-            if unicodedata.category(c) != "Mn"
+            c for c in unicodedata.normalize("NFKD", s) if unicodedata.category(c) != "Mn"
         )
 
     resultado: dict[str, float | None] = {col: None for col in ARREC_DB_COLUMNS}
@@ -351,7 +368,7 @@ def upsert_arrecadacao(
     update_str += ", arrec_fonte_rreo = EXCLUDED.arrec_fonte_rreo"
     update_str += ", arrec_atualizado_em = EXCLUDED.arrec_atualizado_em"
 
-    valores: list[float | None | str] = [dados.get(c) for c in ARREC_DB_COLUMNS]
+    valores: list[Any] = [dados.get(c) for c in ARREC_DB_COLUMNS]
     valores.append("SICONFI/RREO-A03")
     valores.append(datetime.now(UTC))
 
@@ -375,11 +392,14 @@ def main() -> None:
     _ = parser.add_argument("--uf", type=str, default="", help="UF especifica (vazio=todas)")
     _ = parser.add_argument("--limit", type=int, default=0, help="Max. municipios (0=todos)")
     _ = parser.add_argument(
-        "--ano", type=int, default=0,
+        "--ano",
+        type=int,
+        default=0,
         help="Exercicio (0=ano mais recente disponivel)",
     )
     _ = parser.add_argument(
-        "--rreo", action="store_true",
+        "--rreo",
+        action="store_true",
         help="Tambem buscar RREO Anexo 03 (arrecadacao de impostos por municipio)",
     )
     args: _SiconfiArgs = parser.parse_args(namespace=_SiconfiArgs())
@@ -387,26 +407,44 @@ def main() -> None:
     conn = get_connection()
     cur = conn.cursor()
 
-    # Buscar municipios mapeados (com codigo IBGE), excluindo ja enriquecidos
+    # Exercicio: usar informado ou detectar o mais recente
+    exercicio: int = args.ano
+
+    # Buscar municipios mapeados (com codigo IBGE), excluindo ja enriquecidos para este exercicio
     uf_filtro: str = args.uf.upper()
     where_extra = ""
     params: list[str | int] = []
+    if exercicio:
+        params.append(exercicio)
     if uf_filtro:
         where_extra = " AND m.uf = %s"
         params.append(uf_filtro)
 
-    cur.execute(
-        f"""
-        SELECT m.municipio_id, m.nome, m.uf
-        FROM municipios_ibge m
-        WHERE NOT EXISTS (
-            SELECT 1 FROM municipios_financeiro f
-            WHERE f.municipio_id = m.municipio_id
-        ) {where_extra}
-        ORDER BY m.uf, m.nome
-        """,
-        params,
-    )
+    if exercicio:
+        cur.execute(
+            f"""
+            SELECT m.municipio_id, m.nome, m.uf
+            FROM municipios_ibge m
+            WHERE NOT EXISTS (
+                SELECT 1 FROM municipios_financeiro f
+                WHERE f.municipio_id = m.municipio_id
+                  AND f.exercicio = %s
+            ) {where_extra}
+            ORDER BY m.uf, m.nome
+            """,
+            params,
+        )
+    else:
+        # Sem ano fixo: buscar todos os municipios mapeados
+        cur.execute(
+            f"""
+            SELECT m.municipio_id, m.nome, m.uf
+            FROM municipios_ibge m
+            WHERE 1=1 {where_extra}
+            ORDER BY m.uf, m.nome
+            """,
+            params[1:] if uf_filtro else [],
+        )
 
     municipios: list[tuple[int, str, str]] = cur.fetchall()
     if args.limit > 0:
@@ -416,9 +454,6 @@ def main() -> None:
     row = cur.fetchone()
     ja_feitos = row[0] if row else 0
     print(f"Ja enriquecidos: {ja_feitos} | Restantes: {len(municipios)}")
-
-    # Exercicio: usar informado ou detectar o mais recente
-    exercicio: int = args.ano
 
     print(f"Municipios para enriquecer: {len(municipios)}")
     if exercicio:
@@ -458,10 +493,7 @@ def main() -> None:
         if args.dry_run:
             campos_preenchidos = sum(1 for v in dados.values() if v is not None)
             status = "\u2713" if tem_dados else "\u2717"
-            resumo = " | ".join(
-                f"{k}={v:,.0f}" for k, v in dados.items()
-                if v is not None
-            )[:120]
+            resumo = " | ".join(f"{k}={v:,.0f}" for k, v in dados.items() if v is not None)[:120]
             msg = (
                 f"  {status} {mun_id} - {nome} ({uf}) [{ano_atual}]"
                 + f" | {campos_preenchidos} campos | {resumo}"
@@ -501,9 +533,9 @@ def main() -> None:
         conn.close()
         return
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("FASE 2: RREO Anexo 03 — Arrecadacao de Impostos")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Buscar municipios que ja tem financeiro DCA mas sem dados RREO
     uf_filtro_rreo: str = args.uf.upper()

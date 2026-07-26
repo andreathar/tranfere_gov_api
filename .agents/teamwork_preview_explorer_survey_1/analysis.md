@@ -1,9 +1,9 @@
 # Survey Analysis Report: Requirement R1 (Code Quality, Formatting & Typing)
 
-**Project**: TransfereGov API  
-**Target Python Version**: Python 3.11  
-**Investigator**: Explorer Subagent (`teamwork_preview_explorer_survey_1`)  
-**Date**: 2026-07-25  
+**Project**: TransfereGov API
+**Target Python Version**: Python 3.11
+**Investigator**: Explorer Subagent (`teamwork_preview_explorer_survey_1`)
+**Date**: 2026-07-25
 
 ---
 

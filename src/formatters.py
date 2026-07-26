@@ -3,6 +3,7 @@ formatters — Funções de formatação para BRL, numéricos e porcentagens.
 
 Substitui as 18+ cópias espalhadas de fmt_brl/fmt_num/fmt_pct/format_brl.
 """
+
 from __future__ import annotations
 
 import pandas as pd

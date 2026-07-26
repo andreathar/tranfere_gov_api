@@ -2,23 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
+from .camara_service import listar_despesas
 from .db_service import _get_connection, _rows_to_list
-from .camara_service import buscar_deputado, listar_despesas
 
 log = logging.getLogger(__name__)
 
 
-def _sync_get_party_efficiency() -> List[Dict[str, Any]]:
+def _sync_get_party_efficiency() -> list[dict[str, Any]]:
     """
     Agrupa emendas por partido e status de execução.
     Retorna a eficiência de execução de cada partido.
     """
-    with _get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+                SELECT
                     pd.sigla_partido,
                     vu.status_execucao,
                     COUNT(vu.codigo_emenda) as total_emendas,
@@ -29,17 +28,16 @@ def _sync_get_party_efficiency() -> List[Dict[str, Any]]:
                 GROUP BY pd.sigla_partido, vu.status_execucao
                 ORDER BY pd.sigla_partido, vu.status_execucao
             """)
-            return _rows_to_list(cur.fetchall())
+        return _rows_to_list(cur.fetchall())
 
 
-def _sync_get_socioeconomic_data() -> List[Dict[str, Any]]:
+def _sync_get_socioeconomic_data() -> list[dict[str, Any]]:
     """
     Agrega o volume de emendas por município e cruza com IDHM e PIB per capita.
     """
-    with _get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+                SELECT
                     mi.nome as municipio,
                     mi.uf,
                     mi.idhm,
@@ -56,31 +54,31 @@ def _sync_get_socioeconomic_data() -> List[Dict[str, Any]]:
                 ORDER BY total_emendas DESC
                 LIMIT 500
             """)
-            return _rows_to_list(cur.fetchall())
+        return _rows_to_list(cur.fetchall())
 
 
-async def get_party_efficiency() -> List[Dict[str, Any]]:
+async def get_party_efficiency() -> list[dict[str, Any]]:
     """Async wrapper — executa query síncrona em thread separada."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_party_efficiency)
 
 
-async def get_socioeconomic_data() -> List[Dict[str, Any]]:
+async def get_socioeconomic_data() -> list[dict[str, Any]]:
     """Async wrapper — executa query síncrona em thread separada."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_socioeconomic_data)
 
-async def get_deputy_roi() -> List[Dict[str, Any]]:
+
+async def get_deputy_roi() -> list[dict[str, Any]]:
     """
-    Cruza as despesas totais do deputado na Câmara (Live API) com o valor total 
+    Cruza as despesas totais do deputado na Câmara (Live API) com o valor total
     das emendas que ele destinou. (Simula buscando top 20 parlamentares por emendas)
     """
     # 1. Fetch top 20 deputados from DB
     deputados = []
-    with _get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+                SELECT
                     pd.deputado_id,
                     pd.nome_urna as nome,
                     pd.sigla_partido,
@@ -92,8 +90,8 @@ async def get_deputy_roi() -> List[Dict[str, Any]]:
                 ORDER BY valor_emendas DESC
                 LIMIT 20
             """)
-            deputados = _rows_to_list(cur.fetchall())
-            
+        deputados = _rows_to_list(cur.fetchall())
+
     # 2. Asynchronously fetch expenses for these 20 deputies
     for dep in deputados:
         try:
@@ -101,27 +99,27 @@ async def get_deputy_roi() -> List[Dict[str, Any]]:
             total_despesas = sum([d.get("valorDocumento", 0) for d in despesas])
             dep["valor_despesas"] = total_despesas
         except Exception as e:
-            log.error("Failed to fetch expenses for %s: %s", dep['nome'], e)
+            log.error("Failed to fetch expenses for %s: %s", dep["nome"], e)
             dep["valor_despesas"] = 0
-            
+
     return deputados
 
-def _sync_get_top_municipios() -> List[Dict[str, Any]]:
-    with _get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
+
+def _sync_get_top_municipios() -> list[dict[str, Any]]:
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
                 SELECT b.municipio_id as ibge, m.nome, m.uf, SUM(p.valor_total) as total
                 FROM planos_acao p
                 JOIN beneficiario_ibge_map b ON p.beneficiario_id = b.beneficiario_id
                 JOIN municipios_ibge m ON b.municipio_id = m.municipio_id
                 GROUP BY b.municipio_id, m.nome, m.uf
-                ORDER BY total DESC 
+                ORDER BY total DESC
                 LIMIT 12;
             """)
-            return _rows_to_list(cur.fetchall())
+        return _rows_to_list(cur.fetchall())
 
 
-async def get_top_municipios() -> List[Dict[str, Any]]:
+async def get_top_municipios() -> list[dict[str, Any]]:
     """Async wrapper — executa query síncrona em thread separada."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_top_municipios)

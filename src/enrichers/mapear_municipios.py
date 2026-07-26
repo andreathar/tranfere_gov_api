@@ -26,7 +26,7 @@ def normalize(text: str) -> str:
     # Remove prefixos
     for prefix in ["MUNICIPIO DE ", "MUNICÍPIO DE ", "ESTADO DE ", "ESTADO DA ", "ESTADO DO "]:
         if text.startswith(prefix):
-            text = text[len(prefix):]
+            text = text[len(prefix) :]
     return text.strip()
 
 
@@ -84,11 +84,14 @@ def main():
         """)
 
         # Inserir mapeamentos
-        cur.executemany("""
+        cur.executemany(
+            """
             INSERT INTO beneficiario_ibge_map (beneficiario_id, municipio_id)
             VALUES (%s, %s)
             ON CONFLICT (beneficiario_id) DO UPDATE SET municipio_id = EXCLUDED.municipio_id
-        """, inserts)
+        """,
+            inserts,
+        )
         conn.commit()
         print(f"Tabela beneficiario_ibge_map populada: {len(inserts)} registros")
 

@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 TransfereGov — Dashboard de Competência e Eficiência dos Parlamentares.
@@ -71,11 +70,8 @@ TEMA = {
 # ═══════════════════════════════════════════════════════════════════════
 
 
-
 def query_df(conn, sql):
     return pd.read_sql(sql, conn)
-
-
 
 
 def estilo_fig(fig, height=450):
@@ -254,6 +250,7 @@ ORDER BY valor DESC
 # GRÁFICO 1 — Dispersão: Eficiência vs Volume
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def grafico_eficiencia_vs_volume(df):
     """
     Scatter plot: Taxa de Sucesso (%) vs Valor Total (R$).
@@ -298,15 +295,27 @@ def grafico_eficiencia_vs_volume(df):
     fig.add_hline(y=med_y, line_dash="dash", line_color="#64748b", opacity=0.5)
 
     # Anotação dos quadrantes
-    fig.add_annotation(x=98, y=df["valor_milhao"].max() * 0.95,
-                       text="🏆 Alta entrega + Alta eficiência",
-                       showarrow=False, font=dict(color="#2ecc71", size=10))
-    fig.add_annotation(x=98, y=df["valor_milhao"].min() + 1,
-                       text="📈 Alta eficiência, baixo volume",
-                       showarrow=False, font=dict(color="#3498db", size=10))
-    fig.add_annotation(x=df["taxa_sucesso"].min() + 1, y=df["valor_milhao"].max() * 0.95,
-                       text="💰 Alto volume, baixa eficiência",
-                       showarrow=False, font=dict(color="#e74c3c", size=10))
+    fig.add_annotation(
+        x=98,
+        y=df["valor_milhao"].max() * 0.95,
+        text="🏆 Alta entrega + Alta eficiência",
+        showarrow=False,
+        font=dict(color="#2ecc71", size=10),
+    )
+    fig.add_annotation(
+        x=98,
+        y=df["valor_milhao"].min() + 1,
+        text="📈 Alta eficiência, baixo volume",
+        showarrow=False,
+        font=dict(color="#3498db", size=10),
+    )
+    fig.add_annotation(
+        x=df["taxa_sucesso"].min() + 1,
+        y=df["valor_milhao"].max() * 0.95,
+        text="💰 Alto volume, baixa eficiência",
+        showarrow=False,
+        font=dict(color="#e74c3c", size=10),
+    )
 
     fig.update_traces(marker=dict(line=dict(width=1, color="white")))
     fig = estilo_fig(fig, height=600)
@@ -317,6 +326,7 @@ def grafico_eficiencia_vs_volume(df):
 # ═══════════════════════════════════════════════════════════════════════
 # GRÁFICO 2 — Top 30 Parlamentares por Valor com Taxa de Sucesso
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def grafico_top_parlamentares(df):
     """
@@ -358,22 +368,24 @@ def grafico_top_parlamentares(df):
         textposition="outside",
         textfont=dict(size=9),
         hovertemplate="<b>%{y}</b><br>"
-                      + "Valor: R$ %{customdata[0]:,.2f} milhões<br>"
-                      + "Sucesso: %{customdata[1]:.1f}%<br>"
-                      + "Municípios: %{customdata[2]}<br>"
-                      + "Objetos: %{customdata[3]}<br>"
-                      + "Planos: %{customdata[4]}<br>"
-                      + "Negados: %{customdata[5]}<extra></extra>",
+        + "Valor: R$ %{customdata[0]:,.2f} milhões<br>"
+        + "Sucesso: %{customdata[1]:.1f}%<br>"
+        + "Municípios: %{customdata[2]}<br>"
+        + "Objetos: %{customdata[3]}<br>"
+        + "Planos: %{customdata[4]}<br>"
+        + "Negados: %{customdata[5]}<extra></extra>",
     )
     # Pass customdata
-    top["customdata"] = top[["valor_milhao", "taxa_sucesso", "municipios",
-                              "objetos", "total_planos", "negados"]].values.tolist()
+    top["customdata"] = top[
+        ["valor_milhao", "taxa_sucesso", "municipios", "objetos", "total_planos", "negados"]
+    ].values.tolist()
     fig.update_traces(customdata=top["customdata"])
 
     fig = estilo_fig(fig, height=700)
-    fig.update_layout(margin=dict(l=200, r=180), coloraxis_colorbar=dict(
-        title="Sucesso %", tickfont=dict(color=TEMA["text_muted"])
-    ))
+    fig.update_layout(
+        margin=dict(l=200, r=180),
+        coloraxis_colorbar=dict(title="Sucesso %", tickfont=dict(color=TEMA["text_muted"])),
+    )
     fig.update_xaxes(showgrid=True, gridcolor="#334155")
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
@@ -381,6 +393,7 @@ def grafico_top_parlamentares(df):
 # ═══════════════════════════════════════════════════════════════════════
 # GRÁFICO 3 — Mapa de Calor: Parlamentar × Região
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def grafico_parlamentar_regiao(df):
     """
@@ -392,8 +405,7 @@ def grafico_parlamentar_regiao(df):
     df_filt["parlamentar_nome"] = df_filt["parlamentar_nome"].str.title()
 
     pivot = df_filt.pivot_table(
-        index="parlamentar_nome", columns="regiao",
-        values="valor", aggfunc="sum", fill_value=0
+        index="parlamentar_nome", columns="regiao", values="valor", aggfunc="sum", fill_value=0
     )
 
     # Ordem desejada das regiões
@@ -432,6 +444,7 @@ def grafico_parlamentar_regiao(df):
 # ═══════════════════════════════════════════════════════════════════════
 # GRÁFICO 4 — Comparativo Partidário
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def grafico_partidos(df):
     """
@@ -479,8 +492,7 @@ def grafico_partidos(df):
     )
     fig.update_xaxes(tickangle=45)
     fig.update_yaxes(title_text="Valor Total (R$ milhões)", secondary_y=False)
-    fig.update_yaxes(title_text="Taxa de Sucesso Média (%)", secondary_y=True,
-                      range=[80, 100])
+    fig.update_yaxes(title_text="Taxa de Sucesso Média (%)", secondary_y=True, range=[80, 100])
 
     fig = estilo_fig(fig, height=500)
     return fig.to_html(full_html=False, include_plotlyjs=False)
@@ -489,6 +501,7 @@ def grafico_partidos(df):
 # ═══════════════════════════════════════════════════════════════════════
 # GRÁFICO 5 — Concentração vs Capilaridade
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def grafico_concentracao(df):
     """
@@ -532,12 +545,20 @@ def grafico_concentracao(df):
     # Anotações explicativas
     x_max = df["municipios"].max()
     y_max = df["valor_milhao_por_mun"].max()
-    fig.add_annotation(x=x_max * 0.8, y=y_max * 0.95,
-                       text="🔵 Capilaridade: muitos municípios, baixo valor por município",
-                       showarrow=False, font=dict(color="#3498db", size=9))
-    fig.add_annotation(x=x_max * 0.15, y=y_max * 0.95,
-                       text="🔴 Concentração: poucos municípios, alto valor por município",
-                       showarrow=False, font=dict(color="#e74c3c", size=9))
+    fig.add_annotation(
+        x=x_max * 0.8,
+        y=y_max * 0.95,
+        text="🔵 Capilaridade: muitos municípios, baixo valor por município",
+        showarrow=False,
+        font=dict(color="#3498db", size=9),
+    )
+    fig.add_annotation(
+        x=x_max * 0.15,
+        y=y_max * 0.95,
+        text="🔴 Concentração: poucos municípios, alto valor por município",
+        showarrow=False,
+        font=dict(color="#e74c3c", size=9),
+    )
 
     return fig.to_html(full_html=False, include_plotlyjs=False)
 
@@ -545,6 +566,7 @@ def grafico_concentracao(df):
 # ═══════════════════════════════════════════════════════════════════════
 # GRÁFICO 6 — Matriz Parlamentar × Objeto de Execução
 # ═══════════════════════════════════════════════════════════════════════
+
 
 def grafico_parlamentar_objeto(df):
     """
@@ -555,19 +577,26 @@ def grafico_parlamentar_objeto(df):
     top_obj = df.groupby("objeto_descricao")["valor"].sum().nlargest(15).index
 
     df_filt = df[
-        df["parlamentar_nome"].isin(top_parl) &
-        df["objeto_descricao"].isin(top_obj)
+        df["parlamentar_nome"].isin(top_parl) & df["objeto_descricao"].isin(top_obj)
     ].copy()
     df_filt["parlamentar_nome"] = df_filt["parlamentar_nome"].str.title()
 
-    pivot = df_filt.pivot_table(
-        index="parlamentar_nome", columns="objeto_descricao",
-        values="valor", aggfunc="sum", fill_value=0
-    ) / 1_000_000
+    pivot = (
+        df_filt.pivot_table(
+            index="parlamentar_nome",
+            columns="objeto_descricao",
+            values="valor",
+            aggfunc="sum",
+            fill_value=0,
+        )
+        / 1_000_000
+    )
 
     # Abreviar nomes dos objetos
-    pivot.columns = [c.split(" - ")[0] + " - " + c.split(" - ")[1][:25]
-                     if " - " in c else c[:30] for c in pivot.columns]
+    pivot.columns = [
+        c.split(" - ")[0] + " - " + c.split(" - ")[1][:25] if " - " in c else c[:30]
+        for c in pivot.columns
+    ]
 
     fig = px.imshow(
         pivot,
@@ -592,6 +621,7 @@ def grafico_parlamentar_objeto(df):
 # GRÁFICO 7 — Taxa de Impedimento — Top 20
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def grafico_impedimento(df):
     """
     Barras horizontais: Top 20 deputados com MAIOR taxa de impedimento.
@@ -606,23 +636,27 @@ def grafico_impedimento(df):
 
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        y=top["label"],
-        x=top["pct_tecnico"],
-        name="Impedido Técnico",
-        orientation="h",
-        marker_color="#e74c3c",
-        hovertemplate="<b>%{y}</b><br>Impedido Técnico: %{x:.1f}%<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            y=top["label"],
+            x=top["pct_tecnico"],
+            name="Impedido Técnico",
+            orientation="h",
+            marker_color="#e74c3c",
+            hovertemplate="<b>%{y}</b><br>Impedido Técnico: %{x:.1f}%<extra></extra>",
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        y=top["label"],
-        x=top["pct_rejeicao"],
-        name="Rejeição Plano de Trabalho",
-        orientation="h",
-        marker_color="#e67e22",
-        hovertemplate="<b>%{y}</b><br>Rejeição: %{x:.1f}%<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            y=top["label"],
+            x=top["pct_rejeicao"],
+            name="Rejeição Plano de Trabalho",
+            orientation="h",
+            marker_color="#e67e22",
+            hovertemplate="<b>%{y}</b><br>Rejeição: %{x:.1f}%<extra></extra>",
+        )
+    )
 
     fig.update_layout(
         title="🚫 Top 20 — Taxa de Impedimento por Parlamentar",
@@ -641,33 +675,42 @@ def grafico_impedimento(df):
 # GRÁFICO 8 — Distribuição Regional com Situação (100% Stacked)
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def grafico_regiao_situacao(df):
     """
     Barras empilhadas 100%: por região, proporção de cada situação.
     Mostra onde os planos são mais barrados vs aprovados.
     """
     # Agrupar situações em categorias
-    df["categoria"] = df["plano_acao_situacao"].map({
-        "CIENTE": "✅ Ciente / Aprovado",
-        "APROVADO": "✅ Ciente / Aprovado",
-        "EM_EXECUCAO": "✅ Ciente / Aprovado",
-        "CONCLUIDO": "✅ Ciente / Aprovado",
-        "IMPEDIDO": "🚫 Impedido",
-        "IMPEDIDO_REJEICAO_PLANO_TRABALHO": "🚫 Impedido",
-        "REPROVADO": "🚫 Impedido",
-        "CANCELADO": "❌ Cancelado",
-        "NAO_CUMPROU": "❌ Cancelado",
-    }).fillna("Outros")
+    df["categoria"] = (
+        df["plano_acao_situacao"]
+        .map(
+            {
+                "CIENTE": "✅ Ciente / Aprovado",
+                "APROVADO": "✅ Ciente / Aprovado",
+                "EM_EXECUCAO": "✅ Ciente / Aprovado",
+                "CONCLUIDO": "✅ Ciente / Aprovado",
+                "IMPEDIDO": "🚫 Impedido",
+                "IMPEDIDO_REJEICAO_PLANO_TRABALHO": "🚫 Impedido",
+                "REPROVADO": "🚫 Impedido",
+                "CANCELADO": "❌ Cancelado",
+                "NAO_CUMPROU": "❌ Cancelado",
+            }
+        )
+        .fillna("Outros")
+    )
 
-    df_agg = df.groupby(["regiao", "categoria"]).agg(
-        planos=("planos", "sum"),
-        valor=("valor", "sum"),
-    ).reset_index()
+    df_agg = (
+        df.groupby(["regiao", "categoria"])
+        .agg(
+            planos=("planos", "sum"),
+            valor=("valor", "sum"),
+        )
+        .reset_index()
+    )
 
     # Calcular percentual dentro de cada região
-    df_agg["pct"] = df_agg.groupby("regiao")["planos"].transform(
-        lambda x: x / x.sum() * 100
-    )
+    df_agg["pct"] = df_agg.groupby("regiao")["planos"].transform(lambda x: x / x.sum() * 100)
 
     cores_cat = {
         "✅ Ciente / Aprovado": "#2ecc71",
@@ -712,6 +755,7 @@ def grafico_regiao_situacao(df):
 # GRÁFICO 9 — Radar de Competência — Top 10 Parlamentares
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def grafico_radar_competencia(df):
     """
     Radar chart: compara Top 10 deputados em 5 dimensões normalizadas:
@@ -739,15 +783,17 @@ def grafico_radar_competencia(df):
         valores = df_norm.iloc[i].tolist()
         valores += valores[:1]  # fechar o polígono
 
-        fig.add_trace(go.Scatterpolar(
-            r=valores,
-            theta=rotulos + [rotulos[0]],
-            name=top["parlamentar_nome"].str.title().iloc[i],
-            line=dict(width=2),
-            opacity=0.8,
-            fill="toself",
-            fillcolor=f"rgba({(i*50)%255}, {(i*80+100)%255}, {(i*120+50)%255}, 0.1)",
-        ))
+        fig.add_trace(
+            go.Scatterpolar(
+                r=valores,
+                theta=rotulos + [rotulos[0]],
+                name=top["parlamentar_nome"].str.title().iloc[i],
+                line=dict(width=2),
+                opacity=0.8,
+                fill="toself",
+                fillcolor=f"rgba({(i * 50) % 255}, {(i * 80 + 100) % 255}, {(i * 120 + 50) % 255}, 0.1)",
+            )
+        )
 
     fig.update_layout(
         title="🏆 Radar de Competência — Top 10 Parlamentares (normalizado)",
@@ -783,6 +829,7 @@ def grafico_radar_competencia(df):
 # GRÁFICO 10 — Treemap: Objetos de Execução por Região
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def grafico_objeto_treemap(df):
     """
     Treemap hierárquico: Região → Objeto → Valor.
@@ -790,11 +837,15 @@ def grafico_objeto_treemap(df):
     Tamanho = valor total.
     """
     # Pegar top objetos por região
-    df_top = df.groupby(["regiao", "objeto_descricao"]).agg(
-        valor=("valor", "sum"),
-        planos=("planos", "sum"),
-        taxa_sucesso=("taxa_sucesso", "mean"),
-    ).reset_index()
+    df_top = (
+        df.groupby(["regiao", "objeto_descricao"])
+        .agg(
+            valor=("valor", "sum"),
+            planos=("planos", "sum"),
+            taxa_sucesso=("taxa_sucesso", "mean"),
+        )
+        .reset_index()
+    )
 
     # Limitar para visualização
     df_top = df_top.sort_values("valor", ascending=False).head(80)
@@ -829,9 +880,9 @@ def grafico_objeto_treemap(df):
         textinfo="label+value+percent root",
         texttemplate="<b>%{label}</b><br>R$ %{value:,.0f}",
         hovertemplate="<b>%{label}</b><br>"
-                      + "Valor: R$ %{value:,.2f}<br>"
-                      + "Planos: %{customdata[0]}<br>"
-                      + "Sucesso: %{customdata[1]:.1f}%<extra></extra>",
+        + "Valor: R$ %{value:,.2f}<br>"
+        + "Planos: %{customdata[0]}<br>"
+        + "Sucesso: %{customdata[1]:.1f}%<extra></extra>",
     )
 
     # Preparar customdata
@@ -847,54 +898,76 @@ def grafico_objeto_treemap(df):
 # HTML TEMPLATE
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def gerar_html(data_str, cards, *charts):
     secoes = []
     descricoes = [
-        ("🎯 Eficiência vs Volume", "Cada bolha é um deputado. O eixo X mostra a taxa de sucesso dos planos; o Y, o valor total gerido. "
-         "O tamanho da bolha indica quantos municípios foram atendidos. O quadrante superior direito revela os parlamentares "
-         "que combinam alta entrega com alta eficiência — o verdadeiro 'quadrante de ouro'."),
-
-        ("🏅 Top 30 por Valor com Eficiência", "Os maiores gestores de recursos, ordenados por valor total. "
-         "A cor de cada barra reflete a taxa de sucesso: verde = alta eficiência, vermelho = muitos planos barrados. "
-         "O rótulo mostra partido e taxa de sucesso."),
-
-        ("🗺️ Mapa de Calor — Parlamentar vs Região", "Onde cada deputado está alocando recursos? Este heatmap revela padrões regionais: "
-         "há deputados que concentram investimentos em sua própria região (forte correlação geográfica) e outros que distribuem "
-         "recursos pelo país."),
-
-        ("🏛️ Comparativo Partidário", "Desempenho coletivo por partido. As barras mostram o valor total gerido; a linha verde, "
-         "a taxa de sucesso média dos deputados da legenda. Revela quais partidos são mais eficientes na gestão das emendas."),
-
-        ("🌐 Concentração vs Capilaridade", "Estratégia de alocação: deputados que concentram recursos em poucos municípios "
-         "(alto valor por município, canto superior esquerdo) vs. quem espalha por muitos municípios (capilaridade, "
-         "canto inferior direito). A cor indica a taxa de sucesso."),
-
-        ("🎯 Matriz de Especialização", "Quais tipos de objeto cada deputado prioriza? Este heatmap cruzado mostra a "
-         "especialização temática — pavimentação, saúde, educação, infraestrutura hídrica, etc. Deputados com atuação "
-         "diversificada vs. especialistas setoriais."),
-
-        ("🚫 Taxa de Impedimento", "Quem está tendo planos barrados? O gráfico mostra os 20 deputados com maior "
-         "percentual de planos impedidos, divididos entre impedimento técnico (vermelho) e rejeição do plano de trabalho "
-         "(laranja). Um indicador crítico de competência na elaboração dos projetos."),
-
-        ("📊 Distribuição Regional — Situação", "Proporção de planos por situação em cada região do Brasil. "
-         "Revela disparidades regionais na aprovação dos planos — onde os projetos são mais bem elaborados "
-         "e onde enfrentam mais barreiras técnicas."),
-
-        ("🏆 Radar de Competência", "Perfil multidimensional dos 10 maiores deputados. Cinco métricas normalizadas: "
-         "Valor Total, Municípios Atendidos, Diversidade de Objetos, Taxa de Sucesso e Valor por Município. "
-         "Quanto mais larga a estrela, mais completo o perfil do parlamentar."),
-
-        ("📦 Mapa de Áreas — Objetos por Região", "Visão hierárquica: Região → Objeto de Execução. O tamanho de cada "
-         "retângulo reflete o valor investido; a cor, a taxa de sucesso. Uma radiografia completa de para onde "
-         "o dinheiro das emendas está indo e com que eficiência."),
+        (
+            "🎯 Eficiência vs Volume",
+            "Cada bolha é um deputado. O eixo X mostra a taxa de sucesso dos planos; o Y, o valor total gerido. "
+            "O tamanho da bolha indica quantos municípios foram atendidos. O quadrante superior direito revela os parlamentares "
+            "que combinam alta entrega com alta eficiência — o verdadeiro 'quadrante de ouro'.",
+        ),
+        (
+            "🏅 Top 30 por Valor com Eficiência",
+            "Os maiores gestores de recursos, ordenados por valor total. "
+            "A cor de cada barra reflete a taxa de sucesso: verde = alta eficiência, vermelho = muitos planos barrados. "
+            "O rótulo mostra partido e taxa de sucesso.",
+        ),
+        (
+            "🗺️ Mapa de Calor — Parlamentar vs Região",
+            "Onde cada deputado está alocando recursos? Este heatmap revela padrões regionais: "
+            "há deputados que concentram investimentos em sua própria região (forte correlação geográfica) e outros que distribuem "
+            "recursos pelo país.",
+        ),
+        (
+            "🏛️ Comparativo Partidário",
+            "Desempenho coletivo por partido. As barras mostram o valor total gerido; a linha verde, "
+            "a taxa de sucesso média dos deputados da legenda. Revela quais partidos são mais eficientes na gestão das emendas.",
+        ),
+        (
+            "🌐 Concentração vs Capilaridade",
+            "Estratégia de alocação: deputados que concentram recursos em poucos municípios "
+            "(alto valor por município, canto superior esquerdo) vs. quem espalha por muitos municípios (capilaridade, "
+            "canto inferior direito). A cor indica a taxa de sucesso.",
+        ),
+        (
+            "🎯 Matriz de Especialização",
+            "Quais tipos de objeto cada deputado prioriza? Este heatmap cruzado mostra a "
+            "especialização temática — pavimentação, saúde, educação, infraestrutura hídrica, etc. Deputados com atuação "
+            "diversificada vs. especialistas setoriais.",
+        ),
+        (
+            "🚫 Taxa de Impedimento",
+            "Quem está tendo planos barrados? O gráfico mostra os 20 deputados com maior "
+            "percentual de planos impedidos, divididos entre impedimento técnico (vermelho) e rejeição do plano de trabalho "
+            "(laranja). Um indicador crítico de competência na elaboração dos projetos.",
+        ),
+        (
+            "📊 Distribuição Regional — Situação",
+            "Proporção de planos por situação em cada região do Brasil. "
+            "Revela disparidades regionais na aprovação dos planos — onde os projetos são mais bem elaborados "
+            "e onde enfrentam mais barreiras técnicas.",
+        ),
+        (
+            "🏆 Radar de Competência",
+            "Perfil multidimensional dos 10 maiores deputados. Cinco métricas normalizadas: "
+            "Valor Total, Municípios Atendidos, Diversidade de Objetos, Taxa de Sucesso e Valor por Município. "
+            "Quanto mais larga a estrela, mais completo o perfil do parlamentar.",
+        ),
+        (
+            "📦 Mapa de Áreas — Objetos por Região",
+            "Visão hierárquica: Região → Objeto de Execução. O tamanho de cada "
+            "retângulo reflete o valor investido; a cor, a taxa de sucesso. Uma radiografia completa de para onde "
+            "o dinheiro das emendas está indo e com que eficiência.",
+        ),
     ]
 
     for i, (chart_html, (titulo, descricao)) in enumerate(zip(charts, descricoes)):
         secoes.append(f"""
     <div class="section">
         <div class="section-header">
-            <h2>Gráfico {i+1}: {titulo}</h2>
+            <h2>Gráfico {i + 1}: {titulo}</h2>
             <p class="section-desc">{descricao}</p>
         </div>
         <div class="chart-box">{chart_html}</div>
@@ -1084,7 +1157,7 @@ def gerar_html(data_str, cards, *charts):
             Transferências Especiais (Emendas Pix) — Programa 09032026 (programaId=25)
             — Dados extraídos da API pública em {data_str}
         </p>
-        <span class="badge">📊 10 gráficos • {cards.split()[1] if len(cards.split()) > 1 else ''} planos • {cards.split()[3] if len(cards.split()) > 3 else ''} parlamentares</span>
+        <span class="badge">📊 10 gráficos • {cards.split()[1] if len(cards.split()) > 1 else ""} planos • {cards.split()[3] if len(cards.split()) > 3 else ""} parlamentares</span>
     </div>
 
     <!-- Cards de resumo -->
@@ -1137,13 +1210,15 @@ def gerar_html(data_str, cards, *charts):
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Dashboard de Competência e Eficiência dos Parlamentares"
     )
     parser.add_argument(
-        "--output", default="output/dashboard_deputados.html",
-        help="Caminho do arquivo HTML de saída"
+        "--output",
+        default="output/dashboard_deputados.html",
+        help="Caminho do arquivo HTML de saída",
     )
     args = parser.parse_args()
 
@@ -1161,11 +1236,14 @@ def main():
     df_objeto_tree = query_df(conn, SQL_OBJETO_TREEMAP)
     conn.close()
 
-    print(f"📊 Dados carregados: {len(df_eficiencia)} parlamentares, "
-          f"{len(df_partidos)} partidos, {len(df_par_objeto)} vínculos parl-objeto")
+    print(
+        f"📊 Dados carregados: {len(df_eficiencia)} parlamentares, "
+        f"{len(df_partidos)} partidos, {len(df_par_objeto)} vínculos parl-objeto"
+    )
 
     print("🎨 Gerando 10 gráficos...")
     import time
+
     data_str = time.strftime("%d/%m/%Y %H:%M")
 
     # Cards de resumo
@@ -1174,27 +1252,27 @@ def main():
     <div class="cards-row">
         <div class="card">
             <div class="card-icon">📋</div>
-            <div class="card-num">{fmt_num(r['total_planos'])}</div>
+            <div class="card-num">{fmt_num(r["total_planos"])}</div>
             <div class="card-label">Planos de Ação</div>
         </div>
         <div class="card">
             <div class="card-icon">💰</div>
-            <div class="card-num">{fmt_brl(r['valor_total'])}</div>
+            <div class="card-num">{fmt_brl(r["valor_total"])}</div>
             <div class="card-label">Valor Total</div>
         </div>
         <div class="card">
             <div class="card-icon">👤</div>
-            <div class="card-num">{fmt_num(r['total_parlamentares'])}</div>
+            <div class="card-num">{fmt_num(r["total_parlamentares"])}</div>
             <div class="card-label">Parlamentares</div>
         </div>
         <div class="card">
             <div class="card-icon">🏘️</div>
-            <div class="card-num">{fmt_num(r['total_municipios'])}</div>
+            <div class="card-num">{fmt_num(r["total_municipios"])}</div>
             <div class="card-label">Municípios</div>
         </div>
         <div class="card">
             <div class="card-icon">🏗️</div>
-            <div class="card-num">{fmt_num(r['total_objetos'])}</div>
+            <div class="card-num">{fmt_num(r["total_objetos"])}</div>
             <div class="card-label">Objetos</div>
         </div>
     </div>
@@ -1235,10 +1313,7 @@ def main():
 
     # Injetar IDs de âncora nas seções
     for i in range(1, 11):
-        html = html.replace(
-            '<div class="section">',
-            f'<div class="section" id="g{i}">', 1
-        )
+        html = html.replace('<div class="section">', f'<div class="section" id="g{i}">', 1)
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1246,9 +1321,11 @@ def main():
         f.write(html)
 
     print(f"\n✅ Dashboard salvo: {output_path.resolve()}")
-    print(f"📊 {fmt_num(r['total_planos'])} planos • "
-          f"{fmt_num(r['total_parlamentares'])} parlamentares • "
-          f"{fmt_brl(r['valor_total'])}")
+    print(
+        f"📊 {fmt_num(r['total_planos'])} planos • "
+        f"{fmt_num(r['total_parlamentares'])} parlamentares • "
+        f"{fmt_brl(r['valor_total'])}"
+    )
 
     return 0
 

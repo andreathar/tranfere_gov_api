@@ -12,6 +12,12 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 007 | migration_007_siconfi.sql | Dados financeiros: municipios_financeiro (SICONFI/Tesouro) | 003 + ibge.py |
 | 008 | migration_008_enriched_views.sql | Views cruzadas enriquecidas | 003, 005 |
 | 009 | migration_009_novas_fontes.sql | Compras, saúde, educação, violência + materialized views | 003, 005, 008 |
+| 010 | migration_010_prefeitos.sql | Tabela prefeitos_dados + view v_prefeitos_completo | 003, 004 |
+| 011 | migration_011_tse_deputados.sql | Colunas TSE em parlamentares_dados | 003 |
+| 012 | migration_012_arrecadacao_impostos.sql | View v_arrecadacao_impostos | 003, 004, 007 |
+| 013 | migration_013_diario_oficial.sql | Cache diário oficial | 002 |
+| 014 | migration_014_vereadores.sql | Tabela vereadores_dados + views de vereadores | 003, 004 |
+| 015 | migration_015_senadores.sql | Tabela senadores_dados + views de senadores | 002 |
 
 ## Execução
 

@@ -10,14 +10,18 @@ import plotly.graph_objects as go
 
 from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
-from src.graphs.theme import TODAS_UFS, THEME_CARD_BG, THEME_GRID, aplicar_tema
+from src.graphs.theme import THEME_CARD_BG, TODAS_UFS, aplicar_tema
 
 # ---------------------------------------------------------------------------
 # Shared helper
 # ---------------------------------------------------------------------------
 
 GEOJSON_BR_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "brazil_states.json",
+    os.path.dirname(__file__),
+    "..",
+    "..",
+    "data",
+    "brazil_states.json",
 )
 
 
@@ -35,6 +39,7 @@ def _load_brazil_geojson() -> dict:
 # ---------------------------------------------------------------------------
 # Chart 18a — Emendas Parlamentares por Município (scatter_geo)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="choropleth_emendas",
@@ -76,7 +81,8 @@ def chart_choropleth_emendas(uf_filter: str = "TODOS") -> go.Figure:
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(
-            fig, "18. Mapa Coroplético: Emendas Parlamentares por Município",
+            fig,
+            "18. Mapa Coroplético: Emendas Parlamentares por Município",
         )
 
     df["uf"] = df["uf"].str.strip().str.upper()
@@ -108,7 +114,8 @@ def chart_choropleth_emendas(uf_filter: str = "TODOS") -> go.Figure:
         # Fallback: bar chart by UF if GeoJSON not available
         fig = px.bar(
             df.sort_values("valor_total", ascending=True),
-            x="valor_total", y="uf",
+            x="valor_total",
+            y="uf",
             orientation="h",
             color="valor_total",
             color_continuous_scale="Blues",
@@ -126,15 +133,15 @@ def chart_choropleth_emendas(uf_filter: str = "TODOS") -> go.Figure:
     )
 
     return aplicar_tema(
-        fig, "18. Mapa Coroplético: Emendas Parlamentares por Estado (UF)",
+        fig,
+        "18. Mapa Coroplético: Emendas Parlamentares por Estado (UF)",
     )
-
-
 
 
 # ---------------------------------------------------------------------------
 # Chart 18b — Distribuição de Recursos por Estado (UF)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="choropleth_valor_total_uf",
@@ -181,7 +188,8 @@ def chart_choropleth_valor_total_uf(
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(
-            fig, "18. Mapa Coroplético: Distribuição de Recursos por Estado (UF)",
+            fig,
+            "18. Mapa Coroplético: Distribuição de Recursos por Estado (UF)",
         )
 
     fig = px.choropleth(
@@ -201,13 +209,15 @@ def chart_choropleth_valor_total_uf(
     )
     fig.update_geos(fitbounds="locations", visible=False)
     return aplicar_tema(
-        fig, "18. Mapa Coroplético: Distribuição de Recursos por Estado (UF)",
+        fig,
+        "18. Mapa Coroplético: Distribuição de Recursos por Estado (UF)",
     )
 
 
 # ---------------------------------------------------------------------------
 # Chart 19 — Taxa de Impedimento Técnico por Estado
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="choropleth_taxa_impedimento_uf",
@@ -248,7 +258,8 @@ def chart_choropleth_taxa_impedimento_uf() -> go.Figure:
             font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(
-            fig, "19. Mapa Coroplético: Taxa de Impedimento Técnico por Estado",
+            fig,
+            "19. Mapa Coroplético: Taxa de Impedimento Técnico por Estado",
         )
 
     fig = px.choropleth(
@@ -272,5 +283,6 @@ def chart_choropleth_taxa_impedimento_uf() -> go.Figure:
     )
     fig.update_geos(fitbounds="locations", visible=False)
     return aplicar_tema(
-        fig, "19. Mapa Coroplético: Taxa de Impedimento Técnico por Estado",
+        fig,
+        "19. Mapa Coroplético: Taxa de Impedimento Técnico por Estado",
     )

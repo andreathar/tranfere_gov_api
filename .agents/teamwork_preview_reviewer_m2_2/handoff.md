@@ -1,7 +1,7 @@
 # Handoff Report — Milestone M2 Documentation & Onboarding Review
 
-**Reviewer**: Reviewer Subagent (`teamwork_preview_reviewer_m2_2`)  
-**Target Milestone**: Milestone M2 — Project Documentation & Onboarding (Requirement R2)  
+**Reviewer**: Reviewer Subagent (`teamwork_preview_reviewer_m2_2`)
+**Target Milestone**: Milestone M2 — Project Documentation & Onboarding (Requirement R2)
 **Verdict**: **REQUEST_CHANGES**
 
 ---
@@ -37,7 +37,7 @@ However, during verification against the actual codebase and scripts, **3 Major 
   # Ou diretamente:
   # uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
   ```
-  `- **Interface Web**: http://localhost:8000`  
+  `- **Interface Web**: http://localhost:8000`
   Code location: `run.sh`, lines 84–85:
   ```bash
   echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8080 ..."

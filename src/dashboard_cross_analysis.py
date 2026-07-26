@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 TransfereGov — Dashboard de Análise Cruzada de Dados Enriquecidos.
@@ -84,12 +83,8 @@ ORDem_REGIOES = ["Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"]
 # ═══════════════════════════════════════════════════════════════════════
 
 
-
-
 def query_df(conn, sql):
     return pd.read_sql(sql, conn)
-
-
 
 
 def estilo_fig(fig, height=500):
@@ -102,16 +97,16 @@ def estilo_fig(fig, height=500):
         height=height,
         margin=dict(l=60, r=30, t=55, b=60),
         hovermode="closest",
-        legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)
-        ),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)),
     )
     fig.update_xaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     fig.update_yaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     return fig
@@ -289,7 +284,8 @@ def grafico_cobertura(df):
     ibge_pct = (r["mapeados_ibge"] / total_b * 100) if total_b > 0 else 0
     parl_cruz_pct = (
         (r["parlamentares_cruzados"] / r["parlamentares_no_dados"] * 100)
-        if r["parlamentares_no_dados"] > 0 else 0
+        if r["parlamentares_no_dados"] > 0
+        else 0
     )
 
     cards = f"""
@@ -300,29 +296,29 @@ def grafico_cobertura(df):
     <div class="cards-row">
       <div class="card">
         <div class="card-icon">📋</div>
-        <div class="card-num">{fmt_num(r['total_planos'])}</div>
+        <div class="card-num">{fmt_num(r["total_planos"])}</div>
         <div class="card-label">Planos de Ação</div>
       </div>
       <div class="card">
         <div class="card-icon">🗺️</div>
-        <div class="card-num">{fmt_num(r['mapeados_ibge'])}</div>
+        <div class="card-num">{fmt_num(r["mapeados_ibge"])}</div>
         <div class="card-label">Mapeados IBGE</div>
         <div class="card-sub">{fmt_pct(ibge_pct)} cobertura</div>
       </div>
       <div class="card">
         <div class="card-icon">🏛️</div>
-        <div class="card-num">{fmt_num(r['deputados_enriquecidos'])}</div>
+        <div class="card-num">{fmt_num(r["deputados_enriquecidos"])}</div>
         <div class="card-label">Deputados Câmara</div>
         <div class="card-sub">{fmt_pct(parl_cruz_pct)} cruzados</div>
       </div>
       <div class="card">
         <div class="card-icon">💰</div>
-        <div class="card-num">R$ {r['valor_total']/1e9:.2f} bi</div>
+        <div class="card-num">R$ {r["valor_total"] / 1e9:.2f} bi</div>
         <div class="card-label">Valor Total</div>
       </div>
       <div class="card">
         <div class="card-icon">🏢</div>
-        <div class="card-num">{fmt_num(r['cnpjs_validados'])}</div>
+        <div class="card-num">{fmt_num(r["cnpjs_validados"])}</div>
         <div class="card-label">CNPJs Validados</div>
         <div class="card-sub">BrasilAPI</div>
       </div>
@@ -334,8 +330,7 @@ def grafico_cobertura(df):
 def grafico_regiao_situacao_heatmap(df):
     """Heatmap: Região × Situação (quantidade de planos)."""
     pivot = df.pivot_table(
-        index="regiao", columns="plano_acao_situacao", values="qtd",
-        aggfunc="sum", fill_value=0
+        index="regiao", columns="plano_acao_situacao", values="qtd", aggfunc="sum", fill_value=0
     )
     # Reorder rows
     for reg in reversed(ORDem_REGIOES):
@@ -360,10 +355,20 @@ def grafico_regiao_valor_bar(df):
     """Barras empilhadas: valor total por região, segmentado por categoria."""
     # Agregar por região e categoria
     df["categoria"] = df["plano_acao_situacao"].map(
-        lambda s: "negada" if s in ("IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
-                                      "REPROVADO", "CANCELADO", "NAO_CUMPROU")
-        else "em_andamento" if s in ("CIENTE",)
-        else "positiva"
+        lambda s: (
+            "negada"
+            if s
+            in (
+                "IMPEDIDO",
+                "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
+                "REPROVADO",
+                "CANCELADO",
+                "NAO_CUMPROU",
+            )
+            else "em_andamento"
+            if s in ("CIENTE",)
+            else "positiva"
+        )
     )
     agg = df.groupby(["regiao", "categoria"])["valor"].sum().reset_index()
     agg["valor_milhao"] = agg["valor"] / 1e6
@@ -372,7 +377,10 @@ def grafico_regiao_valor_bar(df):
     agg = agg[agg["regiao"].isin(ORDem_REGIOES)]
 
     fig = px.bar(
-        agg, x="regiao", y="valor_milhao", color="categoria",
+        agg,
+        x="regiao",
+        y="valor_milhao",
+        color="categoria",
         barmode="stack",
         color_discrete_map=CORES_CATEGORIA,
         labels={"regiao": "Região", "valor_milhao": "R$ milhões", "categoria": "Categoria"},
@@ -417,7 +425,8 @@ def grafico_treemap_regiao_politica(df):
     )
 
     fig = px.treemap(
-        df_top, path=["regiao", "municipio", "politica_short"],
+        df_top,
+        path=["regiao", "municipio", "politica_short"],
         values="valor_milhao",
         color="regiao",
         color_discrete_map=CORES_REGIAO,
@@ -436,26 +445,37 @@ def grafico_treemap_regiao_politica(df):
 def grafico_parl_regiao_scatter(df):
     """Scatter: Planos × Valor por parlamentar, cor = região, tamanho = taxa sucesso."""
     # Agregar por parlamentar (pegar região dominante)
-    parl_agg = df.groupby(["parlamentar_nome", "partido"]).agg(
-        planos=("planos", "sum"),
-        valor=("valor", "sum"),
-        taxa_media=("taxa_sucesso", "mean"),
-        regiao_principal=("regiao", lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else "N/I"),
-    ).reset_index()
+    parl_agg = (
+        df.groupby(["parlamentar_nome", "partido"])
+        .agg(
+            planos=("planos", "sum"),
+            valor=("valor", "sum"),
+            taxa_media=("taxa_sucesso", "mean"),
+            regiao_principal=(
+                "regiao",
+                lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else "N/I",
+            ),
+        )
+        .reset_index()
+    )
 
     # Top 50 por valor
     top = parl_agg.nlargest(50, "valor")
 
     fig = px.scatter(
-        top, x="planos", y="valor",
+        top,
+        x="planos",
+        y="valor",
         color="regiao_principal",
         size="taxa_media",
         color_discrete_map=CORES_REGIAO,
         hover_name="parlamentar_nome",
         hover_data={"partido": True, "taxa_media": ":.1f%", "regiao_principal": True},
         labels={
-            "planos": "Qtd Planos", "valor": "Valor Total (R$)",
-            "regiao_principal": "Região Dominante", "taxa_media": "Taxa Sucesso"
+            "planos": "Qtd Planos",
+            "valor": "Valor Total (R$)",
+            "regiao_principal": "Região Dominante",
+            "taxa_media": "Taxa Sucesso",
         },
         title="🔍 Parlamentares: Volume vs Valor — Cor por Região Dominante",
     )
@@ -472,16 +492,28 @@ def grafico_populacao_situacao(df):
     df_merged["pct"] = df_merged["qtd"] / df_merged["total"] * 100
 
     fig = px.bar(
-        df_merged, x="faixa_pop", y="pct", color="plano_acao_situacao",
+        df_merged,
+        x="faixa_pop",
+        y="pct",
+        color="plano_acao_situacao",
         barmode="stack",
         color_discrete_map=CORES_SITUACAO,
-        labels={"faixa_pop": "Faixa Populacional", "pct": "% dos Planos",
-                "plano_acao_situacao": "Situação"},
+        labels={
+            "faixa_pop": "Faixa Populacional",
+            "pct": "% dos Planos",
+            "plano_acao_situacao": "Situação",
+        },
         title="👥 Faixa Populacional do Município × Situação dos Planos",
-        category_orders={"faixa_pop": [
-            "01 - < 10 mil", "02 - 10-50 mil", "03 - 50-100 mil",
-            "04 - 100-500 mil", "05 - > 500 mil", "Sem dados"
-        ]},
+        category_orders={
+            "faixa_pop": [
+                "01 - < 10 mil",
+                "02 - 10-50 mil",
+                "03 - 50-100 mil",
+                "04 - 100-500 mil",
+                "05 - > 500 mil",
+                "Sem dados",
+            ]
+        },
     )
     fig.update_layout(
         yaxis=dict(title="% dos Planos", ticksuffix="%"),
@@ -497,10 +529,12 @@ def grafico_objeto_regiao_heatmap(df):
     top_obj = df.groupby("objeto_descricao")["valor"].sum().nlargest(15).index
     df_top = df[df["objeto_descricao"].isin(top_obj) & df["regiao"].isin(ORDem_REGIOES)]
 
-    pivot = df_top.pivot_table(
-        index="objeto_descricao", columns="regiao", values="valor",
-        aggfunc="sum", fill_value=0
-    ) / 1e6
+    pivot = (
+        df_top.pivot_table(
+            index="objeto_descricao", columns="regiao", values="valor", aggfunc="sum", fill_value=0
+        )
+        / 1e6
+    )
 
     # Abbreviate object names
     pivot.index = [
@@ -529,7 +563,10 @@ def grafico_partido_regiao(df):
     df_top["valor_milhao"] = df_top["valor"] / 1e6
 
     fig = px.bar(
-        df_top, x="partido", y="valor_milhao", color="regiao",
+        df_top,
+        x="partido",
+        y="valor_milhao",
+        color="regiao",
         barmode="group",
         color_discrete_map=CORES_REGIAO,
         labels={"partido": "Partido", "valor_milhao": "R$ milhões", "regiao": "Região"},
@@ -546,11 +583,18 @@ def grafico_valor_per_capita(df):
     df["pop_mil"] = df["populacao"] / 1000
 
     fig = px.scatter(
-        df, x="pop_mil", y="valor_pc_mil",
+        df,
+        x="pop_mil",
+        y="valor_pc_mil",
         color="regiao",
         color_discrete_map=CORES_REGIAO,
         hover_name="municipio",
-        hover_data={"populacao": True, "valor_total": ":.0f", "planos": True, "valor_per_capita": ":.2f"},
+        hover_data={
+            "populacao": True,
+            "valor_total": ":.0f",
+            "planos": True,
+            "valor_per_capita": ":.2f",
+        },
         labels={
             "pop_mil": "População (mil hab.)",
             "valor_pc_mil": "Valor Per Capita (R$ mil)",
@@ -565,13 +609,17 @@ def grafico_valor_per_capita(df):
     fig.add_hline(y=median_vpc, line_dash="dash", line_color=TEMA["text_muted"], opacity=0.5)
     fig.add_vline(x=median_pop, line_dash="dash", line_color=TEMA["text_muted"], opacity=0.5)
     fig.add_annotation(
-        x=median_pop * 1.5, y=median_vpc * 1.5,
-        text="Alta capita<br>Alta pop", showarrow=False,
+        x=median_pop * 1.5,
+        y=median_vpc * 1.5,
+        text="Alta capita<br>Alta pop",
+        showarrow=False,
         font=dict(color=TEMA["text_muted"], size=9),
     )
     fig.add_annotation(
-        x=median_pop * 0.3, y=median_vpc * 1.5,
-        text="Alta capita<br>Baixa pop", showarrow=False,
+        x=median_pop * 0.3,
+        y=median_vpc * 1.5,
+        text="Alta capita<br>Baixa pop",
+        showarrow=False,
         font=dict(color=TEMA["text_muted"], size=9),
     )
     estilo_fig(fig, height=500)
@@ -585,8 +633,13 @@ def grafico_sankey_mesorregiao(df):
 
     # Mapear situação para categoria simplificada
     def cat_sit(s):
-        if s in ("IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO", "REPROVADO",
-                  "CANCELADO", "NAO_CUMPROU"):
+        if s in (
+            "IMPEDIDO",
+            "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
+            "REPROVADO",
+            "CANCELADO",
+            "NAO_CUMPROU",
+        ):
             return "❌ Negada"
         elif s in ("EM_EXECUCAO", "CONCLUIDO"):
             return "✅ Aprovada"
@@ -633,21 +686,26 @@ def grafico_sankey_mesorregiao(df):
         values.append(row["qtd"])
         colors.append("rgba(149,165,166,0.2)")
 
-    fig = go.Figure(go.Sankey(
-        arrangement="snap",
-        node=dict(
-            pad=15, thickness=20,
-            line=dict(color=TEMA["border"], width=0.5),
-            label=nodes,
-            color=[TEMA["accent"]] * len(regioes)
+    fig = go.Figure(
+        go.Sankey(
+            arrangement="snap",
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color=TEMA["border"], width=0.5),
+                label=nodes,
+                color=[TEMA["accent"]] * len(regioes)
                 + [TEMA["accent2"]] * len(mesos)
-                + [CORES_CATEGORIA.get("positiva", "#2ecc71"),
-                   CORES_CATEGORIA.get("negada", "#e74c3c"),
-                   CORES_CATEGORIA.get("neutra", "#3498db"),
-                   "#f39c12"][:len(cats)],
-        ),
-        link=dict(source=sources, target=targets, value=values, color=colors),
-    ))
+                + [
+                    CORES_CATEGORIA.get("positiva", "#2ecc71"),
+                    CORES_CATEGORIA.get("negada", "#e74c3c"),
+                    CORES_CATEGORIA.get("neutra", "#3498db"),
+                    "#f39c12",
+                ][: len(cats)],
+            ),
+            link=dict(source=sources, target=targets, value=values, color=colors),
+        )
+    )
     fig.update_layout(
         title="🌊 Fluxo: Região → Mesorregião → Situação dos Planos",
         paper_bgcolor=TEMA["card"],
@@ -695,8 +753,7 @@ def gerar_html(data_str, cards, charts):
         """
 
     nav_items = "".join(
-        f'<a href="#g{i}" class="nav-item">{t[0]}</a>'
-        for i, t in enumerate(titulos, 1)
+        f'<a href="#g{i}" class="nav-item">{t[0]}</a>' for i, t in enumerate(titulos, 1)
     )
 
     return f"""<!DOCTYPE html>
@@ -709,8 +766,8 @@ def gerar_html(data_str, cards, charts):
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    background: {TEMA['bg']};
-    color: {TEMA['text']};
+    background: {TEMA["bg"]};
+    color: {TEMA["text"]};
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     line-height: 1.5;
   }}
@@ -718,19 +775,19 @@ def gerar_html(data_str, cards, charts):
   .hero {{
     text-align: center;
     padding: 40px 20px 20px;
-    background: linear-gradient(135deg, {TEMA['card']}, {TEMA['card_alt']});
+    background: linear-gradient(135deg, {TEMA["card"]}, {TEMA["card_alt"]});
     border-radius: 16px;
     margin-bottom: 20px;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
-  .hero h1 {{ font-size: 28px; color: {TEMA['accent']}; margin-bottom: 8px; }}
-  .subtitle {{ color: {TEMA['text_muted']}; font-size: 14px; }}
+  .hero h1 {{ font-size: 28px; color: {TEMA["accent"]}; margin-bottom: 8px; }}
+  .subtitle {{ color: {TEMA["text_muted"]}; font-size: 14px; }}
   .cards-row {{
     display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin: 20px 0;
   }}
   .card {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 20px 24px;
     min-width: 180px;
@@ -740,36 +797,36 @@ def gerar_html(data_str, cards, charts):
   }}
   .card-icon {{ font-size: 24px; margin-bottom: 4px; }}
   .card-num {{
-    font-size: 26px; font-weight: 700; color: {TEMA['accent']};
+    font-size: 26px; font-weight: 700; color: {TEMA["accent"]};
     line-height: 1.2;
   }}
   .card-label {{
-    font-size: 12px; color: {TEMA['text_muted']};
+    font-size: 12px; color: {TEMA["text_muted"]};
     text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;
   }}
   .card-sub {{
-    font-size: 11px; color: {TEMA['accent2']}; margin-top: 2px;
+    font-size: 11px; color: {TEMA["accent2"]}; margin-top: 2px;
   }}
   .nav {{
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-    padding: 16px; background: {TEMA['card']};
+    padding: 16px; background: {TEMA["card"]};
     border-radius: 12px; margin: 20px 0;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
     position: sticky; top: 10px; z-index: 100;
   }}
   .nav-item {{
     padding: 6px 14px; border-radius: 8px;
-    background: {TEMA['bg']}; color: {TEMA['text_muted']};
+    background: {TEMA["bg"]}; color: {TEMA["text_muted"]};
     text-decoration: none; font-size: 12px; font-weight: 500;
     transition: all 0.2s;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
   .nav-item:hover {{
-    background: {TEMA['accent']}; color: white; border-color: {TEMA['accent']};
+    background: {TEMA["accent"]}; color: white; border-color: {TEMA["accent"]};
   }}
   .section {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 24px;
     margin: 20px 0;
@@ -778,25 +835,25 @@ def gerar_html(data_str, cards, charts):
     display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
   }}
   .section-num {{
-    background: {TEMA['accent']}; color: white;
+    background: {TEMA["accent"]}; color: white;
     width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 16px; flex-shrink: 0;
   }}
   .section-header h2 {{
-    font-size: 18px; color: {TEMA['text']}; margin: 0;
+    font-size: 18px; color: {TEMA["text"]}; margin: 0;
   }}
   .section-desc {{
-    font-size: 12px; color: {TEMA['text_muted']}; margin: 2px 0 0;
+    font-size: 12px; color: {TEMA["text_muted"]}; margin: 2px 0 0;
   }}
   .chart-container {{
     width: 100%; overflow-x: auto;
   }}
   .footer {{
-    text-align: center; padding: 30px; color: {TEMA['text_muted']};
-    font-size: 12px; border-top: 1px solid {TEMA['border']}; margin-top: 30px;
+    text-align: center; padding: 30px; color: {TEMA["text_muted"]};
+    font-size: 12px; border-top: 1px solid {TEMA["border"]}; margin-top: 30px;
   }}
-  .footer strong {{ color: {TEMA['accent']}; }}
+  .footer strong {{ color: {TEMA["accent"]}; }}
   @media (max-width: 768px) {{
     .cards-row {{ flex-direction: column; align-items: stretch; }}
     .card {{ max-width: 100%; }}
@@ -829,12 +886,14 @@ def main():
         description="Dashboard de Análise Cruzada de Dados Enriquecidos"
     )
     parser.add_argument(
-        "--output", default="output/dashboard_cross_analysis.html",
-        help="Caminho do arquivo HTML de saída"
+        "--output",
+        default="output/dashboard_cross_analysis.html",
+        help="Caminho do arquivo HTML de saída",
     )
     args = parser.parse_args()
 
     from datetime import datetime
+
     data_str = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     print("🔌 Conectando ao banco...")
@@ -901,12 +960,16 @@ def main():
     ]
     pcts = [v / total_b * 100 if total_b > 0 else 0 for v in vals]
 
-    fig_cov = go.Figure(go.Bar(
-        x=pcts, y=sources, orientation="h",
-        text=[f"{fmt_num(v)} ({fmt_pct(p)})" for v, p in zip(vals, pcts)],
-        textposition="auto",
-        marker=dict(color=[TEMA["accent"], "#2ecc71", "#8b5cf6", "#f39c12"]),
-    ))
+    fig_cov = go.Figure(
+        go.Bar(
+            x=pcts,
+            y=sources,
+            orientation="h",
+            text=[f"{fmt_num(v)} ({fmt_pct(p)})" for v, p in zip(vals, pcts)],
+            textposition="auto",
+            marker=dict(color=[TEMA["accent"], "#2ecc71", "#8b5cf6", "#f39c12"]),
+        )
+    )
     fig_cov.update_layout(
         title="📊 Cobertura do Enriquecimento por Fonte",
         xaxis=dict(title="% do Total de Beneficiários", ticksuffix="%"),
@@ -924,9 +987,11 @@ def main():
         f.write(html)
 
     print(f"\n✅ Dashboard salvo: {output_path.resolve()}")
-    print(f"📊 {fmt_num(coverage['total_planos'])} planos • "
-          f"{fmt_num(total_parl)} parlamentares • "
-          f"R$ {coverage['valor_total']/1e9:.2f} bilhões")
+    print(
+        f"📊 {fmt_num(coverage['total_planos'])} planos • "
+        f"{fmt_num(total_parl)} parlamentares • "
+        f"R$ {coverage['valor_total'] / 1e9:.2f} bilhões"
+    )
 
     return 0
 

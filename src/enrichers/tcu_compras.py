@@ -37,7 +37,7 @@ def auditar_parlamentares_tcu() -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT parlamentar_nome
-                FROM planos_acao 
+                FROM planos_acao
                 WHERE parlamentar_nome IS NOT NULL AND parlamentar_nome != ''
                 ORDER BY parlamentar_nome
                 LIMIT 50;
@@ -51,11 +51,13 @@ def auditar_parlamentares_tcu() -> list[dict[str, Any]]:
     findings = []
 
     for p in parlamentares:
-        findings.append({
-            "parlamentar": p,
-            "tcu_status": "REGULAR",
-            "detalhe": "Nenhuma inabilitação ativa encontrada no TCU"
-        })
+        findings.append(
+            {
+                "parlamentar": p,
+                "tcu_status": "REGULAR",
+                "detalhe": "Nenhuma inabilitação ativa encontrada no TCU",
+            }
+        )
 
     return findings
 
@@ -71,18 +73,24 @@ def gerar_relatorio_risco_mcp() -> dict[str, Any]:
         "total_auditados": len(findings),
         "parlamentares_regulares": regulares,
         "parlamentares_com_alertas": len(findings) - regulares,
-        "detalhes": findings[:10]
+        "detalhes": findings[:10],
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Auditoria e Rastreamento mcp-brasil (TCU, Compras, DOU)")
+    parser = argparse.ArgumentParser(
+        description="Auditoria e Rastreamento mcp-brasil (TCU, Compras, DOU)"
+    )
     parser.add_argument("--auditar-tcu", action="store_true", help="Audita parlamentares no TCU")
-    parser.add_argument("--contratos", action="store_true", help="Rastreia contratos municipais no Compras.gov.br")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--contratos", action="store_true", help="Rastreia contratos municipais no Compras.gov.br"
+    )
+    parser.parse_args()
 
     relatorio = gerar_relatorio_risco_mcp()
-    log.info("Relatório de Auditoria Gerado: %d parlamentares analisados.", relatorio['total_auditados'])
+    log.info(
+        "Relatório de Auditoria Gerado: %d parlamentares analisados.", relatorio["total_auditados"]
+    )
     print(relatorio)
 
 

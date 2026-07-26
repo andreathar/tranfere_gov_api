@@ -3,6 +3,7 @@
 Gráficos de patrimônio, endividamento, eficiência fiscal, resultado
 orçamentário e composição de receitas/despesas.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -16,6 +17,7 @@ from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
 # ---------------------------------------------------------------------------
 # Chart 35 — Evolução do Patrimônio Líquido por UF
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_evolucao_patrimonio",
@@ -35,7 +37,9 @@ from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
     ],
 )
 def chart_fin_evolucao_patrimonio(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -58,19 +62,15 @@ def chart_fin_evolucao_patrimonio(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de receitas disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "35. Evolução das Receitas Correntes por UF")
 
     df["exercicio"] = df["exercicio"].astype(str)
 
     if uf_filter == "TODOS":
-        top_ufs = (
-            df.groupby("uf")["media_receitas"]
-            .mean()
-            .nlargest(10)
-            .index.tolist()
-        )
+        top_ufs = df.groupby("uf")["media_receitas"].mean().nlargest(10).index.tolist()
         df = df[df["uf"].isin(top_ufs)]
 
     cores_ufs = px.colors.qualitative.Set2 + px.colors.qualitative.Pastel
@@ -78,24 +78,30 @@ def chart_fin_evolucao_patrimonio(uf_filter: str = "TODOS") -> go.Figure:
 
     fig = go.Figure()
     for i, uf in enumerate(df_pivot.columns):
-        fig.add_trace(go.Scatter(
-            x=df_pivot.index,
-            y=df_pivot[uf],
-            mode="lines+markers",
-            name=uf,
-            line=dict(color=cores_ufs[i % len(cores_ufs)], width=2),
-            marker=dict(size=6),
-            hovertemplate=(
-                f"<b>{uf}</b><br>"
-                "Exercício: %{x}<br>"
-                "Receitas correntes média: R$ %{y:,.0f}<br>"
-                "<extra></extra>"
-            ),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df_pivot.index,
+                y=df_pivot[uf],
+                mode="lines+markers",
+                name=uf,
+                line=dict(color=cores_ufs[i % len(cores_ufs)], width=2),
+                marker=dict(size=6),
+                hovertemplate=(
+                    f"<b>{uf}</b><br>"
+                    "Exercício: %{x}<br>"
+                    "Receitas correntes média: R$ %{y:,.0f}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
 
     fig.update_layout(
         xaxis=dict(title="Exercício", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
-        yaxis=dict(title="Receitas Correntes Média (R$)", gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)),
+        yaxis=dict(
+            title="Receitas Correntes Média (R$)",
+            gridcolor=THEME_GRID,
+            tickfont=dict(color=THEME_TEXT),
+        ),
         legend=dict(font=dict(size=10)),
     )
     return aplicar_tema(fig, "35. Evolução das Receitas Correntes por UF", altura=500)
@@ -104,6 +110,7 @@ def chart_fin_evolucao_patrimonio(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 36 — Endividamento Municipal: Dívida Passiva vs Ativo Imobilizado
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_endividamento_ativo",
@@ -123,7 +130,9 @@ def chart_fin_evolucao_patrimonio(uf_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -148,7 +157,8 @@ def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de endividamento disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "36. Endividamento: Dívida Passiva vs Ativo Imobilizado")
 
@@ -159,7 +169,11 @@ def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
         0,
     )
     df["risco"] = df["ratio_desp_cap"].apply(
-        lambda x: "🟢 Equilibrado" if 0.1 < x < 0.5 else ("🟡 Muito Corrente" if x <= 0.1 else "🔴 Alto Capital")
+        lambda x: (
+            "🟢 Equilibrado"
+            if 0.1 < x < 0.5
+            else ("🟡 Muito Corrente" if x <= 0.1 else "🔴 Alto Capital")
+        )
     )
 
     fig = px.scatter(
@@ -188,26 +202,34 @@ def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
     )
 
     max_val = max(df["despesas_correntes"].max(), df["despesas_capital"].max(), 1)
-    fig.add_trace(go.Scatter(
-        x=[0, max_val],
-        y=[0, max_val * 0.5],
-        mode="lines",
-        name="Referência 50%",
-        line=dict(color="#ef4444", width=1, dash="dash"),
-        showlegend=True,
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=[0, max_val],
+            y=[0, max_val * 0.5],
+            mode="lines",
+            name="Referência 50%",
+            line=dict(color="#ef4444", width=1, dash="dash"),
+            showlegend=True,
+        )
+    )
 
     fig.add_annotation(
-        x=max_val * 0.1, y=max_val * 0.05,
+        x=max_val * 0.1,
+        y=max_val * 0.05,
         text="<b>Investimento Baixo</b><br>Capital < 10% Corrente",
-        showarrow=False, font=dict(size=10, color="#f59e0b"),
-        bgcolor="rgba(245,158,11,0.1)", borderwidth=0,
+        showarrow=False,
+        font=dict(size=10, color="#f59e0b"),
+        bgcolor="rgba(245,158,11,0.1)",
+        borderwidth=0,
     )
     fig.add_annotation(
-        x=max_val * 0.1, y=max_val * 0.4,
+        x=max_val * 0.1,
+        y=max_val * 0.4,
         text="<b>Investimento Forte</b><br>Capital > 40% Corrente",
-        showarrow=False, font=dict(size=10, color="#22c55e"),
-        bgcolor="rgba(34,197,94,0.1)", borderwidth=0,
+        showarrow=False,
+        font=dict(size=10, color="#22c55e"),
+        bgcolor="rgba(34,197,94,0.1)",
+        borderwidth=0,
     )
 
     return aplicar_tema(fig, "36. Endividamento: Dívida Passiva vs Ativo Imobilizado", 550)
@@ -216,6 +238,7 @@ def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 37 — Eficiência Fiscal: Despesas Financeiras / Receitas Correntes
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_eficiencia_fiscal",
@@ -235,7 +258,9 @@ def chart_fin_endividamento_ativo(uf_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_fin_eficiencia_fiscal(uf_filter: str = "TODOS") -> go.Figure:
-    params: tuple[str, ...] = (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    params: tuple[str, ...] = (
+        (uf_filter, uf_filter) if uf_filter != "TODOS" else ("TODOS", "TODOS")
+    )
 
     query = """
         SELECT
@@ -263,7 +288,8 @@ def chart_fin_eficiencia_fiscal(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de despesas financeiras disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "37. Eficiência Fiscal: Custo da Dívida por Estado")
 
@@ -295,10 +321,15 @@ def chart_fin_eficiencia_fiscal(uf_filter: str = "TODOS") -> go.Figure:
     # Referência: 5% é limite prudencial do Tesouro Nacional
     fig.add_vline(x=5, line_dash="dot", line_color="#ef4444", line_width=1)
     fig.add_annotation(
-        x=5, y=0, xref="x", yref="paper",
+        x=5,
+        y=0,
+        xref="x",
+        yref="paper",
         text="Limite prudencial: 5%",
-        showarrow=False, font=dict(size=10, color="#ef4444"),
-        xanchor="left", yshift=8,
+        showarrow=False,
+        font=dict(size=10, color="#ef4444"),
+        xanchor="left",
+        yshift=8,
     )
 
     return aplicar_tema(fig, "37. Eficiência Fiscal: Custo da Dívida por Estado", altura=550)
@@ -307,6 +338,7 @@ def chart_fin_eficiencia_fiscal(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 38 — Heatmap: Resultado Primário por UF × Exercício
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_resultado_primario_heatmap",
@@ -338,48 +370,58 @@ def chart_fin_resultado_primario_heatmap() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de resultado disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "38. Heatmap: Resultado Corrente por UF × Exercício")
 
     pivot = df.pivot_table(
-        index="uf", columns="exercicio", values="resultado_medio",
-        aggfunc="mean", fill_value=0,
+        index="uf",
+        columns="exercicio",
+        values="resultado_medio",
+        aggfunc="mean",
+        fill_value=0,
     )
 
     text_vals = [
-        [f"R$ {v/1e6:+.1f}M" if abs(v) > 1e6 else f"R$ {v/1e3:+.0f}k" if abs(v) > 1e3 else f"R$ {v:+,.0f}"
-         for v in row]
+        [
+            f"R$ {v / 1e6:+.1f}M"
+            if abs(v) > 1e6
+            else f"R$ {v / 1e3:+.0f}k"
+            if abs(v) > 1e3
+            else f"R$ {v:+,.0f}"
+            for v in row
+        ]
         for row in pivot.values
     ]
 
-    fig = go.Figure(go.Heatmap(
-        z=pivot.values.tolist(),
-        x=[str(c) for c in pivot.columns],
-        y=pivot.index.tolist(),
-        text=text_vals,
-        texttemplate="%{text}",
-        textfont=dict(size=10, color=THEME_TEXT),
-        colorscale=[
-            [0.0, "#dc2626"],
-            [0.35, "#fca5a5"],
-            [0.5, "#1e293b"],
-            [0.65, "#86efac"],
-            [1.0, "#16a34a"],
-        ],
-        zmid=0,
-        hovertemplate=(
-            "<b>%{y}</b> — %{x}<br>"
-            "Resultado primário médio: R$ %{z:,.0f}<br>"
-            "<extra></extra>"
-        ),
-        showscale=True,
-        colorbar=dict(
-            title="Resultado (R$)",
-            title_font=dict(color=THEME_TEXT),
-            tickfont=dict(color=THEME_TEXT),
-        ),
-    ))
+    fig = go.Figure(
+        go.Heatmap(
+            z=pivot.values.tolist(),
+            x=[str(c) for c in pivot.columns],
+            y=pivot.index.tolist(),
+            text=text_vals,
+            texttemplate="%{text}",
+            textfont=dict(size=10, color=THEME_TEXT),
+            colorscale=[
+                [0.0, "#dc2626"],
+                [0.35, "#fca5a5"],
+                [0.5, "#1e293b"],
+                [0.65, "#86efac"],
+                [1.0, "#16a34a"],
+            ],
+            zmid=0,
+            hovertemplate=(
+                "<b>%{y}</b> — %{x}<br>Resultado primário médio: R$ %{z:,.0f}<br><extra></extra>"
+            ),
+            showscale=True,
+            colorbar=dict(
+                title="Resultado (R$)",
+                title_font=dict(color=THEME_TEXT),
+                tickfont=dict(color=THEME_TEXT),
+            ),
+        )
+    )
 
     fig.update_layout(
         xaxis=dict(title="Exercício", tickfont=dict(color=THEME_TEXT)),
@@ -392,6 +434,7 @@ def chart_fin_resultado_primario_heatmap() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 39 — Decomposição Receitas vs Despesas por Região (Stacked Bar)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_composicao_receitas_despesas",
@@ -424,7 +467,8 @@ def chart_fin_composicao_receitas_despesas() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados financeiros suficientes",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "39. Composição de Receitas vs Despesas por Região")
 
@@ -447,23 +491,27 @@ def chart_fin_composicao_receitas_despesas() -> go.Figure:
     fig = go.Figure()
 
     for (label, col), color in zip(receitas_cols.items(), receitas_colors):
-        fig.add_trace(go.Bar(
-            x=df["regiao"],
-            y=df[col],
-            name=f"📦 {label}",
-            marker_color=color,
-            offsetgroup="Receitas",
-        ))
+        fig.add_trace(
+            go.Bar(
+                x=df["regiao"],
+                y=df[col],
+                name=f"📦 {label}",
+                marker_color=color,
+                offsetgroup="Receitas",
+            )
+        )
 
     for (label, col), color in zip(despesas_cols.items(), despesas_colors):
-        fig.add_trace(go.Bar(
-            x=df["regiao"],
-            y=-df[col],  # Negative to mirror
-            name=f"📤 {label}",
-            marker_color=color,
-            offsetgroup="Despesas",
-            opacity=0.85,
-        ))
+        fig.add_trace(
+            go.Bar(
+                x=df["regiao"],
+                y=-df[col],  # Negative to mirror
+                name=f"📤 {label}",
+                marker_color=color,
+                offsetgroup="Despesas",
+                opacity=0.85,
+            )
+        )
 
     fig.update_layout(
         barmode="relative",
@@ -478,16 +526,32 @@ def chart_fin_composicao_receitas_despesas() -> go.Figure:
         ),
         xaxis=dict(tickfont=dict(color=THEME_TEXT)),
         legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
             font=dict(size=10, color=THEME_TEXT),
         ),
         annotations=[
-            dict(x=0.25, y=-0.12, xref="paper", yref="paper",
-                 text="← DESPESAS", showarrow=False,
-                 font=dict(size=12, color="#ef4444")),
-            dict(x=0.75, y=-0.12, xref="paper", yref="paper",
-                 text="RECEITAS →", showarrow=False,
-                 font=dict(size=12, color="#22c55e")),
+            dict(
+                x=0.25,
+                y=-0.12,
+                xref="paper",
+                yref="paper",
+                text="← DESPESAS",
+                showarrow=False,
+                font=dict(size=12, color="#ef4444"),
+            ),
+            dict(
+                x=0.75,
+                y=-0.12,
+                xref="paper",
+                yref="paper",
+                text="RECEITAS →",
+                showarrow=False,
+                font=dict(size=12, color="#22c55e"),
+            ),
         ],
     )
 
@@ -497,6 +561,7 @@ def chart_fin_composicao_receitas_despesas() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 40 — Autonomia Fiscal: % Receita Própria por Município
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="fin_autonomia_fiscal_uf",
@@ -536,27 +601,33 @@ def chart_fin_autonomia_fiscal_uf() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados suficientes para composição de receitas",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "40. Composição de Receitas por UF")
 
     import pandas as pd
+
     df["pct_correntes"] = pd.to_numeric(df["pct_correntes"], errors="coerce").fillna(0)
     df["pct_capital"] = pd.to_numeric(df["pct_capital"], errors="coerce").fillna(0)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=df["uf"],
-        y=df["pct_correntes"],
-        name="Receitas Correntes (Operacionais)",
-        marker_color="#22c55e",
-    ))
-    fig.add_trace(go.Bar(
-        x=df["uf"],
-        y=df["pct_capital"],
-        name="Receitas de Capital (Investimentos)",
-        marker_color="#3b82f6",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=df["uf"],
+            y=df["pct_correntes"],
+            name="Receitas Correntes (Operacionais)",
+            marker_color="#22c55e",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=df["uf"],
+            y=df["pct_capital"],
+            name="Receitas de Capital (Investimentos)",
+            marker_color="#3b82f6",
+        )
+    )
 
     fig.update_layout(
         barmode="stack",
@@ -568,17 +639,26 @@ def chart_fin_autonomia_fiscal_uf() -> go.Figure:
         ),
         xaxis=dict(title="Estado (UF)", tickfont=dict(color=THEME_TEXT)),
         legend=dict(
-            orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
             font=dict(size=10, color=THEME_TEXT),
         ),
     )
 
     fig.add_hline(y=80, line_dash="dot", line_color="#f59e0b", line_width=1)
     fig.add_annotation(
-        x=1, y=80, xref="paper", yref="y",
+        x=1,
+        y=80,
+        xref="paper",
+        yref="y",
         text="80% — Receitas Correntes",
-        showarrow=False, font=dict(size=10, color="#f59e0b"),
-        xanchor="right", yshift=8,
+        showarrow=False,
+        font=dict(size=10, color="#f59e0b"),
+        xanchor="right",
+        yshift=8,
     )
 
     return aplicar_tema(fig, "40. Composição de Receitas: Correntes vs Capital por UF", 500)

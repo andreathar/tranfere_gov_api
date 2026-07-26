@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
 
 import plotly.graph_objects as go
 
@@ -17,6 +16,7 @@ import plotly.graph_objects as go
 @dataclass
 class ControlSpec:
     """Interactive filter control for a chart."""
+
     id: str
     label: str
     options: list[str]
@@ -26,6 +26,7 @@ class ControlSpec:
 @dataclass
 class ChartSpec:
     """Complete specification for a registered chart."""
+
     id: str
     title: str
     description: str
@@ -53,6 +54,7 @@ def register_chart(
       2. Exposed as MCP tools at /_mcp for AI agents.
       3. Styled with the default Dark Slate theme.
     """
+
     def decorator(fn: Callable[..., go.Figure]):
         spec = ChartSpec(
             id=id,
@@ -64,4 +66,5 @@ def register_chart(
         )
         CHART_REGISTRY[id] = spec
         return fn
+
     return decorator

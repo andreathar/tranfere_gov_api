@@ -3,6 +3,7 @@ db_utils — Conexão e consultas PostgreSQL centralizadas.
 
 Substitui as 14+ cópias espalhadas de get_connection() / query_df()
 """
+
 from __future__ import annotations
 
 import atexit
@@ -12,8 +13,8 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import psycopg2
-from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
 
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 
@@ -33,9 +34,13 @@ def _get_pool() -> ThreadedConnectionPool:
         with _pool_lock:
             if _pool is None:
                 _pool = ThreadedConnectionPool(
-                    _POOL_MIN, _POOL_MAX,
-                    host=PG_HOST, port=PG_PORT,
-                    dbname=PG_DB, user=PG_USER, password=PG_PASS,
+                    _POOL_MIN,
+                    _POOL_MAX,
+                    host=PG_HOST,
+                    port=PG_PORT,
+                    dbname=PG_DB,
+                    user=PG_USER,
+                    password=PG_PASS,
                 )
                 atexit.register(_pool.closeall)
     return _pool

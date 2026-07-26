@@ -1,8 +1,8 @@
 # Analysis Report: Documentation Fixes for `docs/ONBOARDING.md`
 
-**Milestone**: M2 (Iteration 2 - Remediation of Reviewer Feedback)  
-**Agent**: Explorer (`teamwork_preview_explorer_m2_r2_2`)  
-**Target File**: `docs/ONBOARDING.md`  
+**Milestone**: M2 (Iteration 2 - Remediation of Reviewer Feedback)
+**Agent**: Explorer (`teamwork_preview_explorer_m2_r2_2`)
+**Target File**: `docs/ONBOARDING.md`
 
 ---
 
@@ -45,7 +45,7 @@ This report provides the detailed analysis, evidence chain, and step-by-step fix
   }
   ```
   If an invalid command like `parlamentar` is passed to `src/db_report.py`, it executes line 172:
-  `Comando desconhecido: parlamentar`  
+  `Comando desconhecido: parlamentar`
   `Comandos: resumo, estado, objeto, negados, emenda, municipio, top, sql`
 - **Logic**: The subcommand for querying totals by amendment / parliamentarian in `src/db_report.py` is `emenda`. Updating line 152 of `docs/ONBOARDING.md` to `./run.sh report emenda       # Totais por autor de emenda` aligns the documentation with the executable CLI contract.
 

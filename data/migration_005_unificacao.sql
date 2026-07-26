@@ -23,7 +23,7 @@ DROP VIEW IF EXISTS v_emendas_unificadas;
 -- 3. View Unificada (Pix + Convênios)
 CREATE VIEW v_emendas_unificadas AS
 -- Transferências Especiais (Pix)
-SELECT 
+SELECT
     pa.emenda_codigo AS codigo_emenda,
     'TRANSFERENCIA_ESPECIAL' AS modalidade,
     pa.emenda_ano AS ano,
@@ -44,7 +44,7 @@ WHERE pa.parlamentar_nome IS NOT NULL AND pa.emenda_codigo IS NOT NULL
 UNION ALL
 
 -- Transferências Discricionárias (Convênios)
-SELECT 
+SELECT
     codigo_emenda,
     'TRANSFERENCIA_DISCRICIONARIA' AS modalidade,
     ano,

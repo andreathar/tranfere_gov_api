@@ -143,7 +143,7 @@ async function selectDeputado(id) {
   emptyState.classList.add('hidden');
   dashboard.classList.add('hidden');
   loadingState.classList.remove('hidden');
-  
+
   // Highlight top nav
   document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
   const activeNav = document.querySelector(`.nav-btn[data-nav="deputados"]`);
@@ -157,22 +157,22 @@ async function selectDeputado(id) {
       fetch(`${API_BASE}/deputados/${id}/perfil`).then(r => r.json()),
       fetch(`${API_BASE}/deputados/${id}/emendas/resumo`).then(r => r.json())
     ]);
-    
+
     state.cache.perfil[id] = perfil;
     state.cache.emendasResumo[id] = resumo;
-    
+
     renderPerfil(perfil);
     renderResumo(resumo);
-    
+
     loadingState.classList.add('hidden');
     dashboard.classList.remove('hidden');
-    
+
     const sidebar = document.querySelector('.sidebar');
     if (sidebar) sidebar.style.display = 'block';
 
     const deputadoSubtabs = document.getElementById('deputado-subtabs');
     if (deputadoSubtabs) deputadoSubtabs.style.display = 'flex';
-    
+
     // Switch to default tab and trigger load
     switchTab('emendas');
   } catch(err) {
@@ -225,7 +225,7 @@ function switchNavMode(mode) {
 
   if (mode === 'deputados') {
     if (searchWrapper) searchWrapper.style.display = 'block';
-    
+
     if (state.currentDeputadoId) {
       if (emptyState) {
         emptyState.classList.remove('active');
@@ -256,7 +256,7 @@ function switchNavMode(mode) {
       dashboard.classList.remove('hidden');
       dashboard.classList.add('no-sidebar');
     }
-    
+
     // Hide deputy sidebar and deputy subtabs in global modes
     if (sidebar) sidebar.style.display = 'none';
     if (deputadoSubtabs) deputadoSubtabs.style.display = 'none';
@@ -268,15 +268,15 @@ function switchNavMode(mode) {
 
 function switchTab(tabName) {
   state.currentTab = tabName;
-  
+
   tabs.forEach(t => t.classList.remove('active'));
   const activeTabBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
   if (activeTabBtn) activeTabBtn.classList.add('active');
-  
+
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   const activePane = document.getElementById(`tab-${tabName}`);
   if (activePane) activePane.classList.add('active');
-  
+
   loadTabData(tabName);
 }
 
@@ -286,7 +286,7 @@ async function loadTabData(tab) {
   const id = state.currentDeputadoId;
   if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer' && tab !== 'diario' && tab !== 'prefeitos') return;
 
-  
+
   try {
     if(tab === 'emendas' && !state.cache.emendas[id]) {
       const data = await fetch(`${API_BASE}/deputados/${id}/emendas`).then(r => r.json());
@@ -295,12 +295,12 @@ async function loadTabData(tab) {
     } else if(tab === 'emendas') {
       renderEmendasTab(state.cache.emendas[id]);
     }
-    
+
     if(tab === 'despesas') {
       const ano = document.getElementById('select-ano').value;
       loadDespesas(id, ano);
     }
-    
+
     if(tab === 'comissoes' && !state.cache.comissoes[id]) {
       const data = await fetch(`${API_BASE}/deputados/${id}/comissoes`).then(r => r.json());
       state.cache.comissoes[id] = data;
@@ -308,7 +308,7 @@ async function loadTabData(tab) {
     } else if(tab === 'comissoes') {
       renderComissoesTab(state.cache.comissoes[id]);
     }
-    
+
     if(tab === 'votacoes' && !state.cache.votacoes[id]) {
       const data = await fetch(`${API_BASE}/deputados/${id}/votacoes?limit=50`).then(r => r.json());
       state.cache.votacoes[id] = data;
@@ -316,7 +316,7 @@ async function loadTabData(tab) {
     } else if(tab === 'votacoes') {
       renderVotacoesTab(state.cache.votacoes[id]);
     }
-    
+
     if(tab === 'proposicoes' && !state.cache.proposicoes[id]) {
       const data = await fetch(`${API_BASE}/deputados/${id}/proposicoes`).then(r => r.json());
       state.cache.proposicoes[id] = data;
@@ -324,7 +324,7 @@ async function loadTabData(tab) {
     } else if(tab === 'proposicoes') {
       renderProposicoesTab(state.cache.proposicoes[id]);
     }
-    
+
     if(tab === 'inteligencia') {
       loadAnalyticsData();
     }
@@ -346,24 +346,24 @@ async function loadTabData(tab) {
 // Emendas Tab
 function renderEmendasTab(data) {
   if(!data || !data.length) return;
-  
+
   // Charts
   const statusCounts = {};
   const munSums = {};
-  
+
   data.forEach(d => {
     const st = d.plano_acao_situacao || 'Outros';
     statusCounts[st] = (statusCounts[st] || 0) + 1;
-    
+
     if(d.beneficiario_nome) {
       munSums[d.beneficiario_nome] = (munSums[d.beneficiario_nome] || 0) + (d.valor_total || 0);
     }
   });
-  
+
   const stLabels = Object.keys(statusCounts);
   const stValues = Object.values(statusCounts);
   const stColors = stLabels.map(l => statusColors[l] || '#95a5a6');
-  
+
   Plotly.newPlot('chart-emendas-status', [{
     type: 'pie', hole: 0.5,
     labels: stLabels, values: stValues,
@@ -372,7 +372,7 @@ function renderEmendasTab(data) {
   }], plotlyDarkLayout(''));
 
   const sortedMun = Object.entries(munSums).sort((a,b) => b[1]-a[1]).slice(0, 15);
-  
+
   Plotly.newPlot('chart-emendas-mun', [{
     type: 'bar', orientation: 'h',
     y: sortedMun.map(m => m[0]).reverse(),
@@ -418,15 +418,15 @@ function renderDespesasTab(data) {
     Plotly.purge('chart-despesas-forn');
     return;
   }
-  
+
   const catSums = {};
   const fornSums = {};
-  
+
   data.forEach(d => {
     catSums[d.tipoDespesa] = (catSums[d.tipoDespesa] || 0) + (d.valorLiquido || 0);
     fornSums[d.nomeFornecedor] = (fornSums[d.nomeFornecedor] || 0) + (d.valorLiquido || 0);
   });
-  
+
   const sortedCats = Object.entries(catSums).sort((a,b) => b[1]-a[1]).slice(0, 15);
   Plotly.newPlot('chart-despesas-cat', [{
     type: 'bar', orientation: 'h',
@@ -460,7 +460,7 @@ function renderComissoesTab(data) {
     container.innerHTML = '<p>Nenhuma participação em comissão registrada.</p>';
     return;
   }
-  
+
   container.innerHTML = data.map(c => `
     <div class="list-card">
       <div class="list-card-title">${c.siglaOrgao} - ${c.nomeOrgao}</div>
@@ -479,7 +479,7 @@ function renderVotacoesTab(data) {
     Plotly.purge('chart-votacoes');
     return;
   }
-  
+
   const vCounts = { 'Sim': 0, 'Não': 0, 'Abstenção': 0, 'Obstrução': 0, 'Outros': 0 };
   data.forEach(d => {
     let v = d.voto ? d.voto.trim() : '';
@@ -489,7 +489,7 @@ function renderVotacoesTab(data) {
     else if(v.toLowerCase() === 'obstrução') vCounts['Obstrução']++;
     else vCounts['Outros']++;
   });
-  
+
   Plotly.newPlot('chart-votacoes', [{
     type: 'pie', hole: 0.4,
     labels: Object.keys(vCounts),
@@ -502,7 +502,7 @@ function renderVotacoesTab(data) {
     let vText = d.voto ? d.voto.substring(0,3).toUpperCase() : '-';
     if(d.voto && d.voto.toLowerCase() === 'sim') vClass = 'vote-sim';
     if(d.voto && (d.voto.toLowerCase() === 'não' || d.voto.toLowerCase() === 'nao')) vClass = 'vote-nao';
-    
+
     return `
       <div class="timeline-item">
         <div class="vote-badge ${vClass}">${vText}</div>
@@ -522,7 +522,7 @@ function renderProposicoesTab(data) {
     container.innerHTML = '<p>Nenhuma proposição encontrada.</p>';
     return;
   }
-  
+
   container.innerHTML = data.map(p => `
     <div class="list-card">
       <div class="list-card-title"><span class="badge badge-default">${p.siglaTipo} ${p.numero}/${p.ano}</span></div>
@@ -548,18 +548,18 @@ document.getElementById('tab-inteligencia-btn')?.addEventListener('click', () =>
 
 async function loadAnalyticsData() {
   document.getElementById('btn-load-analytics').textContent = 'Carregando...';
-  
+
   try {
     const [partyRes, socioRes, roiRes] = await Promise.all([
       fetch(`${API_BASE}/analytics/party-efficiency`).then(r => r.json()),
       fetch(`${API_BASE}/analytics/socioeconomic`).then(r => r.json()),
       fetch(`${API_BASE}/analytics/deputy-roi`).then(r => r.json())
     ]);
-    
+
     if (partyRes.data) renderPartyEfficiency(partyRes.data);
     if (socioRes.data) renderSocioeconomic(socioRes.data);
     if (roiRes.data) renderDeputyRoi(roiRes.data);
-    
+
   } catch(e) {
     console.error('Failed to load analytics', e);
   } finally {
@@ -570,9 +570,9 @@ async function loadAnalyticsData() {
 function renderPartyEfficiency(data) {
   // data = [{sigla_partido, status_execucao, total_emendas, valor_total}, ...]
   // We want a stacked bar showing Concluido/Em execucao vs Impedido
-  
+
   const parties = [...new Set(data.map(d => d.sigla_partido))];
-  
+
   const statusGroups = {
     'Sucesso': ['CONCLUIDO', 'EM_EXECUCAO'],
     'Impedido': ['IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO', 'REPROVADO', 'CANCELADO', 'NAO_CUMPROU'],
@@ -581,13 +581,13 @@ function renderPartyEfficiency(data) {
 
   const traces = [];
   const colors = {'Sucesso': '#2ecc71', 'Impedido': '#e74c3c', 'Em Andamento': '#3498db'};
-  
+
   for (const [groupName, statuses] of Object.entries(statusGroups)) {
     const yValues = parties.map(p => {
       return data.filter(d => d.sigla_partido === p && statuses.includes(d.status_execucao))
                  .reduce((sum, d) => sum + d.valor_total, 0);
     });
-    
+
     traces.push({
       x: parties,
       y: yValues,
@@ -596,20 +596,20 @@ function renderPartyEfficiency(data) {
       marker: { color: colors[groupName] }
     });
   }
-  
+
   const layout = {
     ...plotlyDarkLayout(''),
     barmode: 'stack',
     xaxis: { title: 'Partido', tickangle: -45, gridcolor: '#334155' },
     yaxis: { title: 'Valor Total (R$)', gridcolor: '#334155' }
   };
-  
+
   Plotly.newPlot('chart-party-efficiency', traces, layout, {responsive: true});
 }
 
 function renderSocioeconomic(data) {
   // data = [{municipio, uf, idhm, pib_per_capita, populacao, total_emendas, qtd_emendas}]
-  
+
   const trace = {
     x: data.map(d => parseFloat(d.idhm)),
     y: data.map(d => d.total_emendas),
@@ -624,20 +624,20 @@ function renderSocioeconomic(data) {
       opacity: 0.7
     }
   };
-  
+
   const layout = {
     ...plotlyDarkLayout(''),
     xaxis: { title: 'IDHM (Índice de Desenvolvimento Humano)', gridcolor: '#334155' },
     yaxis: { title: 'Valor Recebido em Emendas (R$)', gridcolor: '#334155' },
     hovermode: 'closest'
   };
-  
+
   Plotly.newPlot('chart-socioeconomic', [trace], layout, {responsive: true});
 }
 
 function renderDeputyRoi(data) {
   // data = [{nome, sigla_partido, valor_emendas, valor_despesas}]
-  
+
   const trace = {
     x: data.map(d => d.valor_despesas),
     y: data.map(d => d.valor_emendas),
@@ -650,14 +650,14 @@ function renderDeputyRoi(data) {
       opacity: 0.8
     }
   };
-  
+
   const layout = {
     ...plotlyDarkLayout(''),
     xaxis: { title: 'Custo do Deputado (Despesas da Cota - R$)', gridcolor: '#334155' },
     yaxis: { title: 'Retorno para o Estado (Emendas - R$)', gridcolor: '#334155' },
     hovermode: 'closest'
   };
-  
+
   Plotly.newPlot('chart-deputy-roi', [trace], layout, {responsive: true});
 }
 
@@ -673,10 +673,10 @@ async function openSaudeModal(ibge) {
   if (!ibge || ibge === 'undefined') return;
   const modal = document.getElementById('modal-saude');
   const body = document.getElementById('modal-saude-body');
-  
+
   modal.classList.remove('hidden');
   body.innerHTML = '<div class="spinner"></div><p style="text-align:center; margin-top:1rem;">Buscando infraestrutura de saúde via DataSUS (MCP Brasil)...</p>';
-  
+
   try {
     const res = await fetch(`${API_BASE}/auditoria/saude/${ibge}`).then(r => r.json());
     if(res.status === 'success' && res.data) {
@@ -696,7 +696,7 @@ async function openJusticaModal(cnpj, nomeBeneficiario) {
   const datajudBody = document.getElementById('modal-justica-body');
   const tcuIcon = document.getElementById('tcu-status-icon');
   const datajudIcon = document.getElementById('datajud-status-icon');
-  
+
   // Reset state
   document.getElementById('modal-justica-cnpj').textContent = `CNPJ: ${cnpj}${nomeBeneficiario ? ' — ' + nomeBeneficiario : ''}`;
   tcuIcon.textContent = '⏳';
@@ -720,14 +720,14 @@ async function openJusticaModal(cnpj, nomeBeneficiario) {
     } else {
       rawText = typeof tcu.data === 'string' ? tcu.data : JSON.stringify(tcu.data, null, 2);
     }
-    
+
     // Check specific phrases returned by the mcp-brasil TCU tools
     const cleanInidoneo = rawText.includes('Nenhum licitante inidôneo encontrado');
     const cleanInabilitado = rawText.includes('Nenhum inabilitado encontrado');
-    
+
     const clean = cleanInidoneo && cleanInabilitado;
     const hasAlert = !clean && rawText.length > 0;
-    
+
     tcuIcon.textContent = hasAlert ? '🚨' : (clean ? '✅' : '⚠️');
     tcuBody.innerHTML = `
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;border-radius:6px;background:${hasAlert ? '#7f1d1d33' : (clean ? '#14532d33' : '#78350f33')};">
@@ -745,18 +745,18 @@ async function openJusticaModal(cnpj, nomeBeneficiario) {
     const dj = datajudRes.value;
     const rawText = typeof dj.data === 'string' ? dj.data : JSON.stringify(dj.data, null, 2);
     const hasProcesses = dj.data && typeof dj.data === 'object' && Array.isArray(dj.data) && dj.data.length > 0;
-    
+
     // Some endpoints return 'message' instead of a list when no processes are found
     const isCleanMessage = rawText.includes('Nenhum processo encontrado');
     const isError = (rawText.includes('Erro') || rawText.includes('timed out') || rawText.includes('Rate limited') || (dj.data?.message && !isCleanMessage));
     const isPending = rawText.includes('ainda não foram extraídos') || rawText.includes('pendente');
-    
+
     // Status logic
     let icon = '✅';
     let bg = '#14532d33';
     let textTitle = 'Nenhum processo encontrado';
     let textColor = '#86efac';
-    
+
     if (isError) {
       icon = '❌';
       bg = '#7f1d1d33';
@@ -795,7 +795,7 @@ async function openJusticaModal(cnpj, nomeBeneficiario) {
 async function loadSaudeExplorer() {
   const grid = document.getElementById('saude-grid');
   grid.innerHTML = '<div class="spinner"></div><p style="grid-column: 1/-1; text-align: center;">Buscando top municípios...</p>';
-  
+
   try {
     const res = await fetch(`${API_BASE}/analytics/top-municipios`).then(r => r.json());
     if(res.status === 'success' && res.data) {
@@ -809,7 +809,7 @@ async function loadSaudeExplorer() {
           <p style="text-align: center; font-size: 0.85rem;">Buscando infraestrutura no DataSUS...</p>
         </div>
       `).join('');
-      
+
       // Fetch each municipality in parallel
       res.data.forEach(m => fetchSaudeData(m.ibge));
     }
@@ -821,25 +821,25 @@ async function loadSaudeExplorer() {
 async function fetchSaudeData(ibge) {
   const card = document.getElementById(`saude-card-${ibge}`);
   if (!card) return;
-  
+
   try {
     const res = await fetch(`${API_BASE}/auditoria/saude/${ibge}`).then(r => r.json());
     if(res.status === 'success' && res.data && res.data.result) {
       const text = res.data.result;
-      
+
       // Attempt to extract key metrics using regex (mcp-brasil outputs markdown)
       const estabMatch = text.match(/Total de estabelecimentos ativos:\*\*\s*([\d.]+)/);
       const leitosMatch = text.match(/Total de leitos existentes:\*\*\s*([\d.]+)/);
       const susMatch = text.match(/Total de leitos SUS:\*\*\s*([\d.]+)/);
-      
+
       const estab = estabMatch ? estabMatch[1] : '?';
       const leitos = leitosMatch ? leitosMatch[1] : '?';
       const sus = susMatch ? susMatch[1] : '?';
-      
+
       // Keep only the table of establishments for the raw data section to save space
       const tableMatch = text.match(/(\| Tipo \| Quantidade \|[\s\S]*?)(\*\*Avisos:|$)/);
       const tableData = tableMatch ? tableMatch[1].trim() : text;
-      
+
       card.innerHTML = `
         <h3>${card.querySelector('h3').innerText}</h3>
         ${card.querySelector('p').outerHTML}
@@ -895,7 +895,7 @@ async function loadDiarioOficial(query) {
 document.addEventListener('DOMContentLoaded', () => {
   const btnSearchDiario = document.getElementById('btn-search-diario');
   const inputDiario = document.getElementById('diario-search-input');
-  
+
   if (btnSearchDiario && inputDiario) {
     btnSearchDiario.addEventListener('click', () => {
       loadDiarioOficial(inputDiario.value);
@@ -1135,7 +1135,3 @@ async function openPrefeitoModal(municipioId, selectedAno = null) {
     body.innerHTML = `<p style="color:var(--danger); text-align:center;">Erro ao carregar perfil: ${e.message}</p>`;
   }
 }
-
-
-
-

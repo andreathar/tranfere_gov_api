@@ -3,7 +3,7 @@
 Projeto Python para extração, validação, enriquecimento e análise de Planos de Ação do
 sistema Transferegov (Transferências Especiais / Emendas Pix) do Governo Federal.
 
-**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI) → Dashboard 57 gráficos + API
+**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI) → Dashboard 38 gráficos + API
 
 ---
 
@@ -33,11 +33,14 @@ python3 -m src.enrichers.ibge [--dry-run] [--uf UF]
 python3 -m src.enrichers.mapear_municipios [--dry-run]
 python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO] [--rreo]
 python3 -m src.enrichers.camara [--dry-run] [--limit N]
+python3 -m src.enrichers.tse_prefeitos [--dry-run] [--uf UF] [--ano ANO]
+python3 -m src.enrichers.tse_vereadors [--dry-run] [--uf UF] [--ano ANO]
+python3 -m src.enrichers.senado [--dry-run] [--limit N]
 python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 
 # Dashboard + MCP
 python3 src/dash_app.py                    # http://localhost:8050 + http://localhost:8050/_mcp
-python3 src/verify_graphs.py              # auditoria dos 57 gráficos
+python3 src/verify_graphs.py              # auditoria dos 38 gráficos
 
 # API
 uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
@@ -82,7 +85,7 @@ src/
 ├── formatters.py             fmt_brl(), fmt_num(), fmt_pct()
 ├── schemas.py                Pydantic schemas
 ├── dash_app.py               Dash 4.3+ Web + MCP Hub (porta 8050)
-├── graphs/                   Pacote gráficos (13 módulos, 57 gráficos)
+├── graphs/                   Pacote gráficos (12 módulos, 38 gráficos)
 │   ├── registry.py             @register_chart decorator + CHART_REGISTRY
 │   ├── theme.py                Theme tokens + TODAS_UFS + CORES_SITUACAO
 │   ├── parlamentar.py          2 charts | socioeconomico.py 3 charts
@@ -106,6 +109,7 @@ src/
     ├── siconfi.py 1e (DCA+RREO) | camara.py 2
     ├── mapear_municipios.py 1c | compras.py | saude_educacao.py
     ├── datajud.py | completar_deputados.py | discricionarias_sync.py
+    ├── tse_prefeitos.py 7a | tse_vereadors.py 7b | tse_deputados.py
 config/settings.py            API, DB, paths, ENRICH_*
 data/                         schema.sql, migrations 002-012, swagger.yaml
 scripts/                      db_inspect.sh, run_siconfi_batch.sh
@@ -170,8 +174,11 @@ output/                       Gitignored (xlsx, csv, json, logs)
 | `municipios_financeiro` | SICONFI (DCA+RREO) | Dados financeiros + 15 colunas arrecadação |
 | `parlamentares_dados` | Câmara | Perfil completo deputados |
 | `parlamentar_beneficiario` | SQL JOIN | Agregação parlamentar×município×emenda |
+| `prefeitos_dados` | TSE (DuckDB) | Prefeitos eleitos (2020/2024) |
+| `vereadores_dados` | TSE (DuckDB) | Candidatos a vereador (2020/2024) |
+| `senadores_dados` | Senado API | Perfil completo senadores em exercício |
 
-Schema completo: `data/schema.sql`, migrations: `data/migration_002-012*.sql` (ver `docs/MIGRATIONS.md`)
+Schema completo: `data/schema.sql`, migrations: `data/migration_002-014*.sql` (ver `docs/MIGRATIONS.md`)
 
 ---
 
@@ -186,6 +193,9 @@ Schema completo: `data/schema.sql`, migrations: `data/migration_002-012*.sql` (v
 | 1e | `siconfi.py` | SICONFI (DCA + RREO A03) | `municipios_financeiro` |
 | 2 | `camara.py` | Câmara Deputados | `parlamentares_dados` |
 | 3 | `pipeline.py` | SQL JOIN | `parlamentar_beneficiario` |
+| 7a | `tse_prefeitos.py` | TSE (DuckDB) | `prefeitos_dados` |
+| 7b | `tse_vereadors.py` | TSE (DuckDB) | `vereadores_dados` |
+| 8 | `senado.py` | Senado API REST | `senadores_dados` |
 
 Detalhes completos: `src/enrichers/AGENTS.md`
 

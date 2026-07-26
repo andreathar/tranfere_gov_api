@@ -34,13 +34,25 @@ def chart_socioeconomico_idhm() -> go.Figure:
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Dados de IDHM / IBGE em processamento", showarrow=False, font=dict(size=16, color="#64748b"))
+        fig.add_annotation(
+            text="Dados de IDHM / IBGE em processamento",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
         return aplicar_tema(fig, "3. Relação IDHM Municipal vs. Volume de Emendas")
 
     fig = px.scatter(
-        df, x="total_emendas", y="valor_total", size="valor_total", color="uf",
+        df,
+        x="total_emendas",
+        y="valor_total",
+        size="valor_total",
+        color="uf",
         hover_name="municipio",
-        labels={"total_emendas": "Quantidade de Emendas", "valor_total": "Valor Total (R$)", "uf": "Estado"},
+        labels={
+            "total_emendas": "Quantidade de Emendas",
+            "valor_total": "Valor Total (R$)",
+            "uf": "Estado",
+        },
     )
     return aplicar_tema(fig, "3. Relação IDHM Municipal vs. Volume de Emendas")
 
@@ -54,12 +66,14 @@ def chart_socioeconomico_idhm() -> go.Figure:
         "de transferências). Tamanho da bolha = população."
     ),
     category="Socioeconômico",
-    controls=[ControlSpec(
-        id="regiao_filter",
-        label="Filtrar por Região",
-        options=["TODOS", "Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"],
-        default="TODOS",
-    )],
+    controls=[
+        ControlSpec(
+            id="regiao_filter",
+            label="Filtrar por Região",
+            options=["TODOS", "Norte", "Nordeste", "Sudeste", "Sul", "Centro-Oeste"],
+            default="TODOS",
+        )
+    ],
 )
 def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
     query = """
@@ -96,7 +110,8 @@ def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados fiscais municipais para esta região",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "6. Repasse Per Capita vs. Dependência Fiscal")
 
@@ -137,13 +152,17 @@ def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
         line_width=1.5,
     )
     fig.add_annotation(
-        x=50, y=0.97, xref="x", yref="paper",
-        text="50% dependência", showarrow=False,
-        font=dict(size=10, color="#f59e0b"), xanchor="left",
+        x=50,
+        y=0.97,
+        xref="x",
+        yref="paper",
+        text="50% dependência",
+        showarrow=False,
+        font=dict(size=10, color="#f59e0b"),
+        xanchor="left",
     )
 
     return aplicar_tema(fig, "6. Repasse Per Capita vs. Dependência Fiscal Municipal", 500)
-
 
 
 @register_chart(
@@ -151,7 +170,11 @@ def chart_investimento_per_capita(regiao_filter: str = "TODOS") -> go.Figure:
     title="24. Vulnerabilidade Fiscal × Indicadores Sociais (Radar Multi-Indicador)",
     description="Gráfico radar/spider que compara municípios em múltiplas dimensões: dependência fiscal, investimento em saúde, educação e emendas parlamentares.",
     category="Socioeconômico",
-    controls=[ControlSpec(id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS")],
+    controls=[
+        ControlSpec(
+            id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS"
+        )
+    ],
 )
 def chart_vulnerabilidade_social(uf_filter: str = "TODOS") -> go.Figure:
     query = """
@@ -177,22 +200,32 @@ def chart_vulnerabilidade_social(uf_filter: str = "TODOS") -> go.Figure:
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Sem dados suficientes para gerar radar. Execute os enriquecedores primeiro.", showarrow=False, font=dict(size=16, color="#64748b"))
+        fig.add_annotation(
+            text="Sem dados suficientes para gerar radar. Execute os enriquecedores primeiro.",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
         return aplicar_tema(fig, "24. Vulnerabilidade Fiscal × Indicadores Sociais")
 
     from src.graphs.theme import THEME_CARD_BG, THEME_GRID, THEME_TEXT
 
     categories = [
-        "Dependência de\nTransferências", "Investimento\nPer Capita",
-        "Infraestrutura\nSaúde", "IDEB\nMunicipal", "Captação\nEmendas",
+        "Dependência de\nTransferências",
+        "Investimento\nPer Capita",
+        "Infraestrutura\nSaúde",
+        "IDEB\nMunicipal",
+        "Captação\nEmendas",
     ]
     fig = go.Figure()
     colors = px.colors.qualitative.Set2
 
     for idx, (_, row) in enumerate(df.iterrows()):
-        dep_transf = (100 * row["receitas_transferencias"] / row["receitas_correntes"]
-                      if row["receitas_correntes"] > 0 and pd.notna(row["receitas_transferencias"]) else 0)
-        invest_pc = (row["total_emendas"] / row["populacao"] * 1000 if row["populacao"] > 0 else 0)
+        dep_transf = (
+            100 * row["receitas_transferencias"] / row["receitas_correntes"]
+            if row["receitas_correntes"] > 0 and pd.notna(row["receitas_transferencias"])
+            else 0
+        )
+        invest_pc = row["total_emendas"] / row["populacao"] * 1000 if row["populacao"] > 0 else 0
         saude = row["total_leitos"] if pd.notna(row["total_leitos"]) else 0
         ideb = row["ideb_initial_years"] if pd.notna(row["ideb_initial_years"]) else 0
         emendas_norm = min(row["total_emendas"] / 1e6, 100)
@@ -204,24 +237,42 @@ def chart_vulnerabilidade_social(uf_filter: str = "TODOS") -> go.Figure:
         max_emendas = max(100, emendas_norm)
 
         values = [
-            dep_transf / max_dep * 100, invest_pc / max_invest * 100,
-            saude / max_saude * 100, ideb / max_ideb * 100, emendas_norm / max_emendas * 100,
+            dep_transf / max_dep * 100,
+            invest_pc / max_invest * 100,
+            saude / max_saude * 100,
+            ideb / max_ideb * 100,
+            emendas_norm / max_emendas * 100,
         ]
         values.append(values[0])
 
-        fig.add_trace(go.Scatterpolar(
-            r=values, theta=categories + [categories[0]], fill="toself",
-            name=f"{row['municipio']} ({row['uf']})",
-            line=dict(color=colors[idx % len(colors)]), opacity=0.6,
-        ))
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values,
+                theta=categories + [categories[0]],
+                fill="toself",
+                name=f"{row['municipio']} ({row['uf']})",
+                line=dict(color=colors[idx % len(colors)]),
+                opacity=0.6,
+            )
+        )
 
     fig.update_layout(
         polar=dict(
             bgcolor=THEME_CARD_BG,
-            radialaxis=dict(visible=True, range=[0, 100], gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT, size=9)),
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                gridcolor=THEME_GRID,
+                tickfont=dict(color=THEME_TEXT, size=9),
+            ),
             angularaxis=dict(gridcolor=THEME_GRID, tickfont=dict(color=THEME_TEXT, size=10)),
         ),
         showlegend=True,
-        legend=dict(bgcolor="rgba(15, 23, 42, 0.7)", bordercolor="#475569", borderwidth=1, font=dict(color=THEME_TEXT, size=10)),
+        legend=dict(
+            bgcolor="rgba(15, 23, 42, 0.7)",
+            bordercolor="#475569",
+            borderwidth=1,
+            font=dict(color=THEME_TEXT, size=10),
+        ),
     )
     return aplicar_tema(fig, "24. Vulnerabilidade Fiscal × Indicadores Sociais (Radar)", 550)

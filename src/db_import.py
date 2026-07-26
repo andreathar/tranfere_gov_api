@@ -51,8 +51,6 @@ VALUES (%s, %s, %s, %s, %s, %s);
 """
 
 
-
-
 def parse_record(rec):
     """Converte um registro JSON para dict de parâmetros SQL."""
     plano_id = rec.get("planoAcaoId")
@@ -147,14 +145,17 @@ def import_file(conn, filepath):
             except ValueError:
                 pass
 
-    cur.execute(LOG_SQL, (
-        data[0].get("objetoId") if data else None,
-        ano,
-        imported,
-        negados,
-        "api_publica",
-        f"imported from {os.path.basename(filepath)}"
-    ))
+    cur.execute(
+        LOG_SQL,
+        (
+            data[0].get("objetoId") if data else None,
+            ano,
+            imported,
+            negados,
+            "api_publica",
+            f"imported from {os.path.basename(filepath)}",
+        ),
+    )
     conn.commit()
     cur.close()
 
@@ -166,7 +167,7 @@ def import_file(conn, filepath):
 
 def main():
     conn = get_connection()
-    print(f"Conectado ao banco")
+    print("Conectado ao banco")
 
     if len(sys.argv) > 1:
         files = sys.argv[1:]
@@ -197,13 +198,13 @@ def main():
     cur.close()
     conn.close()
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print("IMPORTAÇÃO CONCLUÍDA")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     print(f"Arquivos processados: {len(files)}")
     print(f"Registros importados: {total}")
     print(f"Banco: {total_db} planos | {total_ben} municípios | {total_obj} objetos")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
 
     return 0
 

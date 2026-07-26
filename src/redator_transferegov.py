@@ -20,11 +20,16 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
+
+import pandas as pd
+
+from src.db_utils import query_df
+from src.formatters import fmt_brl, fmt_num
 
 # Diretório base para saída de documentos gerados
 _REDATOR_DIR = Path(__file__).parent / "redator"
@@ -37,6 +42,7 @@ _SUBPASTAS = {
     "despacho": "despachos",
 }
 
+
 def _gerar_caminhosaida(comando: str, texto: str) -> Path:
     """Gera caminho automático em src/redator/<tipo>/ com data + id."""
     hoje = datetime.now()
@@ -47,32 +53,33 @@ def _gerar_caminhosaida(comando: str, texto: str) -> Path:
     if comando == "oficio":
         # Pegar número do ofício se existir
         import re
+
         m = re.search(r"Nº (\d+)/", texto)
         num = m.group(1) if m else "000"
         nome = f"oficio_{data_str}_{num}.txt"
     elif comando == "nota-tecnica":
         # Pegar parlamentar se existir
         import re
+
         m = re.search(r"ASSUNTO:.*— (.+)", texto)
         parlamentar = m.group(1).strip().replace(" ", "_").lower() if m else "geral"
         nome = f"nota_tecnica_{data_str}_{parlamentar}.txt"
     elif comando == "parecer":
         import re
+
         m = re.search(r"PROCESSO/REFERÊNCIA: (.+)", texto)
         proc = m.group(1).strip().replace("/", "-") if m else "001"
         nome = f"parecer_{data_str}_{proc}.txt"
     elif comando == "despacho":
         import re
+
         m = re.search(r"Assunto: (.+)", texto)
         assunto = m.group(1).strip().replace(" ", "_").lower()[:30] if m else "geral"
         nome = f"despacho_{data_str}_{assunto}.txt"
     else:
         nome = f"doc_{data_str}_{hora_str}.txt"
     return _REDATOR_DIR / subpasta / nome
-from typing import Any
 
-from src.db_utils import query_df
-from src.formatters import fmt_brl, fmt_num
 
 log = logging.getLogger("redator")
 
@@ -81,9 +88,18 @@ log = logging.getLogger("redator")
 # ---------------------------------------------------------------------------
 
 MESES = {
-    1: "janeiro", 2: "fevereiro", 3: "março", 4: "abril",
-    5: "maio", 6: "junho", 7: "julho", 8: "agosto",
-    9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
+    1: "janeiro",
+    2: "fevereiro",
+    3: "março",
+    4: "abril",
+    5: "maio",
+    6: "junho",
+    7: "julho",
+    8: "agosto",
+    9: "setembro",
+    10: "outubro",
+    11: "novembro",
+    12: "dezembro",
 }
 
 TIPOS_DOCUMENTO = {
@@ -193,7 +209,10 @@ def formatar_data_extenso(cidade: str = "Brasília", estado: str = "DF") -> str:
 
 
 def gerar_numeracao(
-    tipo: str, numero: int, ano: int | None = None, setor: str = "",
+    tipo: str,
+    numero: int,
+    ano: int | None = None,
+    setor: str = "",
 ) -> str:
     """Gera a numeração oficial de um documento.
 
@@ -223,7 +242,7 @@ def consultar_pronome_tratamento(cargo: str) -> dict[str, str]:
             return valor
     # Fallback genérico
     return {
-        "vocativo": f"Senhor(a),",
+        "vocativo": "Senhor(a),",
         "enderecamento": "Ao(A) Senhor(a)",
     }
 
@@ -242,11 +261,10 @@ def validar_documento(texto: str, tipo: str) -> list[str]:
 
     # Verificar data por extenso
     import re
+
     padrao_data = r"\d{1,2}/\d{1,2}/\d{4}"
     if re.search(padrao_data, texto):
-        problemas.append(
-            "⚠️  Data no formato numérico (DD/MM/AAAA) — usar formato por extenso"
-        )
+        problemas.append("⚠️  Data no formato numérico (DD/MM/AAAA) — usar formato por extenso")
 
     # Verificar pronomes abolidos
     for pronome_abolido in ["Digníssimo", "Ilmo.", "Ilustríssimo", "D."]:
@@ -267,9 +285,7 @@ def validar_documento(texto: str, tipo: str) -> list[str]:
     # Verificar memorando/aviso
     for tipo_abolido in ["MEMORANDO", "Memorando", "AVISO", "Aviso"]:
         if tipo_abolido in texto:
-            problemas.append(
-                f"⚠️  '{tipo_abolido}' ABOLIDO na 3ª edição — usar 'OFÍCIO'"
-            )
+            problemas.append(f"⚠️  '{tipo_abolido}' ABOLIDO na 3ª edição — usar 'OFÍCIO'")
 
     return problemas
 
@@ -288,11 +304,12 @@ def buscar_parlamentar(nome: str) -> dict[str, Any] | None:
     )
     if df.empty:
         return None
-    return df.iloc[0].to_dict()
+    return cast(dict[str, Any], df.iloc[0].to_dict())
 
 
 def buscar_planos_parlamentar(
-    parlamentar_nome: str, ano: int | None = None,
+    parlamentar_nome: str,
+    ano: int | None = None,
 ) -> pd.DataFrame:
     """Busca planos de ação de um parlamentar, com opção de filtrar por ano."""
     sql = """
@@ -357,7 +374,7 @@ def resumo_geral(ano: int | None = None) -> dict[str, Any]:
     df = query_df(sql, params)
     if df.empty:
         return {}
-    return df.iloc[0].to_dict()
+    return cast(dict[str, Any], df.iloc[0].to_dict())
 
 
 def listar_parlamentares_impedidos(ano: int | None = None, limite: int = 20) -> pd.DataFrame:
@@ -398,7 +415,7 @@ def gerar_nota_tecnica(
 ) -> str:
     """Gera nota técnica sobre impedimentos de planos de ação."""
     hoje = formatar_data_extenso(cidade)
-    pronomes = consultar_pronome_tratamento("secretário")
+    consultar_pronome_tratamento("secretário")
     resumo = resumo_geral(ano)
 
     doc = []
@@ -408,7 +425,9 @@ def gerar_nota_tecnica(
     if parlamentar:
         doc.append(f"ASSUNTO: Análise de Planos de Ação Impedidos — {parlamentar.upper()}")
     else:
-        doc.append("ASSUNTO: Panorama de Planos de Ação Impedidos no âmbito das Transferências Especiais")
+        doc.append(
+            "ASSUNTO: Panorama de Planos de Ação Impedidos no âmbito das Transferências Especiais"
+        )
     doc.append(f"DATA: {hoje}")
     doc.append(f"ÓRGÃO: {orgao}")
     doc.append("")
@@ -430,7 +449,9 @@ def gerar_nota_tecnica(
     if resumo:
         doc.append("2.1 Panorama Geral")
         doc.append("")
-        doc.append(f"O total de planos de ação registrados é de {fmt_num(resumo.get('total', 0))},")
+        doc.append(
+            f"O total de planos de ação registrados é de {fmt_num(resumo.get('total', 0))},"
+        )
         doc.append(f"abrangendo {fmt_num(resumo.get('parlamentares', 0))} parlamentares")
         doc.append(f"e {fmt_num(resumo.get('beneficiarios', 0))} beneficiários.")
         doc.append(f"O valor total dos planos é {fmt_brl(resumo.get('valor_total', 0))}.")
@@ -484,23 +505,23 @@ def gerar_nota_tecnica(
     doc.append("")
     impedidos = resumo_impedidos(ano)
     if not impedidos.empty:
-        uf_resumo = impedidos.groupby("uf").agg(
-            total=("total", "sum"),
-            valor=("valor_total", "sum"),
-        ).sort_values("valor", ascending=False).head(10)
-        for uf, row in uf_resumo.iterrows():
-            doc.append(
-                f"  • {uf}: {fmt_num(row['total'])} planos — "
-                f"{fmt_brl(row['valor'])}"
+        uf_resumo = (
+            impedidos.groupby("uf")
+            .agg(
+                total=("total", "sum"),
+                valor=("valor_total", "sum"),
             )
+            .sort_values("valor", ascending=False)
+            .head(10)
+        )
+        for uf, row in uf_resumo.iterrows():
+            doc.append(f"  • {uf}: {fmt_num(row['total'])} planos — {fmt_brl(row['valor'])}")
         doc.append("")
 
     # 3. CONCLUSÃO E RECOMENDAÇÕES
     doc.append("3. CONCLUSÃO E RECOMENDAÇÕES")
     doc.append("")
-    doc.append(
-        "Diante dos dados apresentados, recomenda-se:"
-    )
+    doc.append("Diante dos dados apresentados, recomenda-se:")
     doc.append("")
     doc.append(
         "  I — Priorizar a análise dos planos com situação IMPEDIDO por "
@@ -519,7 +540,9 @@ def gerar_nota_tecnica(
         "cias de controle e órgãos gestores."
     )
     doc.append("")
-    doc.append(f"{cidade}, {datetime.now().day} de {MESES[datetime.now().month]} de {datetime.now().year}.")
+    doc.append(
+        f"{cidade}, {datetime.now().day} de {MESES[datetime.now().month]} de {datetime.now().year}."
+    )
     doc.append("")
     doc.append("")
     doc.append(f"{'_' * 40}")
@@ -595,39 +618,28 @@ def gerar_parecer(
     # I — RELATÓRIO
     doc.append("I — DO RELATÓRIO")
     doc.append("")
-    doc.append(
-        f"Trata-se de consulta ({processo}) que solicita análise referente a: "
-        f"{consulta}."
-    )
+    doc.append(f"Trata-se de consulta ({processo}) que solicita análise referente a: {consulta}.")
     doc.append("")
 
     # II — FUNDAMENTAÇÃO
     doc.append("II — DA FUNDAMENTAÇÃO")
     doc.append("")
-    doc.append(
-        "A análise técnica observou os seguintes aspectos:"
-    )
+    doc.append("A análise técnica observou os seguintes aspectos:")
     doc.append("")
-    doc.append(
-        "  a) Conformidade com a legislação vigente;"
-    )
-    doc.append(
-        "  b) Alinhamento com as diretrizes do Programa de Transferências Especiais;"
-    )
-    doc.append(
-        "  c) Regularidade dos procedimentos administrativos."
-    )
+    doc.append("  a) Conformidade com a legislação vigente;")
+    doc.append("  b) Alinhamento com as diretrizes do Programa de Transferências Especiais;")
+    doc.append("  c) Regularidade dos procedimentos administrativos.")
     doc.append("")
 
     # III — CONCLUSÃO
     doc.append("III — DA CONCLUSÃO")
     doc.append("")
+    doc.append("Diante do exposto, é o parecer, s.m.j.")
+    doc.append("")
+    doc.append("")
     doc.append(
-        "Diante do exposto, é o parecer, s.m.j."
+        f"{cidade}, {datetime.now().day} de {MESES[datetime.now().month]} de {datetime.now().year}."
     )
-    doc.append("")
-    doc.append("")
-    doc.append(f"{cidade}, {datetime.now().day} de {MESES[datetime.now().month]} de {datetime.now().year}.")
     doc.append("")
     doc.append("")
     doc.append(f"{'_' * 40}")
@@ -695,47 +707,48 @@ Exemplos:
 
     # --- nota-tecnica ---
     nt = sub.add_parser("nota-tecnica", help="Gerar nota técnica sobre impedimentos")
-    nt.add_argument("--parlamentar", type=str, default=None,
-                    help="Nome do parlamentar (filtro)")
-    nt.add_argument("--ano", type=int, default=None,
-                    help="Ano de exercício (filtro)")
-    nt.add_argument("--cidade", type=str, default="Brasília",
-                    help="Cidade para data (default: Brasília)")
-    nt.add_argument("--orgao", type=str, default="Secretaria de Planejamento",
-                    help="Órgão emissor")
-    nt.add_argument("--autoridade", type=str, default="Secretário de Planejamento",
-                    help="Autoridade que assina")
-    nt.add_argument("--output", "-o", type=str, default=None,
-                    help="Arquivo de saída (default: stdout)")
+    nt.add_argument("--parlamentar", type=str, default=None, help="Nome do parlamentar (filtro)")
+    nt.add_argument("--ano", type=int, default=None, help="Ano de exercício (filtro)")
+    nt.add_argument(
+        "--cidade", type=str, default="Brasília", help="Cidade para data (default: Brasília)"
+    )
+    nt.add_argument(
+        "--orgao", type=str, default="Secretaria de Planejamento", help="Órgão emissor"
+    )
+    nt.add_argument(
+        "--autoridade",
+        type=str,
+        default="Secretário de Planejamento",
+        help="Autoridade que assina",
+    )
+    nt.add_argument(
+        "--output", "-o", type=str, default=None, help="Arquivo de saída (default: stdout)"
+    )
 
     # --- oficio ---
     of = sub.add_parser("oficio", help="Gerar ofício oficial")
-    of.add_argument("--dest", type=str, required=True,
-                    help="Nome do destinatário")
-    of.add_argument("--cargo", type=str, required=True,
-                    help="Cargo do destinatário")
-    of.add_argument("--assunto", type=str, required=True,
-                    help="Assunto do ofício")
-    of.add_argument("--corpo", type=str, required=True,
-                    help="Corpo do ofício (texto)")
-    of.add_argument("--orgao", type=str, default="Secretaria de Planejamento",
-                    help="Órgão remetente")
-    of.add_argument("--numero", type=int, default=None,
-                    help="Número sequencial do ofício")
-    of.add_argument("--cidade", type=str, default="Brasília",
-                    help="Cidade para data")
-    of.add_argument("--output", "-o", type=str, default=None,
-                    help="Arquivo de saída")
+    of.add_argument("--dest", type=str, required=True, help="Nome do destinatário")
+    of.add_argument("--cargo", type=str, required=True, help="Cargo do destinatário")
+    of.add_argument("--assunto", type=str, required=True, help="Assunto do ofício")
+    of.add_argument("--corpo", type=str, required=True, help="Corpo do ofício (texto)")
+    of.add_argument(
+        "--orgao", type=str, default="Secretaria de Planejamento", help="Órgão remetente"
+    )
+    of.add_argument("--numero", type=int, default=None, help="Número sequencial do ofício")
+    of.add_argument("--cidade", type=str, default="Brasília", help="Cidade para data")
+    of.add_argument("--output", "-o", type=str, default=None, help="Arquivo de saída")
 
     # --- parecer ---
     pa = sub.add_parser("parecer", help="Gerar parecer técnico/jurídico")
-    pa.add_argument("--processo", type=str, required=True,
-                    help="Número do processo/referência")
-    pa.add_argument("--consulta", type=str, required=True,
-                    help="Pergunta ou tema a ser analisado")
-    pa.add_argument("--area", type=str, default="técnico",
-                    choices=["técnico", "jurídico", "contábil"],
-                    help="Área do parecer")
+    pa.add_argument("--processo", type=str, required=True, help="Número do processo/referência")
+    pa.add_argument("--consulta", type=str, required=True, help="Pergunta ou tema a ser analisado")
+    pa.add_argument(
+        "--area",
+        type=str,
+        default="técnico",
+        choices=["técnico", "jurídico", "contábil"],
+        help="Área do parecer",
+    )
     pa.add_argument("--orgao", type=str, default="Assessoria Técnica")
     pa.add_argument("--autoridade", type=str, default="Assessor Técnico")
     pa.add_argument("--cidade", type=str, default="Brasília")
@@ -744,8 +757,7 @@ Exemplos:
     # --- despacho ---
     de = sub.add_parser("despacho", help="Gerar despacho administrativo")
     de.add_argument("--assunto", type=str, required=True)
-    de.add_argument("--texto", type=str, required=True,
-                    help="Texto decisório do despacho")
+    de.add_argument("--texto", type=str, required=True, help="Texto decisório do despacho")
     de.add_argument("--autoridade", type=str, default="Secretário de Planejamento")
     de.add_argument("--orgao", type=str, default="Secretaria de Planejamento")
     de.add_argument("--cidade", type=str, default="Brasília")
@@ -753,22 +765,29 @@ Exemplos:
 
     # --- validar ---
     va = sub.add_parser("validar", help="Validar documento existente")
-    va.add_argument("--arquivo", type=str, required=True,
-                    help="Caminho do arquivo de texto")
-    va.add_argument("--tipo", type=str, required=True,
-                    choices=list(TIPOS_DOCUMENTO.keys()),
-                    help="Tipo do documento")
+    va.add_argument("--arquivo", type=str, required=True, help="Caminho do arquivo de texto")
+    va.add_argument(
+        "--tipo",
+        type=str,
+        required=True,
+        choices=list(TIPOS_DOCUMENTO.keys()),
+        help="Tipo do documento",
+    )
 
     # --- listar-tipos ---
     sub.add_parser("listar-tipos", help="Listar tipos de documento suportados")
 
     # --- utils ---
-    parser.add_argument("--data", action="store_true",
-                        help="Apenas mostrar a data por extenso")
-    parser.add_argument("--pronomes", type=str, default=None,
-                        help="Consultar pronome de tratamento para um cargo")
-    parser.add_argument("--numeracao", nargs=3, metavar=("TIPO", "NUMERO", "SETOR"),
-                        help="Gerar numeração (ex: oficio 142 SAA/SE/MT)")
+    parser.add_argument("--data", action="store_true", help="Apenas mostrar a data por extenso")
+    parser.add_argument(
+        "--pronomes", type=str, default=None, help="Consultar pronome de tratamento para um cargo"
+    )
+    parser.add_argument(
+        "--numeracao",
+        nargs=3,
+        metavar=("TIPO", "NUMERO", "SETOR"),
+        help="Gerar numeração (ex: oficio 142 SAA/SE/MT)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
 
     return parser.parse_args()
@@ -858,7 +877,9 @@ def main() -> int:
             return 1
         problemas = validar_documento(conteudo, args.tipo)
         if problemas:
-            print(f"Documento do tipo '{args.tipo}' — {len(problemas)} problema(s) encontrado(s):\n")
+            print(
+                f"Documento do tipo '{args.tipo}' — {len(problemas)} problema(s) encontrado(s):\n"
+            )
             for p in problemas:
                 print(f"  {p}")
             return 1
@@ -869,10 +890,7 @@ def main() -> int:
         return 1
 
     # Saída
-    if args.output:
-        saida = Path(args.output)
-    else:
-        saida = _gerar_caminhosaida(args.comando, texto)
+    saida = Path(args.output) if args.output else _gerar_caminhosaida(args.comando, texto)
     saida.parent.mkdir(parents=True, exist_ok=True)
     saida.write_text(texto, encoding="utf-8")
     print(f"📄 Documento salvo: {saida}")

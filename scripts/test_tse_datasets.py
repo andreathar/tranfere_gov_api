@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import time
 
 os.environ["MCP_BRASIL_DATASETS"] = "tse_candidatos,tse_votacao"
@@ -131,6 +130,7 @@ async def main() -> None:
     except Exception as e:
         print(f"\n  ERROR in tse_candidatos: {e}")
         import traceback
+
         traceback.print_exc()
 
     try:
@@ -138,6 +138,7 @@ async def main() -> None:
     except Exception as e:
         print(f"\n  ERROR in tse_votacao: {e}")
         import traceback
+
         traceback.print_exc()
 
     print("\n" + "=" * 60)

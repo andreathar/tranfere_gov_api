@@ -15,7 +15,6 @@ Uso:
 
 import sys
 
-from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
 from src.db_utils import get_connection
 from src.formatters import format_brl
 
@@ -32,11 +31,8 @@ QUERIES = {
             (SELECT SUM(CASE WHEN plano_acao_situacao = 'CONCLUIDO' THEN 1 ELSE 0 END) FROM planos_acao) AS concluidos,
             (SELECT SUM(CASE WHEN plano_acao_situacao IN ('REPROVADO','IMPEDIDO','CANCELADO','NAO_CUMPROU') THEN 1 ELSE 0 END) FROM planos_acao) AS negados;
     """,
-
     "estado": "SELECT * FROM v_resumo_por_estado",
-
     "objeto": "SELECT * FROM v_resumo_por_objeto",
-
     "negados": """
         SELECT
             plano_acao_codigo,
@@ -47,7 +43,6 @@ QUERIES = {
             valor_total
         FROM v_negados
     """,
-
     "emenda": """
         SELECT
             codigo_emenda_formatado,
@@ -60,8 +55,6 @@ QUERIES = {
         ORDER BY valor_total DESC
     """,
 }
-
-
 
 
 def print_table(cur):
@@ -118,10 +111,20 @@ def main():
         sql = " ".join(sys.argv[2:])
         normalized = sql.strip().upper()
         # Block dangerous statements in read-only CLI tool
-        if any(normalized.startswith(kw) for kw in (
-            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
-            "CREATE", "TRUNCATE", "GRANT", "REVOKE",
-        )):
+        if any(
+            normalized.startswith(kw)
+            for kw in (
+                "INSERT",
+                "UPDATE",
+                "DELETE",
+                "DROP",
+                "ALTER",
+                "CREATE",
+                "TRUNCATE",
+                "GRANT",
+                "REVOKE",
+            )
+        ):
             print("ERRO: db_report.py é somente leitura. Comandos de escritura bloqueados.")
             return 1
         cur.execute(sql)
@@ -133,7 +136,8 @@ def main():
         if not uf:
             print("Uso: db_report.py municipio UF")
             return 1
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 plano_acao_codigo,
                 beneficiario_nome,
@@ -143,14 +147,17 @@ def main():
             FROM v_planos_completo
             WHERE beneficiario_uf = %s
             ORDER BY valor_total DESC
-        """, (uf,))
+        """,
+            (uf,),
+        )
         print(f"Planos no estado {uf}:")
         print_table(cur)
 
     elif cmd == "top":
         # Top N valores
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-        cur.execute("""
+        cur.execute(
+            """
             SELECT
                 plano_acao_codigo,
                 beneficiario_nome,
@@ -160,7 +167,9 @@ def main():
             FROM v_planos_completo
             ORDER BY valor_total DESC
             LIMIT %s
-        """, (n,))
+        """,
+            (n,),
+        )
         print(f"Top {n} planos por valor:")
         print_table(cur)
 

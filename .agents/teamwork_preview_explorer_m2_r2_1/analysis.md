@@ -1,8 +1,8 @@
 # Analysis & Fix Specifications: README.md Port Fix & Root LICENSE
 
-**Milestone**: M2 (Iteration 2 - Remediation of Reviewer Feedback)  
-**Agent**: Explorer (`teamwork_preview_explorer_m2_r2_1`)  
-**Working Directory**: `/mnt/data/Projects_SSD/tranfere_gov_api/.agents/teamwork_preview_explorer_m2_r2_1`  
+**Milestone**: M2 (Iteration 2 - Remediation of Reviewer Feedback)
+**Agent**: Explorer (`teamwork_preview_explorer_m2_r2_1`)
+**Working Directory**: `/mnt/data/Projects_SSD/tranfere_gov_api/.agents/teamwork_preview_explorer_m2_r2_1`
 **Target Files**:
 - `/mnt/data/Projects_SSD/tranfere_gov_api/README.md`
 - `/mnt/data/Projects_SSD/tranfere_gov_api/LICENSE`

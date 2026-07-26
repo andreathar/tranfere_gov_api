@@ -9,10 +9,10 @@ from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
 from src.graphs.theme import TODAS_UFS, aplicar_tema
 
-
 # ---------------------------------------------------------------------------
 # Chart 8 — Dependência de Emendas Pix vs. Receitas Correntes (%)
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_dependencia_emendas",
@@ -54,7 +54,8 @@ def chart_siconfi_dependencia_emendas(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados suficientes para o estado selecionado",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "8. Dependência de Emendas Pix vs. Receitas Correntes (%)")
 
@@ -78,6 +79,7 @@ def chart_siconfi_dependencia_emendas(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 9 — Saldo Fiscal Estimado vs. Volume de Emendas
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_resultado_primario_emendas",
@@ -119,9 +121,12 @@ def chart_siconfi_resultado_primario(uf_filter: str = "TODOS") -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados fiscais para o estado selecionado",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
-        return aplicar_tema(fig, "9. Saldo Fiscal Estimado (Receita - Despesa) vs. Volume de Emendas")
+        return aplicar_tema(
+            fig, "9. Saldo Fiscal Estimado (Receita - Despesa) vs. Volume de Emendas"
+        )
 
     df["status_saldo"] = df["saldo_fiscal"].apply(
         lambda x: "Superávit Fiscal" if x >= 0 else "Déficit Fiscal",
@@ -146,6 +151,7 @@ def chart_siconfi_resultado_primario(uf_filter: str = "TODOS") -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 10 — Capacidade de Investimento Próprio vs. Emendas TransfereGov
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_autonomia_fiscal",
@@ -178,7 +184,8 @@ def chart_siconfi_autonomia_fiscal() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de investimento não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "10. Capacidade de Investimento Próprio vs. Emendas TransfereGov")
 
@@ -200,6 +207,7 @@ def chart_siconfi_autonomia_fiscal() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 11 — Perfil de Gasto Municipal: Custeio vs. Investimento
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_custeio_vs_investimento",
@@ -234,9 +242,12 @@ def chart_siconfi_custeio_vs_investimento(uf_filter: str = "TODOS") -> go.Figure
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de despesas não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
-        return aplicar_tema(fig, "11. Perfil de Gasto Municipal: Custeio vs. Investimento (SICONFI)")
+        return aplicar_tema(
+            fig, "11. Perfil de Gasto Municipal: Custeio vs. Investimento (SICONFI)"
+        )
 
     df_melt = df.melt(
         id_vars=["municipio"],
@@ -244,10 +255,12 @@ def chart_siconfi_custeio_vs_investimento(uf_filter: str = "TODOS") -> go.Figure
         var_name="Tipo",
         value_name="Valor",
     )
-    df_melt["Tipo"] = df_melt["Tipo"].map({
-        "despesas_correntes": "Despesas Correntes (Custeio)",
-        "despesas_capital": "Despesas de Capital (Investimento)",
-    })
+    df_melt["Tipo"] = df_melt["Tipo"].map(
+        {
+            "despesas_correntes": "Despesas Correntes (Custeio)",
+            "despesas_capital": "Despesas de Capital (Investimento)",
+        }
+    )
 
     fig = px.bar(
         df_melt,
@@ -268,6 +281,7 @@ def chart_siconfi_custeio_vs_investimento(uf_filter: str = "TODOS") -> go.Figure
 # ---------------------------------------------------------------------------
 # Chart 12 — Despesa Corrente Municipal (Custeio) por Região
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_divida_per_capita",
@@ -294,7 +308,8 @@ def chart_siconfi_divida_per_capita() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de despesa não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "12. Despesa Corrente Municipal (Custeio) por Região")
 
@@ -316,6 +331,7 @@ def chart_siconfi_divida_per_capita() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 13 — Equilíbrio Orçamentário: Receita Corrente vs. Despesa Corrente
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_patrimonio_vs_passivo",
@@ -344,9 +360,12 @@ def chart_siconfi_patrimonio_vs_passivo() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados orçamentários não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
-        return aplicar_tema(fig, "13. Equilíbrio Orçamentário: Receita Corrente vs. Despesa Corrente")
+        return aplicar_tema(
+            fig, "13. Equilíbrio Orçamentário: Receita Corrente vs. Despesa Corrente"
+        )
 
     fig = px.scatter(
         df,
@@ -366,6 +385,7 @@ def chart_siconfi_patrimonio_vs_passivo() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 14 — Top 20 Maiores Arrecadações Correntes Municipais
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_top20_receita",
@@ -391,7 +411,8 @@ def chart_siconfi_top20_receita() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Sem dados de receita",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "14. Top 20 Maiores Arrecadações Correntes Municipais")
 
@@ -416,6 +437,7 @@ def chart_siconfi_top20_receita() -> go.Figure:
 # Chart 15 — Saldo Fiscal Estimado por Região
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="siconfi_resultado_por_regiao",
     title="15. Saldo Fiscal Estimado (Receita - Despesa) por Região",
@@ -437,7 +459,8 @@ def chart_siconfi_resultado_por_regiao() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de saldo fiscal não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "15. Saldo Fiscal Estimado (Receita - Despesa) por Região")
 
@@ -459,6 +482,7 @@ def chart_siconfi_resultado_por_regiao() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 16 — Vulnerabilidade Fiscal: Alta Dependência de Repasses
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_ranking_vulnerabilidade",
@@ -485,7 +509,8 @@ def chart_siconfi_ranking_vulnerabilidade() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de transferências não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "16. Vulnerabilidade Fiscal: Alta Dependência de Repasses")
 
@@ -508,6 +533,7 @@ def chart_siconfi_ranking_vulnerabilidade() -> go.Figure:
 # ---------------------------------------------------------------------------
 # Chart 17 — Perfil Médio de Despesas Orçamentárias por UF
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="siconfi_despesas_faixa_populacional",
@@ -532,7 +558,8 @@ def chart_siconfi_despesas_uf() -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text="Dados de despesas não disponíveis",
-            showarrow=False, font=dict(size=16, color="#64748b"),
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
         )
         return aplicar_tema(fig, "17. Perfil Médio de Despesas Orçamentárias por UF")
 
@@ -542,10 +569,12 @@ def chart_siconfi_despesas_uf() -> go.Figure:
         var_name="Tipo",
         value_name="Valor",
     )
-    df_melt["Tipo"] = df_melt["Tipo"].map({
-        "media_despesas_correntes": "Média Despesas Correntes",
-        "media_despesas_capital": "Média Despesas de Capital",
-    })
+    df_melt["Tipo"] = df_melt["Tipo"].map(
+        {
+            "media_despesas_correntes": "Média Despesas Correntes",
+            "media_despesas_capital": "Média Despesas de Capital",
+        }
+    )
 
     fig = px.bar(
         df_melt,

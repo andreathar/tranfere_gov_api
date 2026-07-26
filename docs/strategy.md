@@ -16,7 +16,7 @@
 *   **Data Subject Rights**: Provide mechanisms for users to request data deletion or access, specifically for non-public data (though public procurement data is generally public domain under the Transparency Law).
 
 ## 4. Known Issues & Best Programming Language
-*   **Known Issues**: 
+*   **Known Issues**:
     *   **Rate Limiting & Instability**: Government APIs (like Transferegov or Receita Federal) frequently experience downtime or slow response times during peak hours (e.g., end of month/year reporting).
     *   **Inconsistent Documentation**: Swagger files or documentation may lag behind actual API implementations. Sandbox/Homologation environments are often broken or out of sync with production.
     *   **Complex Auth Flows**: Combining machine-to-machine JWTs with user-delegated IDP tokens can be fragile.

@@ -37,12 +37,14 @@ def get_pi_deputies_with_emendas() -> list[dict]:
     """)
     rows = []
     for row in cur.fetchall():
-        rows.append({
-            "nome": row[0] or "",
-            "sigla_partido": row[1] or "",
-            "uf": row[2] or "",
-            "valor_total": float(row[3] or 0),
-        })
+        rows.append(
+            {
+                "nome": row[0] or "",
+                "sigla_partido": row[1] or "",
+                "uf": row[2] or "",
+                "valor_total": float(row[3] or 0),
+            }
+        )
     conn.close()
     return rows
 
@@ -56,12 +58,10 @@ async def cross_analyze() -> None:
     print("\n--- TransfereGov: PI deputies with emendas ---")
     deputies = get_pi_deputies_with_emendas()
     for d in deputies:
-        print(f"  {d['nome']:<30} {d['sigla_partido']:<6} "
-              f"R$ {d['valor_total']:>15,.2f}")
+        print(f"  {d['nome']:<30} {d['sigla_partido']:<6} R$ {d['valor_total']:>15,.2f}")
 
     # 2. For each top deputy, find them in TSE and get voting data
     from mcp_brasil.datasets.tse_candidatos.tools import buscar_candidatos
-    from mcp_brasil.datasets.tse_votacao.tools import votos_candidato
 
     ctx = FakeCtx()
     results = []
@@ -75,7 +75,7 @@ async def cross_analyze() -> None:
         cand_result = await buscar_candidatos(
             ctx, nome=nome, uf="PI", cargo="DEPUTADO FEDERAL", limite=5
         )
-        lookup_time = time.time() - t0
+        time.time() - t0
         print(cand_result)
 
         # Extract sq_candidato from the result (we need to parse it)
@@ -86,7 +86,7 @@ async def cross_analyze() -> None:
         sql = (
             "SELECT sq_candidato, ano_eleicao, nm_urna_candidato, sg_partido, "
             "ds_sit_tot_turno "
-            f"FROM \"{CAND_SPEC.table}\" "
+            f'FROM "{CAND_SPEC.table}" '
             "WHERE UPPER(sg_uf) = 'PI' "
             "AND UPPER(ds_cargo) LIKE '%DEPUTADO FEDERAL%' "
             "AND strip_accents(UPPER(nm_candidato)) LIKE strip_accents(?) "
@@ -95,7 +95,7 @@ async def cross_analyze() -> None:
         )
         rows = await executar_query(CAND_SPEC, sql, [f"%{nome}%"])
         if not rows:
-            print(f"  → Not found in TSE 2022")
+            print("  → Not found in TSE 2022")
             continue
 
         sq = rows[0]["sq_candidato"]
@@ -108,20 +108,22 @@ async def cross_analyze() -> None:
 
         votos_sql = (
             "SELECT SUM(TRY_CAST(qt_votos_nominais AS BIGINT)) AS total_votos "
-            f"FROM \"{VOT_SPEC.table}\" "
+            f'FROM "{VOT_SPEC.table}" '
             "WHERE CAST(sq_candidato AS VARCHAR) = ? "
             "AND CAST(ano_eleicao AS INTEGER) = 2022"
         )
         votos_rows = await executar_query(VOT_SPEC, votos_sql, [str(sq)])
         votos = int(votos_rows[0]["total_votos"] or 0) if votos_rows else 0
 
-        results.append({
-            "nome": nome,
-            "partido": dep["sigla_partido"],
-            "valor_total": dep["valor_total"],
-            "votos_2022": votos,
-            "resultado": resultado,
-        })
+        results.append(
+            {
+                "nome": nome,
+                "partido": dep["sigla_partido"],
+                "valor_total": dep["valor_total"],
+                "votos_2022": votos,
+                "resultado": resultado,
+            }
+        )
         print(f"  → Emendas: R$ {dep['valor_total']:,.2f} | Votos 2022: {votos:,}")
 
     # 3. Final summary table
@@ -129,13 +131,16 @@ async def cross_analyze() -> None:
         print("\n" + "=" * 70)
         print("  CROSS-ANALYSIS RESULTS")
         print("=" * 70)
-        print(f"{'Nome':<25} {'Partido':<8} {'Valor Total':>16} "
-              f"{'Votos 2022':>12} {'Resultado':<20}")
+        print(
+            f"{'Nome':<25} {'Partido':<8} {'Valor Total':>16} {'Votos 2022':>12} {'Resultado':<20}"
+        )
         print("-" * 85)
         for r in results:
-            print(f"{r['nome']:<25} {r['partido']:<8} "
-                  f"R$ {r['valor_total']:>13,.2f} {r['votos_2022']:>12,} "
-                  f"{r['resultado']:<20}")
+            print(
+                f"{r['nome']:<25} {r['partido']:<8} "
+                f"R$ {r['valor_total']:>13,.2f} {r['votos_2022']:>12,} "
+                f"{r['resultado']:<20}"
+            )
 
         # Correlation hint
         vals = [(r["valor_total"], r["votos_2022"]) for r in results if r["votos_2022"] > 0]
@@ -148,13 +153,15 @@ async def cross_analyze() -> None:
             sum_x2 = sum(x**2 for x, _ in vals)
             sum_y2 = sum(y**2 for _, y in vals)
             denom = ((n * sum_x2 - sum_x**2) * (n * sum_y2 - sum_y**2)) ** 0.5
-            r = (n * sum_xy - sum_x * sum_y) / denom if denom else 0
-            print(f"\n📊 Pearson correlation (emendas valor × votos): {r:.3f}")
-            if r > 0.5:
-                print("   → Strong positive: deputies with higher emenda values tend to have more votes")
-            elif r > 0.2:
+            corr_r = (n * sum_xy - sum_x * sum_y) / denom if denom else 0
+            print(f"\n📊 Pearson correlation (emendas valor × votos): {corr_r:.3f}")
+            if corr_r > 0.5:
+                print(
+                    "   → Strong positive: deputies with higher emenda values tend to have more votes"
+                )
+            elif corr_r > 0.2:
                 print("   → Moderate positive: some relationship between emenda values and votes")
-            elif r > -0.2:
+            elif corr_r > -0.2:
                 print("   → Weak/none: emenda values and votes are largely independent")
             else:
                 print("   → Negative: deputies with lower emenda values tend to have more votes")
@@ -166,6 +173,7 @@ async def main() -> None:
     except Exception as e:
         print(f"\nERROR: {e}")
         import traceback
+
         traceback.print_exc()
 
     print("\n" + "=" * 70)

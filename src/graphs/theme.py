@@ -15,9 +15,34 @@ THEME_GRID = "#334155"
 
 # All Brazilian UFs + "TODOS" selector
 TODAS_UFS = [
-    "TODOS", "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
-    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ",
-    "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+    "TODOS",
+    "AC",
+    "AL",
+    "AP",
+    "AM",
+    "BA",
+    "CE",
+    "DF",
+    "ES",
+    "GO",
+    "MA",
+    "MT",
+    "MS",
+    "MG",
+    "PA",
+    "PB",
+    "PR",
+    "PE",
+    "PI",
+    "RJ",
+    "RN",
+    "RS",
+    "RO",
+    "RR",
+    "SC",
+    "SP",
+    "SE",
+    "TO",
 ]
 
 # Situation color map
@@ -38,7 +63,9 @@ def aplicar_tema(fig: go.Figure, titulo: str, altura: int = 450) -> go.Figure:
     fig.update_layout(
         title={
             "text": f"<b>{titulo}</b>",
-            "y": 0.95, "x": 0.02, "xanchor": "left",
+            "y": 0.95,
+            "x": 0.02,
+            "xanchor": "left",
             "font": {"size": 16, "color": THEME_TEXT},
         },
         paper_bgcolor=THEME_CARD_BG,
@@ -48,10 +75,15 @@ def aplicar_tema(fig: go.Figure, titulo: str, altura: int = 450) -> go.Figure:
         margin=dict(l=40, r=40, t=60, b=40),
         legend=dict(
             bgcolor="rgba(15, 23, 42, 0.7)",
-            bordercolor="#475569", borderwidth=1,
+            bordercolor="#475569",
+            borderwidth=1,
             font=dict(color=THEME_TEXT, size=11),
         ),
     )
-    fig.update_xaxes(gridcolor=THEME_GRID, zerolinecolor=THEME_GRID, tickfont=dict(color=THEME_TEXT))
-    fig.update_yaxes(gridcolor=THEME_GRID, zerolinecolor=THEME_GRID, tickfont=dict(color=THEME_TEXT))
+    fig.update_xaxes(
+        gridcolor=THEME_GRID, zerolinecolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+    )
+    fig.update_yaxes(
+        gridcolor=THEME_GRID, zerolinecolor=THEME_GRID, tickfont=dict(color=THEME_TEXT)
+    )
     return fig

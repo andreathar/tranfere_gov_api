@@ -7,12 +7,12 @@ import plotly.graph_objects as go
 
 from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
-from src.graphs.theme import TODAS_UFS, THEME_GRID, THEME_TEXT, aplicar_tema
-
+from src.graphs.theme import THEME_GRID, THEME_TEXT, TODAS_UFS, aplicar_tema
 
 # ---------------------------------------------------------------------------
 # Chart 22 — Tendência Temporal: Volume de Repasses e Indicadores Econômicos
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="tendencia_temporal",
@@ -33,10 +33,7 @@ from src.graphs.theme import TODAS_UFS, THEME_GRID, THEME_TEXT, aplicar_tema
 )
 def chart_tendencia_temporal(ano_filter: str = "TODOS") -> go.Figure:
     params: tuple[str, ...]
-    if ano_filter != "TODOS":
-        params = (ano_filter, ano_filter)
-    else:
-        params = (ano_filter, "9999")
+    params = (ano_filter, ano_filter) if ano_filter != "TODOS" else (ano_filter, "9999")
 
     query = """
         SELECT
@@ -125,6 +122,7 @@ def chart_tendencia_temporal(ano_filter: str = "TODOS") -> go.Figure:
 # Chart 23 — Resultado Eleitoral × Distribuição de Emendas
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="eleicao_emendas",
     title="23. Resultado Eleitoral × Distribuição de Emendas",
@@ -184,7 +182,9 @@ def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
         .sum()
         .sort_values(ascending=False)
     )
-    top_partidos = set(partido_totals.index[:10]) if len(partido_totals) >= 10 else set(partido_totals.index)
+    top_partidos = (
+        set(partido_totals.index[:10]) if len(partido_totals) >= 10 else set(partido_totals.index)
+    )
     df["partido_grupo"] = df["sigla_partido"].apply(
         lambda x: x if (x in top_partidos and x is not None) else "OUTROS"
     )

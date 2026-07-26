@@ -17,18 +17,15 @@ logger = logging.getLogger(__name__)
 
 TRANSPARENCIA_API_URL = "https://api.portaldatransparencia.gov.br/api-de-dados/emendas"
 
+
 def get_db_connection():
     return get_connection()
 
+
 def fetch_emendas_transparencia(api_key: str, pagina: int = 1) -> list[dict[str, Any]]:
     """Busca emendas (Transferências Discricionárias) no Portal da Transparência."""
-    headers = {
-        "chave-api-dados": api_key,
-        "Accept": "application/json"
-    }
-    params = {
-        "pagina": pagina
-    }
+    headers = {"chave-api-dados": api_key, "Accept": "application/json"}
+    params = {"pagina": pagina}
 
     logger.info(f"Buscando página {pagina} no Portal da Transparência...")
     response = httpx.get(TRANSPARENCIA_API_URL, headers=headers, params=params, timeout=30.0)
@@ -40,6 +37,7 @@ def fetch_emendas_transparencia(api_key: str, pagina: int = 1) -> list[dict[str,
     response.raise_for_status()
     return response.json()
 
+
 def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
     """Insere ou atualiza registros na tabela emendas_discricionarias."""
     if not emendas:
@@ -47,8 +45,8 @@ def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
 
     query = """
         INSERT INTO emendas_discricionarias (
-            codigo_emenda, numero_convenio, ano, parlamentar_nome, 
-            beneficiario_nome, beneficiario_cnpj, valor_total, 
+            codigo_emenda, numero_convenio, ano, parlamentar_nome,
+            beneficiario_nome, beneficiario_cnpj, valor_total,
             status_execucao, data_assinatura, objeto
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
@@ -84,29 +82,39 @@ def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
                 beneficiario_cnpj = beneficiario.get("cnpjFormatado")
 
                 valor_total = emenda.get("valorEmpenhado", 0.0)
-                status = "DESCONHECIDO" # A API de emendas pura pode não ter o status do convênio diretamente
+                status = "DESCONHECIDO"  # A API de emendas pura pode não ter o status do convênio diretamente
 
-                cur.execute(query, (
-                    codigo_emenda,
-                    None, # numero_convenio
-                    emenda.get("ano"),
-                    parlamentar_nome,
-                    beneficiario_nome,
-                    beneficiario_cnpj,
-                    valor_total,
-                    status,
-                    None, # data_assinatura
-                    emenda.get("funcao", {}).get("nome") # Usando função como objeto
-                ))
+                cur.execute(
+                    query,
+                    (
+                        codigo_emenda,
+                        None,  # numero_convenio
+                        emenda.get("ano"),
+                        parlamentar_nome,
+                        beneficiario_nome,
+                        beneficiario_cnpj,
+                        valor_total,
+                        status,
+                        None,  # data_assinatura
+                        emenda.get("funcao", {}).get("nome"),  # Usando função como objeto
+                    ),
+                )
         conn.commit()
-    logger.info(f"Foram inseridos/atualizados {len(emendas)} registros com sucesso no banco de dados.")
+    logger.info(
+        f"Foram inseridos/atualizados {len(emendas)} registros com sucesso no banco de dados."
+    )
+
 
 def main():
     api_key = os.getenv("TRANSPARENCIA_API_KEY")
     if not api_key:
         logger.error("A variável de ambiente 'TRANSPARENCIA_API_KEY' não está definida.")
-        logger.info("Por favor, obtenha uma chave em: https://portaldatransparencia.gov.br/api-de-dados")
-        logger.info("E exporte a variável executando: export TRANSPARENCIA_API_KEY='sua_chave_aqui'")
+        logger.info(
+            "Por favor, obtenha uma chave em: https://portaldatransparencia.gov.br/api-de-dados"
+        )
+        logger.info(
+            "E exporte a variável executando: export TRANSPARENCIA_API_KEY='sua_chave_aqui'"
+        )
         sys.exit(1)
 
     pagina = 1
@@ -118,10 +126,11 @@ def main():
 
             upsert_emendas_discricionarias(emendas)
             pagina += 1
-            time.sleep(1) # Rate limit cortesia
+            time.sleep(1)  # Rate limit cortesia
         except Exception as e:
             logger.error(f"Erro ao processar página {pagina}: {e}")
             break
+
 
 if __name__ == "__main__":
     main()

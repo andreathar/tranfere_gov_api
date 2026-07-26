@@ -1,7 +1,7 @@
 """
 Pipeline de enriquecimento orquestrador.
 
-Uso: python3 -m src.enrichers.pipeline [--fase 1|2|3|4|5|6|all] [--dry-run]
+Uso: python3 -m src.enrichers.pipeline [--fase 1|2|3|4|5|6|7|all] [--dry-run]
 
 Fase 1: Validação CNPJ + IBGE
 Fase 2: Perfil Câmara
@@ -9,6 +9,8 @@ Fase 3: Vinculação parlamentar-beneficiário
 Fase 4: Processos Judiciais (DataJud)
 Fase 5: Compras Públicas (PNCP/Contratos.gov)
 Fase 6: Saúde + Educação (CNES/INEP)
+Fase 7: TSE — Prefeitos + Vereadores (Eleições Municipais)
+Fase 8: Senado Federal — Perfil de Senadores
 """
 
 import argparse
@@ -23,9 +25,9 @@ def run_script(script: str, extra_args: list | None = None) -> int:
     cmd = [sys.executable, "-m", f"src.enrichers.{script}"]
     if extra_args:
         cmd.extend(extra_args)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"EXECUTANDO: {' '.join(cmd)}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     return subprocess.run(cmd, cwd=str(Path(__file__).resolve().parent.parent.parent)).returncode
 
 
@@ -123,9 +125,34 @@ def fase6_saude_educacao(dry_run: bool, limit: int):
         print(f"AVISO: saude_educacao retornou código {rc}")
 
 
+def fase7_tse_municipal(dry_run: bool, ano: int):
+    """Fase 7: TSE — Prefeitos + Vereadores eleitos (Eleições Municipais)."""
+    print("\n\n>>> FASE 7: TSE — Prefeitos + Vereadores")
+
+    rc = run_script("tse_prefeitos", ["--dry-run"] if dry_run else [])
+    if rc != 0:
+        print(f"AVISO: tse_prefeitos retornou código {rc}")
+
+    rc = run_script("tse_vereadors", ["--dry-run"] if dry_run else [])
+    if rc != 0:
+        print(f"AVISO: tse_vereadors retornou código {rc}")
+
+
+def fase8_senado(dry_run: bool, limit: int):
+    """Fase 8: Senado Federal — Perfil completo dos senadores."""
+    print("\n\n>>> FASE 8: Senado Federal")
+    args = ["--limit", str(limit)] if limit > 0 else []
+    if dry_run:
+        args.append("--dry-run")
+
+    rc = run_script("senado", args)
+    if rc != 0:
+        print(f"AVISO: senado retornou código {rc}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pipeline de enriquecimento")
-    parser.add_argument("--fase", default="all", help="Fase a executar: 1-6 ou all")
+    parser.add_argument("--fase", default="all", help="Fase a executar: 1-8 ou all")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N items por fase")
     parser.add_argument("--ano", type=int, default=2026, help="Ano para compras públicas (fase 5)")
@@ -150,6 +177,12 @@ def main():
 
     if args.fase in ("6", "all"):
         fase6_saude_educacao(args.dry_run, args.limit)
+
+    if args.fase in ("7", "all"):
+        fase7_tse_municipal(args.dry_run, args.ano)
+
+    if args.fase in ("8", "all"):
+        fase8_senado(args.dry_run, args.limit)
 
     duracao = time.time() - inicio
     print(f"\nPipeline concluído em {duracao:.1f}s")

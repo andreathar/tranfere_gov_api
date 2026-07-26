@@ -15,7 +15,11 @@ from src.graphs.theme import TODAS_UFS, aplicar_tema
     title="4. Custeio vs. Investimento por Região Geográfica",
     description="Distribuição da natureza da despesa (Custeio/Operacional vs. Investimento/Obras) por região do Brasil com filtro de estado.",
     category="Fiscal & Geográfico",
-    controls=[ControlSpec(id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS")],
+    controls=[
+        ControlSpec(
+            id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS"
+        )
+    ],
 )
 def chart_custeio_vs_investimento(uf_filter: str = "TODOS") -> go.Figure:
     query = """
@@ -33,15 +37,33 @@ def chart_custeio_vs_investimento(uf_filter: str = "TODOS") -> go.Figure:
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Nenhum dado encontrado para o filtro selecionado", showarrow=False, font=dict(size=16, color="#64748b"))
+        fig.add_annotation(
+            text="Nenhum dado encontrado para o filtro selecionado",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
         return aplicar_tema(fig, "4. Custeio vs. Investimento por Região Geográfica")
 
-    df_melted = df.melt(id_vars=["regiao"], value_vars=["custeio", "investimento"], var_name="Natureza", value_name="Valor (R$)")
-    df_melted["Natureza"] = df_melted["Natureza"].map({"custeio": "Custeio (Operacional)", "investimento": "Investimento (Obras/Equip.)"})
+    df_melted = df.melt(
+        id_vars=["regiao"],
+        value_vars=["custeio", "investimento"],
+        var_name="Natureza",
+        value_name="Valor (R$)",
+    )
+    df_melted["Natureza"] = df_melted["Natureza"].map(
+        {"custeio": "Custeio (Operacional)", "investimento": "Investimento (Obras/Equip.)"}
+    )
 
     fig = px.bar(
-        df_melted, x="regiao", y="Valor (R$)", color="Natureza", barmode="group",
-        color_discrete_map={"Custeio (Operacional)": "#38bdf8", "Investimento (Obras/Equip.)": "#f59e0b"},
+        df_melted,
+        x="regiao",
+        y="Valor (R$)",
+        color="Natureza",
+        barmode="group",
+        color_discrete_map={
+            "Custeio (Operacional)": "#38bdf8",
+            "Investimento (Obras/Equip.)": "#f59e0b",
+        },
         labels={"regiao": "Região Geográfica", "Valor (R$)": "Montante Total (R$)"},
     )
     return aplicar_tema(fig, "4. Custeio vs. Investimento por Região Geográfica")
@@ -69,12 +91,21 @@ def chart_taxa_impedimento_objeto() -> go.Figure:
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Dados insuficientes para calcular taxa de impedimento", showarrow=False, font=dict(size=16, color="#64748b"))
+        fig.add_annotation(
+            text="Dados insuficientes para calcular taxa de impedimento",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
         return aplicar_tema(fig, "5. Taxa de Impedimento Técnico por Objeto")
 
     fig = px.bar(
-        df, x="taxa_impedimento_pct", y="objeto", orientation="h", text_auto=".1f",
-        color="taxa_impedimento_pct", color_continuous_scale="Reds",
+        df,
+        x="taxa_impedimento_pct",
+        y="objeto",
+        orientation="h",
+        text_auto=".1f",
+        color="taxa_impedimento_pct",
+        color_continuous_scale="Reds",
         labels={"objeto": "Objeto de Execução", "taxa_impedimento_pct": "Impedimento (%)"},
         hover_data=["total_planos", "impedidos"],
     )
@@ -87,7 +118,11 @@ def chart_taxa_impedimento_objeto() -> go.Figure:
     title="19. Emendas Parlamentares × Compras Públicas por Município",
     description="Cruzamento entre o volume de emendas recebidas e o valor total em licitações/contratos do município.",
     category="Fiscal & Geográfico",
-    controls=[ControlSpec(id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS")],
+    controls=[
+        ControlSpec(
+            id="uf_filter", label="Filtrar por Estado (UF)", options=TODAS_UFS, default="TODOS"
+        )
+    ],
 )
 def chart_emendas_vs_compras(uf_filter: str = "TODOS") -> go.Figure:
     query = """
@@ -116,23 +151,60 @@ def chart_emendas_vs_compras(uf_filter: str = "TODOS") -> go.Figure:
 
     if df.empty:
         fig = go.Figure()
-        fig.add_annotation(text="Sem dados de compras públicas disponíveis. Execute o enriquecedor de compras primeiro.", showarrow=False, font=dict(size=16, color="#64748b"))
+        fig.add_annotation(
+            text="Sem dados de compras públicas disponíveis. Execute o enriquecedor de compras primeiro.",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
         return aplicar_tema(fig, "19. Emendas × Compras Públicas")
 
     df["ratio"] = df.apply(
-        lambda r: r["total_compras"] / r["total_emendas"] if r["total_emendas"] > 0 and r["total_compras"] > 0 else 0, axis=1,
+        lambda r: (
+            r["total_compras"] / r["total_emendas"]
+            if r["total_emendas"] > 0 and r["total_compras"] > 0
+            else 0
+        ),
+        axis=1,
     )
     df["status_execucao"] = df["ratio"].apply(
-        lambda x: "Alta Execução" if x > 0.5 else ("Execução Parcial" if x > 0.1 else "Baixa Execução"),
+        lambda x: (
+            "Alta Execução" if x > 0.5 else ("Execução Parcial" if x > 0.1 else "Baixa Execução")
+        ),
     )
 
     fig = px.scatter(
-        df, x="total_emendas", y="total_compras", size="qtd_emendas",
-        color="status_execucao", hover_name="municipio", text="municipio",
-        color_discrete_map={"Alta Execução": "#22c55e", "Execução Parcial": "#f59e0b", "Baixa Execução": "#ef4444"},
-        labels={"total_emendas": "Total Emendas Parlamentares (R$)", "total_compras": "Total Compras/Contratos (R$)", "status_execucao": "Status de Execução"},
+        df,
+        x="total_emendas",
+        y="total_compras",
+        size="qtd_emendas",
+        color="status_execucao",
+        hover_name="municipio",
+        text="municipio",
+        color_discrete_map={
+            "Alta Execução": "#22c55e",
+            "Execução Parcial": "#f59e0b",
+            "Baixa Execução": "#ef4444",
+        },
+        labels={
+            "total_emendas": "Total Emendas Parlamentares (R$)",
+            "total_compras": "Total Compras/Contratos (R$)",
+            "status_execucao": "Status de Execução",
+        },
     )
     fig.update_traces(textposition="top center", textfont_size=9)
-    fig.add_shape(type="line", x0=0, y0=0, x1=max(df["total_emendas"].max(), 1), y1=max(df["total_emendas"].max(), 1), line=dict(color="#475569", width=1, dash="dash"))
-    fig.add_annotation(text="Linha de referência: Emendas = Compras", x=max(df["total_emendas"].max(), 1) * 0.5, y=max(df["total_emendas"].max(), 1) * 0.55, showarrow=False, font=dict(size=10, color="#64748b"))
+    fig.add_shape(
+        type="line",
+        x0=0,
+        y0=0,
+        x1=max(df["total_emendas"].max(), 1),
+        y1=max(df["total_emendas"].max(), 1),
+        line=dict(color="#475569", width=1, dash="dash"),
+    )
+    fig.add_annotation(
+        text="Linha de referência: Emendas = Compras",
+        x=max(df["total_emendas"].max(), 1) * 0.5,
+        y=max(df["total_emendas"].max(), 1) * 0.55,
+        showarrow=False,
+        font=dict(size=10, color="#64748b"),
+    )
     return aplicar_tema(fig, "19. Emendas Parlamentares × Compras Públicas por Município")

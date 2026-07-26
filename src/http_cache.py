@@ -34,6 +34,7 @@ def _evict_oldest_if_needed():
 def _cache_key(url: str, params: dict) -> str:
     """Gera chave de cache a partir de URL + params."""
     import hashlib
+
     key_data = f"{url}?{json.dumps(params, sort_keys=True)}"
     return hashlib.md5(key_data.encode()).hexdigest()
 

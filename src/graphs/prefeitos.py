@@ -7,12 +7,12 @@ import plotly.graph_objects as go
 
 from src.db_utils import query_df
 from src.graphs.registry import ControlSpec, register_chart
-from src.graphs.theme import TODAS_UFS, THEME_CARD_BG, THEME_GRID, THEME_TEXT, aplicar_tema
-
+from src.graphs.theme import TODAS_UFS, aplicar_tema
 
 # ---------------------------------------------------------------------------
 # Chart 29 — Ranking de Prefeituras: Emendas Per Capita
 # ---------------------------------------------------------------------------
+
 
 @register_chart(
     id="ranking_prefeituras_emendas_per_capita",
@@ -108,6 +108,7 @@ def chart_ranking_prefeituras_emendas_per_capita(
 # Chart 30 — Total de Emendas por Partido (Prefeitos)
 # ---------------------------------------------------------------------------
 
+
 @register_chart(
     id="prefeitos_emendas_por_partido",
     title="30. Total de Emendas por Partido (Prefeitos)",
@@ -165,6 +166,7 @@ def chart_prefeitos_emendas_por_partido(
         )
 
     import pandas as pd
+
     df["total_emendas"] = pd.to_numeric(df["total_emendas"], errors="coerce").fillna(0.0)
 
     fig = px.bar(

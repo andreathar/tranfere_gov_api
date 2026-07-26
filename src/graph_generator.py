@@ -109,7 +109,9 @@ def gerar_grafico_sunburst_regional(df: pd.DataFrame) -> go.Figure:
     if df.empty:
         return go.Figure()
 
-    df_filtered = df.dropna(subset=["ibge_regiao", "parlamentar_uf", "situacao_display", "valor_total"])
+    df_filtered = df.dropna(
+        subset=["ibge_regiao", "parlamentar_uf", "situacao_display", "valor_total"]
+    )
 
     fig = px.sunburst(
         df_filtered,
@@ -122,7 +124,9 @@ def gerar_grafico_sunburst_regional(df: pd.DataFrame) -> go.Figure:
     fig.update_traces(
         hovertemplate="<b>%{label}</b><br>Valor Total: R$ %{value:,.2f}<br>Proporção: %{percentParent:.1%}"
     )
-    return aplicar_layout_base(fig, "Distribuição Hierárquica Regional e Situação dos Planos", altura=550)
+    return aplicar_layout_base(
+        fig, "Distribuição Hierárquica Regional e Situação dos Planos", altura=550
+    )
 
 
 def gerar_heatmap_situacao_objeto(df: pd.DataFrame) -> go.Figure:
@@ -148,7 +152,9 @@ def gerar_heatmap_situacao_objeto(df: pd.DataFrame) -> go.Figure:
             hovertemplate="Região: %{y}<br>Situação: %{x}<br>Valor: R$ %{z:.2f}M<extra></extra>",
         )
     )
-    return aplicar_layout_base(fig, "Mapa de Calor: Alocação Financeira por Região e Situação (R$ Milhões)")
+    return aplicar_layout_base(
+        fig, "Mapa de Calor: Alocação Financeira por Região e Situação (R$ Milhões)"
+    )
 
 
 def gerar_scatter_socioeconomico(df: pd.DataFrame) -> go.Figure:
@@ -178,7 +184,9 @@ def gerar_scatter_socioeconomico(df: pd.DataFrame) -> go.Figure:
     fig.update_traces(marker=dict(size=9, opacity=0.7, line=dict(width=0.5, color="white")))
     fig.update_xaxes(title_text="População do Município (Escala Log)")
     fig.update_yaxes(title_text="Valor Total da Emenda (R$ - Escala Log)")
-    return aplicar_layout_base(fig, "Correlação: População do Município Beneficiário vs. Valor Recebido")
+    return aplicar_layout_base(
+        fig, "Correlação: População do Município Beneficiário vs. Valor Recebido"
+    )
 
 
 def gerar_bar_ranking_parlamentares(df: pd.DataFrame, top_n: int = 15) -> go.Figure:
@@ -195,7 +203,10 @@ def gerar_bar_ranking_parlamentares(df: pd.DataFrame, top_n: int = 15) -> go.Fig
     )
 
     top_parlamentares["label"] = (
-        top_parlamentares["parlamentar_nome"] + " (" + top_parlamentares["parlamentar_partido"].fillna("S/P") + ")"
+        top_parlamentares["parlamentar_nome"]
+        + " ("
+        + top_parlamentares["parlamentar_partido"].fillna("S/P")
+        + ")"
     )
 
     fig = go.Figure(

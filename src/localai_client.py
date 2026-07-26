@@ -28,7 +28,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, AsyncIterator, Iterator, Sequence
+from collections.abc import Iterator, Sequence
+from typing import Any
 
 import httpx
 import pandas as pd
@@ -40,6 +41,7 @@ from config.settings import (
     LOCALAI_MODELS,
     LOCALAI_TIMEOUT,
 )
+from src.http_cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +97,11 @@ class LocalAIClient:
             "sem markdown, sem explicação."
         ).strip()
         raw = self.chat(
-            prompt, system=sys_msg, model=model,
-            temperature=temperature, max_tokens=max_tokens,
+            prompt,
+            system=sys_msg,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
         # Limpar possíveis wrappers markdown
         cleaned = raw.strip()
@@ -151,19 +156,21 @@ class LocalAIClient:
             "stream": True,
         }
         url = f"{self.base_url}/chat/completions"
-        with httpx.Client(timeout=self.timeout) as client:
-            with client.stream("POST", url, json=payload) as resp:
-                resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    chunk = json.loads(data_str)
-                    delta = chunk["choices"][0].get("delta", {})
-                    if "content" in delta:
-                        yield delta["content"]
+        with (
+            httpx.Client(timeout=self.timeout) as client,
+            client.stream("POST", url, json=payload) as resp,
+        ):
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data_str)
+                delta = chunk["choices"][0].get("delta", {})
+                if "content" in delta:
+                    yield delta["content"]
 
     # ------------------------------------------------------------------
     # Classificação em lote
@@ -199,9 +206,7 @@ class LocalAIClient:
             while len(batch_labels) < len(batch):
                 batch_labels.append(labels[0])
             results.extend(batch_labels[: len(batch)])
-            logger.info(
-                "Classificados %d/%d textos", min(i + batch_size, len(texts)), len(texts)
-            )
+            logger.info("Classificados %d/%d textos", min(i + batch_size, len(texts)), len(texts))
 
         return results
 
@@ -256,9 +261,7 @@ class LocalAIClient:
             return data
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                logger.warning(
-                    "LocalAI /v1/jobs não disponível — usando execução síncrona"
-                )
+                logger.warning("LocalAI /v1/jobs não disponível — usando execução síncrona")
                 return self._sync_fallback(prompt, system=system, model=model)
             raise
 
@@ -406,54 +409,72 @@ class LocalAIClient:
     # Internals
     # ------------------------------------------------------------------
     @staticmethod
-    def _build_messages(
-        prompt: str, system: str | None = None
-    ) -> list[dict[str, str]]:
+    def _build_messages(prompt: str, system: str | None = None) -> list[dict[str, str]]:
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    def _post(self, endpoint: str, payload: dict) -> dict:
-        """POST com retry."""
+    def _post(self, endpoint: str, payload: dict, ttl: int = 604800) -> dict:
+        """POST com retry e cache (7 dias por padrão para LLM)."""
         url = f"{self.base_url}{endpoint}"
+
+        cached = cache_get(url, payload, ttl=ttl)
+        if cached is not None:
+            return cached
+
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
                 with httpx.Client(timeout=self.timeout) as client:
                     resp = client.post(url, json=payload)
                     resp.raise_for_status()
-                    return resp.json()
+                    data = resp.json()
+                    cache_set(url, payload, data)
+                    return data
             except Exception as exc:
                 last_exc = exc
                 if attempt < LOCALAI_MAX_RETRIES:
-                    wait = 2 ** attempt
+                    wait = 2**attempt
                     logger.warning(
                         "LocalAI tentativa %d/%d falhou (%s), retry em %ds",
-                        attempt, LOCALAI_MAX_RETRIES, exc, wait,
+                        attempt,
+                        LOCALAI_MAX_RETRIES,
+                        exc,
+                        wait,
                     )
                     time.sleep(wait)
         raise last_exc  # type: ignore[misc]
 
-    async def _apost(self, endpoint: str, payload: dict) -> dict:
-        """POST async com retry."""
+    async def _apost(self, endpoint: str, payload: dict, ttl: int = 604800) -> dict:
+        """POST async com retry e cache."""
         url = f"{self.base_url}{endpoint}"
+
+        cached = cache_get(url, payload, ttl=ttl)
+        if cached is not None:
+            return cached
+
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     resp = await client.post(url, json=payload)
                     resp.raise_for_status()
-                    return resp.json()
+                    data = resp.json()
+                    cache_set(url, payload, data)
+                    return data
             except Exception as exc:
                 last_exc = exc
                 if attempt < LOCALAI_MAX_RETRIES:
                     import asyncio
-                    await asyncio.sleep(2 ** attempt)
+
+                    await asyncio.sleep(2**attempt)
                     logger.warning(
                         "LocalAI async tentativa %d/%d falhou (%s)",
-                        attempt, LOCALAI_MAX_RETRIES, exc,
+                        attempt,
+                        LOCALAI_MAX_RETRIES,
+                        exc,
                     )
         raise last_exc  # type: ignore[misc]
 
@@ -501,6 +522,7 @@ class LocalAIClient:
             print(result["response"])
         """
         from src.mcp_tool_bridge import get_mcp_bridge
+
         bridge = get_mcp_bridge()
         return bridge.agent_chat(
             prompt,
@@ -523,6 +545,7 @@ class LocalAIClient:
     ) -> dict[str, Any]:
         """Versão async do chat_with_tools."""
         from src.mcp_tool_bridge import get_mcp_bridge
+
         bridge = get_mcp_bridge()
         return await bridge.aagent_chat(
             prompt,

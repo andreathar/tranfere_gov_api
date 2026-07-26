@@ -5,6 +5,7 @@ Uso: python3 src/enrichers/completar_deputados.py
 
 Busca detalhes apenas para deputados sem sigla_partido preenchida.
 """
+
 import time
 
 import requests
@@ -46,14 +47,23 @@ def main():
                 foto = status.get("urlFoto", "")
 
                 if sigla:
-                    cur.execute("""
+                    cur.execute(
+                        """
                         UPDATE parlamentares_dados SET
                             sigla_partido = %s, uf = %s, situacao = %s,
                             gabinete_telefone = %s, gabinete_email = %s, url_foto = %s
                         WHERE id = %s
-                    """, (sigla, uf, situacao,
-                          gabinete.get("telefone"), gabinete.get("email"), foto,
-                          row_id))
+                    """,
+                        (
+                            sigla,
+                            uf,
+                            situacao,
+                            gabinete.get("telefone"),
+                            gabinete.get("email"),
+                            foto,
+                            row_id,
+                        ),
+                    )
                     atualizados += 1
 
         except Exception as e:

@@ -10,6 +10,7 @@ from src.transferegov_extract import format_brl, parse_page
 # format_brl — Brazilian currency formatting
 # ---------------------------------------------------------------------------
 
+
 class TestFormatBrl:
     """Tests for the format_brl helper."""
 
@@ -47,6 +48,7 @@ class TestFormatBrl:
 # ---------------------------------------------------------------------------
 # parse_page — API response parsing
 # ---------------------------------------------------------------------------
+
 
 class TestParsePage:
     """Tests for the parse_page helper."""

@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 TransfereGov — Dashboard de Análise Cruzada Fiscal/IBGE.
@@ -61,12 +60,8 @@ CORES_FISCAL = {
 # ═══════════════════════════════════════════════════════════════════════
 
 
-
-
 def query_df(conn, sql):
     return pd.read_sql(sql, conn)
-
-
 
 
 def estilo_fig(fig, height=500):
@@ -79,16 +74,16 @@ def estilo_fig(fig, height=500):
         height=height,
         margin=dict(l=60, r=30, t=55, b=60),
         hovermode="closest",
-        legend=dict(
-            bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)
-        ),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEMA["text_muted"], size=10)),
     )
     fig.update_xaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     fig.update_yaxes(
-        gridcolor=TEMA["grid"], zerolinecolor=TEMA["grid"],
+        gridcolor=TEMA["grid"],
+        zerolinecolor=TEMA["grid"],
         tickfont=dict(color=TEMA["text_muted"]),
     )
     return fig
@@ -300,21 +295,30 @@ def grafico_fiscal_vs_transferencias(df):
 
     # Classificar saúde fiscal
     df["saude_fiscal"] = df["despesas_receitas_ratio"].apply(
-        lambda r: "Saudável (<90%)" if r is not None and r < 0.9
-        else "Alerta (90-105%)" if r is not None and r < 1.05
-        else "Crítico (>105%)" if r is not None
-        else "Sem dados"
+        lambda r: (
+            "Saudável (<90%)"
+            if r is not None and r < 0.9
+            else "Alerta (90-105%)"
+            if r is not None and r < 1.05
+            else "Crítico (>105%)"
+            if r is not None
+            else "Sem dados"
+        )
     )
 
     fig = px.scatter(
-        df, x="receitas_milhao", y="transf_milhao",
+        df,
+        x="receitas_milhao",
+        y="transf_milhao",
         color="regiao",
         size="pop_mil",
         color_discrete_map=CORES_REGIAO,
         hover_name="municipio",
         hover_data={
-            "receitas_milhao": ":.1f", "transf_milhao": ":.1f",
-            "populacao": True, "qtd_planos": True,
+            "receitas_milhao": ":.1f",
+            "transf_milhao": ":.1f",
+            "populacao": True,
+            "qtd_planos": True,
             "despesas_receitas_ratio": ":.2f",
             "regiao": False,
         },
@@ -336,14 +340,18 @@ def grafico_fiscal_vs_transferencias(df):
 
     # Anotações de quadrante
     fig.add_annotation(
-        x=med_rec * 0.3, y=med_transf * 2.5,
+        x=med_rec * 0.3,
+        y=med_transf * 2.5,
         text="Baixa receita<br>Alta transferência",
-        showarrow=False, font=dict(color=TEMA["text_muted"], size=9),
+        showarrow=False,
+        font=dict(color=TEMA["text_muted"], size=9),
     )
     fig.add_annotation(
-        x=med_rec * 2.5, y=med_transf * 0.3,
+        x=med_rec * 2.5,
+        y=med_transf * 0.3,
         text="Alta receita<br>Baixa transferência",
-        showarrow=False, font=dict(color=TEMA["text_muted"], size=9),
+        showarrow=False,
+        font=dict(color=TEMA["text_muted"], size=9),
     )
 
     estilo_fig(fig, height=550)
@@ -358,14 +366,19 @@ def grafico_pib_beneficios(df):
     df["pop_mil"] = df["populacao"] / 1000
 
     fig = px.scatter(
-        df, x="pib_pc_mil", y="vpc_mil",
+        df,
+        x="pib_pc_mil",
+        y="vpc_mil",
         color="regiao",
         size="pop_mil",
         color_discrete_map=CORES_REGIAO,
         hover_name="municipio",
         hover_data={
-            "pib_per_capita": ":.0f", "valor_per_capita": ":.2f",
-            "populacao": True, "qtd_planos": True, "valor_total": ":.0f",
+            "pib_per_capita": ":.0f",
+            "valor_per_capita": ":.2f",
+            "populacao": True,
+            "qtd_planos": True,
+            "valor_total": ":.0f",
             "regiao": False,
         },
         labels={
@@ -387,19 +400,25 @@ def grafico_pib_beneficios(df):
     # Anotações
     x_anno = med_pib * 0.25
     fig.add_annotation(
-        x=x_anno, y=med_vpc * 3,
+        x=x_anno,
+        y=med_vpc * 3,
         text="🔴 Pobre + Alto benefício<br>(foco potencial)",
-        showarrow=False, font=dict(color="#e74c3c", size=9),
+        showarrow=False,
+        font=dict(color="#e74c3c", size=9),
     )
     fig.add_annotation(
-        x=med_pib * 3, y=med_vpc * 0.2,
+        x=med_pib * 3,
+        y=med_vpc * 0.2,
         text="🟢 Rico + Baixo benefício",
-        showarrow=False, font=dict(color="#2ecc71", size=9),
+        showarrow=False,
+        font=dict(color="#2ecc71", size=9),
     )
     fig.add_annotation(
-        x=med_pib * 3, y=med_vpc * 3,
+        x=med_pib * 3,
+        y=med_vpc * 3,
         text="🔵 Rico + Alto benefício",
-        showarrow=False, font=dict(color="#3498db", size=9),
+        showarrow=False,
+        font=dict(color="#3498db", size=9),
     )
 
     estilo_fig(fig, height=550)
@@ -412,32 +431,41 @@ def grafico_despesas_receitas_regiao(df):
 
     fig = go.Figure()
 
-    fig.add_trace(go.Bar(
-        name="Receitas Orçamentárias",
-        x=df["regiao"], y=df["receitas_milhao"],
-        marker_color="#3498db",
-        text=[f"R$ {v:.0f}M" for v in df["receitas_milhao"]],
-        textposition="auto",
-        textfont=dict(size=9),
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Receitas Orçamentárias",
+            x=df["regiao"],
+            y=df["receitas_milhao"],
+            marker_color="#3498db",
+            text=[f"R$ {v:.0f}M" for v in df["receitas_milhao"]],
+            textposition="auto",
+            textfont=dict(size=9),
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        name="Despesas Orçamentárias",
-        x=df["regiao"], y=df["despesas_milhao"],
-        marker_color="#e74c3c",
-        text=[f"R$ {v:.0f}M" for v in df["despesas_milhao"]],
-        textposition="auto",
-        textfont=dict(size=9),
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Despesas Orçamentárias",
+            x=df["regiao"],
+            y=df["despesas_milhao"],
+            marker_color="#e74c3c",
+            text=[f"R$ {v:.0f}M" for v in df["despesas_milhao"]],
+            textposition="auto",
+            textfont=dict(size=9),
+        )
+    )
 
-    fig.add_trace(go.Bar(
-        name="Transferências TransfereGov",
-        x=df["regiao"], y=df["transferencias_milhao"],
-        marker_color="#2ecc71",
-        text=[f"R$ {v:.0f}M" for v in df["transferencias_milhao"]],
-        textposition="auto",
-        textfont=dict(size=9),
-    ))
+    fig.add_trace(
+        go.Bar(
+            name="Transferências TransfereGov",
+            x=df["regiao"],
+            y=df["transferencias_milhao"],
+            marker_color="#2ecc71",
+            text=[f"R$ {v:.0f}M" for v in df["transferencias_milhao"]],
+            textposition="auto",
+            textfont=dict(size=9),
+        )
+    )
 
     fig.update_layout(
         barmode="group",
@@ -464,14 +492,19 @@ def grafico_patrimonio_transferencias(df):
     df["pop_mil"] = df["populacao"] / 1000
 
     fig = px.scatter(
-        df, x="patrimonio_milhao", y="transf_milhao",
+        df,
+        x="patrimonio_milhao",
+        y="transf_milhao",
         color="regiao",
         size="divida_milhao",
         color_discrete_map=CORES_REGIAO,
         hover_name="municipio",
         hover_data={
-            "patrimonio_milhao": ":.1f", "transf_milhao": ":.1f",
-            "divida_milhao": ":.1f", "populacao": True, "qtd_planos": True,
+            "patrimonio_milhao": ":.1f",
+            "transf_milhao": ":.1f",
+            "divida_milhao": ":.1f",
+            "populacao": True,
+            "qtd_planos": True,
             "regiao": False,
         },
         labels={
@@ -491,9 +524,11 @@ def grafico_patrimonio_transferencias(df):
     fig.add_vline(x=med_pat, line_dash="dash", line_color=TEMA["text_muted"], opacity=0.4)
 
     fig.add_annotation(
-        x=med_pat * 0.2, y=med_transf * 3,
+        x=med_pat * 0.2,
+        y=med_transf * 3,
         text="Baixo patrimônio<br>Alta transferência",
-        showarrow=False, font=dict(color=TEMA["text_muted"], size=9),
+        showarrow=False,
+        font=dict(color=TEMA["text_muted"], size=9),
     )
 
     estilo_fig(fig, height=550)
@@ -509,7 +544,10 @@ def gerar_html(data_str, cards, charts):
     """Monta o HTML completo do dashboard."""
     chart_html = ""
     titulos = [
-        ("Saúde Fiscal vs Transferências", "Receitas orçamentárias vs valor transferido por município"),
+        (
+            "Saúde Fiscal vs Transferências",
+            "Receitas orçamentárias vs valor transferido por município",
+        ),
         ("PIB per Capita vs Benefícios", "PIB per capita vs valor per capita de transferências"),
         ("Receitas vs Despesas por Região", "Composição fiscal regional com transferências"),
         ("Patrimônio vs Transferências", "Patrimônio líquido vs volume de transferências"),
@@ -531,8 +569,7 @@ def gerar_html(data_str, cards, charts):
         """
 
     nav_items = "".join(
-        f'<a href="#g{i}" class="nav-item">{t[0]}</a>'
-        for i, t in enumerate(titulos, 1)
+        f'<a href="#g{i}" class="nav-item">{t[0]}</a>' for i, t in enumerate(titulos, 1)
     )
 
     return f"""<!DOCTYPE html>
@@ -545,8 +582,8 @@ def gerar_html(data_str, cards, charts):
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
-    background: {TEMA['bg']};
-    color: {TEMA['text']};
+    background: {TEMA["bg"]};
+    color: {TEMA["text"]};
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     line-height: 1.5;
   }}
@@ -554,19 +591,19 @@ def gerar_html(data_str, cards, charts):
   .hero {{
     text-align: center;
     padding: 40px 20px 20px;
-    background: linear-gradient(135deg, {TEMA['card']}, {TEMA['card_alt']});
+    background: linear-gradient(135deg, {TEMA["card"]}, {TEMA["card_alt"]});
     border-radius: 16px;
     margin-bottom: 20px;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
-  .hero h1 {{ font-size: 28px; color: {TEMA['accent']}; margin-bottom: 8px; }}
-  .subtitle {{ color: {TEMA['text_muted']}; font-size: 14px; }}
+  .hero h1 {{ font-size: 28px; color: {TEMA["accent"]}; margin-bottom: 8px; }}
+  .subtitle {{ color: {TEMA["text_muted"]}; font-size: 14px; }}
   .cards-row {{
     display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin: 20px 0;
   }}
   .card {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 20px 24px;
     min-width: 160px;
@@ -576,36 +613,36 @@ def gerar_html(data_str, cards, charts):
   }}
   .card-icon {{ font-size: 24px; margin-bottom: 4px; }}
   .card-num {{
-    font-size: 24px; font-weight: 700; color: {TEMA['accent']};
+    font-size: 24px; font-weight: 700; color: {TEMA["accent"]};
     line-height: 1.2;
   }}
   .card-label {{
-    font-size: 11px; color: {TEMA['text_muted']};
+    font-size: 11px; color: {TEMA["text_muted"]};
     text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;
   }}
   .card-sub {{
-    font-size: 11px; color: {TEMA['accent2']}; margin-top: 2px;
+    font-size: 11px; color: {TEMA["accent2"]}; margin-top: 2px;
   }}
   .nav {{
     display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-    padding: 16px; background: {TEMA['card']};
+    padding: 16px; background: {TEMA["card"]};
     border-radius: 12px; margin: 20px 0;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
     position: sticky; top: 10px; z-index: 100;
   }}
   .nav-item {{
     padding: 6px 14px; border-radius: 8px;
-    background: {TEMA['bg']}; color: {TEMA['text_muted']};
+    background: {TEMA["bg"]}; color: {TEMA["text_muted"]};
     text-decoration: none; font-size: 12px; font-weight: 500;
     transition: all 0.2s;
-    border: 1px solid {TEMA['border']};
+    border: 1px solid {TEMA["border"]};
   }}
   .nav-item:hover {{
-    background: {TEMA['accent']}; color: white; border-color: {TEMA['accent']};
+    background: {TEMA["accent"]}; color: white; border-color: {TEMA["accent"]};
   }}
   .section {{
-    background: {TEMA['card']};
-    border: 1px solid {TEMA['border']};
+    background: {TEMA["card"]};
+    border: 1px solid {TEMA["border"]};
     border-radius: 12px;
     padding: 24px;
     margin: 20px 0;
@@ -614,25 +651,25 @@ def gerar_html(data_str, cards, charts):
     display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
   }}
   .section-num {{
-    background: {TEMA['accent']}; color: white;
+    background: {TEMA["accent"]}; color: white;
     width: 36px; height: 36px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 16px; flex-shrink: 0;
   }}
   .section-header h2 {{
-    font-size: 18px; color: {TEMA['text']}; margin: 0;
+    font-size: 18px; color: {TEMA["text"]}; margin: 0;
   }}
   .section-desc {{
-    font-size: 12px; color: {TEMA['text_muted']}; margin: 2px 0 0;
+    font-size: 12px; color: {TEMA["text_muted"]}; margin: 2px 0 0;
   }}
   .chart-container {{
     width: 100%; overflow-x: auto;
   }}
   .footer {{
-    text-align: center; padding: 30px; color: {TEMA['text_muted']};
-    font-size: 12px; border-top: 1px solid {TEMA['border']}; margin-top: 30px;
+    text-align: center; padding: 30px; color: {TEMA["text_muted"]};
+    font-size: 12px; border-top: 1px solid {TEMA["border"]}; margin-top: 30px;
   }}
-  .footer strong {{ color: {TEMA['accent']}; }}
+  .footer strong {{ color: {TEMA["accent"]}; }}
   @media (max-width: 768px) {{
     .cards-row {{ flex-direction: column; align-items: stretch; }}
     .card {{ max-width: 100%; }}
@@ -665,12 +702,14 @@ def main():
         description="Dashboard de Análise Cruzada Fiscal × Transferências"
     )
     parser.add_argument(
-        "--output", default="output/dashboard_cross_fiscal.html",
-        help="Caminho do arquivo HTML de saída"
+        "--output",
+        default="output/dashboard_cross_fiscal.html",
+        help="Caminho do arquivo HTML de saída",
     )
     args = parser.parse_args()
 
     from datetime import datetime
+
     data_str = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     print("🔌 Conectando ao banco...")
@@ -685,7 +724,11 @@ def main():
     conn.close()
 
     total_mun = int(df_resumo.iloc[0]["municipios_com_financeiro"])
-    ratio_medio = float(df_resumo.iloc[0]["ratio_medio"]) if pd.notna(df_resumo.iloc[0]["ratio_medio"]) else 0
+    ratio_medio = (
+        float(df_resumo.iloc[0]["ratio_medio"])
+        if pd.notna(df_resumo.iloc[0]["ratio_medio"])
+        else 0
+    )
     print(f"📊 Dados: {total_mun} municípios com dados financeiros, ratio D/R = {ratio_medio:.2%}")
 
     print("🎨 Gerando gráficos...")

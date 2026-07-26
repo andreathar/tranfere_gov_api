@@ -193,16 +193,31 @@ class TestMostrarPerfil:
     def test_found_returns_true(self, mock_conn, capsys):
         mock_cur = MagicMock()
         mock_cur.fetchone.return_value = (
-            "AFONSO FLORENCE", "PT", "BA", "Ativo",
-            "Superior", "6199999", "dep@test.com",
-            "http://photo.jpg", None, "Salvador",
+            "AFONSO FLORENCE",
+            "PT",
+            "BA",
+            "Ativo",
+            "Superior",
+            "6199999",
+            "dep@test.com",
+            "http://photo.jpg",
+            None,
+            "Salvador",
         )
         # mock description for column names
         mock_cur.description = [
-            (name,) for name in [
-                "nome", "sigla_partido", "uf", "situacao",
-                "escolaridade", "gabinete_telefone", "gabinete_email",
-                "url_foto", "data_nascimento", "municipio_nascimento",
+            (name,)
+            for name in [
+                "nome",
+                "sigla_partido",
+                "uf",
+                "situacao",
+                "escolaridade",
+                "gabinete_telefone",
+                "gabinete_email",
+                "url_foto",
+                "data_nascimento",
+                "municipio_nascimento",
             ]
         ]
         mock_conn.return_value.cursor.return_value = mock_cur
@@ -238,8 +253,15 @@ class TestMostrarResumo:
     def test_displays_summary(self, mock_conn, capsys):
         mock_cur = MagicMock()
         mock_cur.fetchone.return_value = (
-            "CORONEL ULYSSES", 24, 15, 20,
-            16154822.99, 673117.62, 5, 14, 5,
+            "CORONEL ULYSSES",
+            24,
+            15,
+            20,
+            16154822.99,
+            673117.62,
+            5,
+            14,
+            5,
         )
         mock_conn.return_value.cursor.return_value = mock_cur
 

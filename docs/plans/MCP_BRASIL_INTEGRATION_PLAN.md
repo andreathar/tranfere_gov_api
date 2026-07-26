@@ -200,7 +200,7 @@ class MCPBrasilClient:
         cache_key = f"{name}:{hash(frozenset(args.items()))}"
         if cache_key in self._cache:
             return self._cache[cache_key]
-        
+
         result = await self._session.call_tool(name, args)
         self._cache[cache_key] = result
         return result
@@ -217,7 +217,7 @@ async def enriquecer_municipios(client: MCPBrasilClient, df: pd.DataFrame) -> pd
     """Adiciona dados IBGE aos municípios beneficiários."""
     ufs = df["uf"].unique()
     ibge_data = {}
-    
+
     for uf in ufs:
         result = await client.call_tool("ibge_municipios", {"uf": uf})
         for mun in result:
@@ -229,11 +229,11 @@ async def enriquecer_municipios(client: MCPBrasilClient, df: pd.DataFrame) -> pd
                 "mesorregiao": mun.get("mesorregiao"),
                 "microrregiao": mun.get("microrregiao"),
             }
-    
+
     def lookup(row):
         key = (str(row["beneficiarioNome"]).upper(), row["uf"])
         return ibge_data.get(key, {})
-    
+
     enriched = df.apply(lookup, axis=1, result_type="expand")
     return pd.concat([df, enriched], axis=1)
 ```
@@ -246,7 +246,7 @@ async def validar_totais_anuais(client: MCPBrasilClient, df: pd.DataFrame, ano: 
     mcp_result = await client.call_tool("transferegov_resumo_emendas_ano", {"ano": ano})
     mcp_total = parse_mcp_total(mcp_result)
     local_total = df["valorTotal"].sum()
-    
+
     diff_pct = abs(local_total - mcp_total) / mcp_total * 100
     return {
         "ano": ano,

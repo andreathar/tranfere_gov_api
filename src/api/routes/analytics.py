@@ -1,13 +1,14 @@
-from fastapi import APIRouter
-from src.api.services import analytics_service
 import logging
-from typing import Dict, Any
+from typing import Any
+
+from fastapi import APIRouter
+
+from src.api.services import analytics_service
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(
-    tags=["analytics"]
-)
+router = APIRouter(tags=["analytics"])
+
 
 @router.get("/party-efficiency")
 async def party_efficiency():
@@ -15,19 +16,22 @@ async def party_efficiency():
     data = await analytics_service.get_party_efficiency()
     return {"status": "success", "data": data}
 
+
 @router.get("/socioeconomic")
 async def socioeconomic():
     """Retorna dados agregados de emendas vs. dados IBGE dos municípios."""
     data = await analytics_service.get_socioeconomic_data()
     return {"status": "success", "data": data}
 
-@router.get("/deputy-roi", response_model=Dict[str, Any])
+
+@router.get("/deputy-roi", response_model=dict[str, Any])
 async def deputy_roi():
     """Retorna comparativo de Despesas da Cota vs. Valor de Emendas do parlamentar."""
     data = await analytics_service.get_deputy_roi()
     return {"status": "success", "data": data}
 
-@router.get("/top-municipios", response_model=Dict[str, Any])
+
+@router.get("/top-municipios", response_model=dict[str, Any])
 async def top_municipios():
     """Returns the top municipalities by total emenda value."""
     data = await analytics_service.get_top_municipios()

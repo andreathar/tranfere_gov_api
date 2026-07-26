@@ -36,11 +36,11 @@ async def sync_tse_deputados(dry_run: bool = False, ano: int = 2022) -> None:
 
     # 2. Consultar candidatos a deputado federal no TSE (DuckDB mcp-brasil)
     from mcp_brasil._shared.datasets import executar_query
-    from mcp_brasil.datasets.tse_candidatos import DATASET_SPEC as CAND_SPEC
     from mcp_brasil.datasets.tse_bens import DATASET_SPEC as BENS_SPEC
+    from mcp_brasil.datasets.tse_candidatos import DATASET_SPEC as CAND_SPEC
 
     sql_candidatos = f"""
-        SELECT sq_candidato, ano_eleicao, nm_candidato, nm_urna_candidato, 
+        SELECT sq_candidato, ano_eleicao, nm_candidato, nm_urna_candidato,
                sg_partido, sg_uf, ds_cargo, ds_sit_tot_turno, nm_coligacao
         FROM "{CAND_SPEC.table}"
         WHERE UPPER(ds_cargo) LIKE '%DEPUTADO FEDERAL%'
@@ -58,7 +58,7 @@ async def sync_tse_deputados(dry_run: bool = False, ano: int = 2022) -> None:
         uf = (c.get("sg_uf") or "").upper()
         nome = normalize(c.get("nm_candidato") or "")
         nome_urna = normalize(c.get("nm_urna_candidato") or "")
-        
+
         tse_index[(nome, uf)] = c
         if nome_urna:
             tse_index[(nome_urna, uf)] = c
@@ -83,7 +83,7 @@ async def sync_tse_deputados(dry_run: bool = False, ano: int = 2022) -> None:
     matched_count = 0
     updates = []
 
-    for dep_id, nome, nome_urna, partido, uf in deputados_db:
+    for dep_id, nome, nome_urna, _partido, uf in deputados_db:
         uf_upper = (uf or "").upper()
         key_nome = (normalize(nome), uf_upper)
         key_urna = (normalize(nome_urna), uf_upper)
@@ -92,7 +92,7 @@ async def sync_tse_deputados(dry_run: bool = False, ano: int = 2022) -> None:
 
         # Fallback de busca sem UF se não encontrar com UF
         if not match:
-            for (k_nome, k_uf), cand in tse_index.items():
+            for (k_nome, _k_uf), cand in tse_index.items():
                 if k_nome == key_nome[0] or (key_urna[0] and k_nome == key_urna[0]):
                     match = cand
                     break
@@ -104,9 +104,7 @@ async def sync_tse_deputados(dry_run: bool = False, ano: int = 2022) -> None:
             coligacao = match.get("nm_coligacao") or "Partido Isolado"
             patrimonio = bens_map.get(sq_cand, 0.0)
 
-            updates.append((
-                ano, situacao, coligacao, patrimonio, dep_id
-            ))
+            updates.append((ano, situacao, coligacao, patrimonio, dep_id))
 
     print(f"✅ Deputados vinculados com sucesso ao TSE: {matched_count}/{len(deputados_db)}")
 

@@ -20,7 +20,7 @@ Formulate exact fix instructions for `README.md` and root `LICENSE` file for Mil
 
 ## Investigation State
 - **Explored paths**: ORIGINAL_REQUEST.md, PROJECT.md, GATE_STATUS.md, README.md, run.sh, root directory for LICENSE
-- **Key findings**: 
+- **Key findings**:
   - `run.sh` line 85 launches `./run.sh web` on port 8080 (`http://localhost:8080`), whereas `README.md` documented port 8000.
   - Root `LICENSE` file was missing from project root.
 - **Unexplored areas**: None (investigation complete)

@@ -54,7 +54,7 @@ def main():
     nomes = [row[0].strip() for row in cur.fetchall()]
 
     if args.limit > 0:
-        nomes = nomes[:args.limit]
+        nomes = nomes[: args.limit]
 
     print(f"Parlamentares para buscar: {len(nomes)}")
 
@@ -77,7 +77,8 @@ def main():
                 uf = status.get("siglaUf", "?")
                 print(f"  [{i}/{len(nomes)}] {nome} ({partido}/{uf})")
             else:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO parlamentares_dados
                         (deputado_id, nome, nome_urna, sigla_partido, uf, situacao,
                          gabinete_numero, gabinete_predio, gabinete_telefone, gabinete_email,
@@ -88,24 +89,26 @@ def main():
                         nome = EXCLUDED.nome,
                         sigla_partido = EXCLUDED.sigla_partido,
                         uf = EXCLUDED.uf
-                """, (
-                    dep.get("id"),
-                    dep.get("nome", nome),
-                    status.get("nomeEleitoral", nome),
-                    status.get("siglaPartido"),
-                    status.get("siglaUf"),
-                    status.get("situacao"),
-                    status.get("gabinete", {}).get("nome"),
-                    status.get("gabinete", {}).get("predio"),
-                    status.get("gabinete", {}).get("telefone"),
-                    status.get("gabinete", {}).get("email"),
-                    status.get("urlFoto"),
-                    status.get("situacao"),
-                    dep.get("dataNascimento"),
-                    dep.get("municipioNascimento"),
-                    dep.get("ufNascimento"),
-                    dep.get("escolaridade"),
-                ))
+                """,
+                    (
+                        dep.get("id"),
+                        dep.get("nome", nome),
+                        status.get("nomeEleitoral", nome),
+                        status.get("siglaPartido"),
+                        status.get("siglaUf"),
+                        status.get("situacao"),
+                        status.get("gabinete", {}).get("nome"),
+                        status.get("gabinete", {}).get("predio"),
+                        status.get("gabinete", {}).get("telefone"),
+                        status.get("gabinete", {}).get("email"),
+                        status.get("urlFoto"),
+                        status.get("situacao"),
+                        dep.get("dataNascimento"),
+                        dep.get("municipioNascimento"),
+                        dep.get("ufNascimento"),
+                        dep.get("escolaridade"),
+                    ),
+                )
         else:
             nao_encontrados += 1
             if args.dry_run:
@@ -113,7 +116,9 @@ def main():
 
         if i % 25 == 0:
             conn.commit()
-            print(f"  [{i}/{len(nomes)}] Encontrados={encontrados} Não encontrados={nao_encontrados}")
+            print(
+                f"  [{i}/{len(nomes)}] Encontrados={encontrados} Não encontrados={nao_encontrados}"
+            )
 
         time.sleep(ENRICH_RATE_LIMIT)
 

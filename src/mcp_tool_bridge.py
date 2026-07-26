@@ -30,7 +30,8 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -62,7 +63,13 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "judicial": ["datajud", "jurisprudencia", "tcu"],
     "diario_oficial": ["diario_oficial"],
     "dashboard": ["list_registered_charts", "inspect_chart_health", "get_chart_data_summary"],
-    "meta": ["listar_features", "recomendar_tools", "planejar_consulta", "executar_lote", "listar_datasets_disponiveis"],
+    "meta": [
+        "listar_features",
+        "recomendar_tools",
+        "planejar_consulta",
+        "executar_lote",
+        "listar_datasets_disponiveis",
+    ],
 }
 
 
@@ -81,6 +88,7 @@ class MCPToolBridge:
         """Retorna o servidor MCP (lazy import para evitar circular)."""
         if self._mcp_server is None:
             from mcp_brasil.server import mcp
+
             self._mcp_server = mcp
         return self._mcp_server
 
@@ -129,11 +137,11 @@ class MCPToolBridge:
         # Estas são as tools que o BM25 transform esconde mas que são registradas
         try:
             srv = mcp._mcp_server
-            if hasattr(srv, '_tool_cache') and isinstance(srv._tool_cache, dict):
+            if hasattr(srv, "_tool_cache") and isinstance(srv._tool_cache, dict):
                 for name, ft in srv._tool_cache.items():
                     if any(t["name"] == name for t in tools):
                         continue  # Já temos
-                    mcp_t = ft.to_mcp_tool() if hasattr(ft, 'to_mcp_tool') else None
+                    mcp_t = ft.to_mcp_tool() if hasattr(ft, "to_mcp_tool") else None
                     if mcp_t:
                         tags = set()
                         if mcp_t.meta and "fastmcp" in (mcp_t.meta or {}):
@@ -144,13 +152,15 @@ class MCPToolBridge:
                             if any(name_lower.startswith(p) or p in name_lower for p in prefixes):
                                 category = cat
                                 break
-                        tools.append({
-                            "name": mcp_t.name,
-                            "description": (mcp_t.description or "")[:500],
-                            "input_schema": mcp_t.inputSchema,
-                            "category": category,
-                            "tags": list(tags),
-                        })
+                        tools.append(
+                            {
+                                "name": mcp_t.name,
+                                "description": (mcp_t.description or "")[:500],
+                                "input_schema": mcp_t.inputSchema,
+                                "category": category,
+                                "tags": list(tags),
+                            }
+                        )
         except Exception as exc:
             logger.debug("Não foi possível acessar _tool_cache: %s", exc)
 
@@ -165,6 +175,7 @@ class MCPToolBridge:
         relevantes a partir de uma query em linguagem natural.
         """
         import asyncio
+
         mcp = self._get_mcp()
         try:
             result = asyncio.get_event_loop().run_until_complete(
@@ -185,18 +196,14 @@ class MCPToolBridge:
     ) -> list[dict[str, Any]]:
         """Lista tools disponíveis (sync wrapper)."""
         import asyncio
-        tools = asyncio.get_event_loop().run_until_complete(
-            self.discover_tools()
-        )
+
+        tools = asyncio.get_event_loop().run_until_complete(self.discover_tools())
 
         if category:
             tools = [t for t in tools if t["category"] == category]
         if search:
             q = search.lower()
-            tools = [
-                t for t in tools
-                if q in t["name"].lower() or q in t["description"].lower()
-            ]
+            tools = [t for t in tools if q in t["name"].lower() or q in t["description"].lower()]
         return tools
 
     # ------------------------------------------------------------------
@@ -226,9 +233,8 @@ class MCPToolBridge:
             [{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}]
         """
         import asyncio
-        tools = asyncio.get_event_loop().run_until_complete(
-            self.discover_tools()
-        )
+
+        tools = asyncio.get_event_loop().run_until_complete(self.discover_tools())
 
         # Converter meta-tools primeiro (sempre incluir)
         openai_tools: list[dict[str, Any]] = []
@@ -236,14 +242,16 @@ class MCPToolBridge:
         if include_meta:
             meta_tools = [t for t in tools if t["category"] == "meta"]
             for t in meta_tools:
-                openai_tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": t["name"],
-                        "description": t["description"],
-                        "parameters": t["input_schema"],
-                    },
-                })
+                openai_tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t["description"],
+                            "parameters": t["input_schema"],
+                        },
+                    }
+                )
                 meta_names.add(t["name"])
 
         # Filtrar tools por categorias
@@ -256,17 +264,18 @@ class MCPToolBridge:
                 else:
                     cat_names.add(cat)
             filtered = [
-                t for t in tools
+                t
+                for t in tools
                 if t["name"] not in meta_names
-                and (t["category"] in categories
-                     or any(p in t["name"].lower() for p in cat_names))
+                and (t["category"] in categories or any(p in t["name"].lower() for p in cat_names))
             ]
 
         # Filtro por texto
         if search:
             q = search.lower()
             filtered = [
-                t for t in filtered
+                t
+                for t in filtered
                 if t["name"] not in meta_names
                 and (q in t["name"].lower() or q in t["description"].lower())
             ]
@@ -279,14 +288,16 @@ class MCPToolBridge:
             seen.add(t["name"])
             if len(openai_tools) >= max_tools:
                 break
-            openai_tools.append({
-                "type": "function",
-                "function": {
-                    "name": t["name"],
-                    "description": t["description"],
-                    "parameters": t["input_schema"],
-                },
-            })
+            openai_tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t["description"],
+                        "parameters": t["input_schema"],
+                    },
+                }
+            )
 
         # Adicionar tools do handler_map (execução direta, sem MCP session)
         # Essas tools NÃO estão no discover_tools() porque o MCP retorna
@@ -313,8 +324,17 @@ class MCPToolBridge:
 
         logger.info(
             "Convertidas %d tools para OpenAI format (meta=%d, categories=%s, handler_map=%d)",
-            len(openai_tools), len(meta_names), categories,
-            len([t for t in openai_tools if t["function"]["name"] not in meta_names and t["function"]["name"] not in {x["name"] for x in tools}]),
+            len(openai_tools),
+            len(meta_names),
+            categories,
+            len(
+                [
+                    t
+                    for t in openai_tools
+                    if t["function"]["name"] not in meta_names
+                    and t["function"]["name"] not in {x["name"] for x in tools}
+                ]
+            ),
         )
         return openai_tools
 
@@ -430,6 +450,7 @@ class MCPToolBridge:
         def _try_import(module_path: str) -> types.ModuleType | None:
             try:
                 import importlib
+
                 return importlib.import_module(module_path)
             except (ImportError, ModuleNotFoundError):
                 return None
@@ -445,7 +466,8 @@ class MCPToolBridge:
         redator_tools = _try_import("mcp_brasil.agentes.redator.tools")
 
         _modules = {
-            k: v for k, v in {
+            k: v
+            for k, v in {
                 "ibge": ibge_tools,
                 "camara": camara_tools,
                 "transferegov": transferegov_tools,
@@ -455,7 +477,8 @@ class MCPToolBridge:
                 "bacen": bacen_tools,
                 "diario_oficial": dou_tools,
                 "redator": redator_tools,
-            }.items() if v is not None
+            }.items()
+            if v is not None
         }
 
         for prefix, mod in _modules.items():
@@ -483,7 +506,7 @@ class MCPToolBridge:
 
         Cria um mock mínimo do Context para preencher o parâmetro obrigatório.
         """
-        import asyncio, inspect
+        import inspect
 
         if not callable(fn):
             raise TypeError(f"{fn} não é chamável")
@@ -502,15 +525,26 @@ class MCPToolBridge:
         # o model_construct cria instância incompleta sem _request_context
         _mock_ctx = None
         if has_ctx:
-            import types
 
             class _MockCtx:
-                async def info(self, *a, **kw): pass
-                async def warning(self, *a, **kw): pass
-                async def error(self, *a, **kw): pass
-                async def debug(self, *a, **kw): pass
-                async def log(self, *a, **kw): pass
-                async def report_progress(self, *a, **kw): pass
+                async def info(self, *a, **kw):
+                    pass
+
+                async def warning(self, *a, **kw):
+                    pass
+
+                async def error(self, *a, **kw):
+                    pass
+
+                async def debug(self, *a, **kw):
+                    pass
+
+                async def log(self, *a, **kw):
+                    pass
+
+                async def report_progress(self, *a, **kw):
+                    pass
+
                 session = None
                 _request_context = None
 
@@ -546,7 +580,7 @@ class MCPToolBridge:
 
         wrapper.__name__ = getattr(fn, "__name__", str(fn))
         wrapper.__doc__ = getattr(fn, "__doc__", "")
-        wrapper.__wrapped__ = fn  # Guardar ref da função original
+        wrapper.__wrapped__ = fn  # type: ignore[attr-defined]
         return wrapper
 
     async def execute_tool(self, name: str, arguments: dict[str, Any]) -> str:
@@ -556,6 +590,7 @@ class MCPToolBridge:
         if handler:
             try:
                 import asyncio
+
                 if asyncio.iscoroutinefunction(handler):
                     result = await handler(**arguments)
                 else:
@@ -592,9 +627,8 @@ class MCPToolBridge:
     def execute_tool_sync(self, name: str, arguments: dict[str, Any]) -> str:
         """Versão sync da execução de tool."""
         import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.execute_tool(name, arguments)
-        )
+
+        return asyncio.get_event_loop().run_until_complete(self.execute_tool(name, arguments))
 
     # ------------------------------------------------------------------
     # Tool registration (para tools customizadas do projeto)
@@ -614,13 +648,15 @@ class MCPToolBridge:
         self._callables[name] = handler
         if self._tools_cache is None:
             self._tools_cache = []
-        self._tools_cache.append({
-            "name": name,
-            "description": description,
-            "input_schema": parameters,
-            "category": category,
-            "tags": ["custom"],
-        })
+        self._tools_cache.append(
+            {
+                "name": name,
+                "description": description,
+                "input_schema": parameters,
+                "category": category,
+                "tags": ["custom"],
+            }
+        )
 
     # ------------------------------------------------------------------
     # Agent loop (chat + tool calling)
@@ -702,18 +738,22 @@ class MCPToolBridge:
                 logger.info("Executando tool: %s(%s)", tool_name, tool_args)
                 result = self.execute_tool_sync(tool_name, tool_args)
 
-                all_tool_calls.append({
-                    "tool": tool_name,
-                    "arguments": tool_args,
-                    "result_preview": result[:200],
-                })
+                all_tool_calls.append(
+                    {
+                        "tool": tool_name,
+                        "arguments": tool_args,
+                        "result_preview": result[:200],
+                    }
+                )
 
                 # Adicionar resultado como tool message
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result[:8000],  # Limitar tamanho
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result[:8000],  # Limitar tamanho
+                    }
+                )
 
                 logger.info("Tool %s retornou %d chars", tool_name, len(result))
 
@@ -751,7 +791,7 @@ class MCPToolBridge:
         all_tool_calls: list[dict[str, Any]] = []
         final_response = ""
 
-        for turn in range(max_turns):
+        for _turn in range(max_turns):
             payload = {
                 "model": model,
                 "messages": messages,
@@ -782,22 +822,26 @@ class MCPToolBridge:
 
                 result = await self.execute_tool(tool_name, tool_args)
 
-                all_tool_calls.append({
-                    "tool": tool_name,
-                    "arguments": tool_args,
-                    "result_preview": result[:200],
-                })
+                all_tool_calls.append(
+                    {
+                        "tool": tool_name,
+                        "arguments": tool_args,
+                        "result_preview": result[:200],
+                    }
+                )
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result[:8000],
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": result[:8000],
+                    }
+                )
 
         return {
             "response": final_response,
             "tool_calls": all_tool_calls,
-            "turns": min(turn + 1, max_turns),
+            "turns": min(_turn + 1, max_turns),
             "tools_available": len(tools_schema),
         }
 
@@ -816,16 +860,18 @@ class MCPToolBridge:
         else:
             # System prompt padrão com contexto das tools disponíveis
             tool_names = [t["function"]["name"] for t in (tools or [])[:20]]
-            messages.append({
-                "role": "system",
-                "content": (
-                    "Você é um assistente de IA com acesso a ferramentas de dados "
-                    "governamentais brasileiros. Use as ferramentas disponíveis para "
-                    "responder perguntas sobre transferências, emendas, municípios, "
-                    "finanças públicas e dados abertos.\n\n"
-                    f"Ferramentas disponíveis: {', '.join(tool_names)}"
-                ),
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Você é um assistente de IA com acesso a ferramentas de dados "
+                        "governamentais brasileiros. Use as ferramentas disponíveis para "
+                        "responder perguntas sobre transferências, emendas, municípios, "
+                        "finanças públicas e dados abertos.\n\n"
+                        f"Ferramentas disponíveis: {', '.join(tool_names)}"
+                    ),
+                }
+            )
         messages.append({"role": "user", "content": prompt})
         return messages
 
@@ -843,7 +889,8 @@ class MCPToolBridge:
                 last_exc = exc
                 if attempt < LOCALAI_MAX_RETRIES:
                     import time
-                    time.sleep(2 ** attempt)
+
+                    time.sleep(2**attempt)
         raise last_exc  # type: ignore[misc]
 
     async def _apost(self, endpoint: str, payload: dict) -> dict:
@@ -860,7 +907,8 @@ class MCPToolBridge:
                 last_exc = exc
                 if attempt < LOCALAI_MAX_RETRIES:
                     import asyncio
-                    await asyncio.sleep(2 ** attempt)
+
+                    await asyncio.sleep(2**attempt)
         raise last_exc  # type: ignore[misc]
 
 

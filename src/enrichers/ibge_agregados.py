@@ -18,13 +18,13 @@ import json
 import time
 from datetime import UTC, datetime
 from typing import TypedDict
-import requests
 
-from src.db_utils import get_connection
+import requests
 
 from config.settings import (
     ENRICH_RATE_LIMIT,
 )
+from src.db_utils import get_connection
 
 # ---------------------------------------------------------------------------
 # API de Agregados do IBGE (v3)
@@ -50,8 +50,6 @@ AGREGADOS: dict[str, tuple[int, int, str]] = {
     "pib": (5938, 37, "PIB a preços correntes em R$ mil"),
     "area": (1301, 615, "Área territorial em km²"),
 }
-
-
 
 
 def _parse_agregado_response(resp_json: list[_AgregadoIBGE]) -> float | None:
@@ -175,7 +173,9 @@ def main() -> None:
             pib_str = f"R$ {pib:,.0f} mil" if pib else "—"
             area_str = f"{area:,.2f} km²" if area else "—"
             status = "✓" if tem_dados else "✗"
-            print(f"  {status} {mun_id} - {nome} ({uf}) | Pop: {pop_str} | PIB: {pib_str} | Área: {area_str}")
+            print(
+                f"  {status} {mun_id} - {nome} ({uf}) | Pop: {pop_str} | PIB: {pib_str} | Área: {area_str}"
+            )
         elif tem_dados:
             cur.execute(  # noqa: E501
                 """

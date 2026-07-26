@@ -62,7 +62,8 @@ def main():
             if args.dry_run:
                 print(f"    {mun_id} - {nome}")
             else:
-                cur.execute("""
+                cur.execute(
+                    """
                     INSERT INTO municipios_ibge
                         (municipio_id, nome, uf, regiao, mesorregiao, microrregiao)
                     VALUES (%s, %s, %s, %s, %s, %s)
@@ -71,7 +72,9 @@ def main():
                         regiao = EXCLUDED.regiao,
                         mesorregiao = EXCLUDED.mesorregiao,
                         microrregiao = EXCLUDED.microrregiao
-                """, (mun_id, nome, uf, regiao, mesorregiao, microrregiao))
+                """,
+                    (mun_id, nome, uf, regiao, mesorregiao, microrregiao),
+                )
                 total_inseridos += 1
 
         conn.commit()

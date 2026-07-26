@@ -5,7 +5,6 @@ Uso: python3 -m src.enrichers.compras [--dry-run] [--limit N] [--ano YYYY]
 """
 
 from __future__ import annotations
-from src.db_utils import get_connection
 
 import argparse
 import time
@@ -18,11 +17,10 @@ import requests
 from config.settings import (
     ENRICH_RATE_LIMIT,
 )
+from src.db_utils import get_connection
 
 PNCP_BASE = "https://pncp.gov.br/api/consulta/v1"
 COMPRAS_ABERTOS_BASE = "https://dadosabertos.compras.gov.br"
-
-
 
 
 def cnpj_to_municipio_id(cnpj: str | None) -> int | None:
@@ -45,25 +43,27 @@ def request_with_retry(
             if resp.status_code == 200:
                 return resp.json()  # type: ignore[no-any-return]
             if resp.status_code in (429, 500, 502, 503, 504):
-                wait = 3 * (2 ** attempt)  # 3s, 6s, 12s, 24s
+                wait = 3 * (2**attempt)  # 3s, 6s, 12s, 24s
                 print(f"    HTTP {resp.status_code} — retry {attempt + 1}/{retries} em {wait}s")
                 time.sleep(wait)
                 continue
             print(f"    HTTP {resp.status_code} para {url}")
             return None
         except requests.exceptions.Timeout:
-            wait = 3 * (2 ** attempt)
+            wait = 3 * (2**attempt)
             print(f"    Timeout — retry {attempt + 1}/{retries} em {wait}s")
             time.sleep(wait)
         except requests.exceptions.ConnectionError:
-            wait = 3 * (2 ** attempt)
+            wait = 3 * (2**attempt)
             print(f"    ConnectionError — retry {attempt + 1}/{retries} em {wait}s")
             time.sleep(wait)
     return None
 
 
 def buscar_pncp(
-    data_inicio: str, data_fim: str, pagina: int,
+    data_inicio: str,
+    data_fim: str,
+    pagina: int,
     modalidade: int = 8,
 ) -> list[dict[str, Any]]:
     """Busca contratações no PNCP por período e modalidade."""
@@ -107,7 +107,9 @@ def parse_data(valor: str | None) -> date | None:
     return None
 
 
-def upsert_contrato(cur: psycopg2.extensions.cursor, row: dict[str, Any], fonte: str, dry_run: bool) -> None:
+def upsert_contrato(
+    cur: psycopg2.extensions.cursor, row: dict[str, Any], fonte: str, dry_run: bool
+) -> None:
     """Insere ou atualiza um registro em compras_municipios."""
     municipio_id = cnpj_to_municipio_id(row.get("cnpj_orgao"))
 
@@ -116,7 +118,8 @@ def upsert_contrato(cur: psycopg2.extensions.cursor, row: dict[str, Any], fonte:
         print(f"    [{fonte}] {row.get('numero', '?')} — {desc}")
         return
 
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO compras_municipios
             (municipio_id, fonte, tipo_documento, numero, descricao,
              valor_estimado, valor_homologado, data_publicacao, data_vigencia,
@@ -130,24 +133,26 @@ def upsert_contrato(cur: psycopg2.extensions.cursor, row: dict[str, Any], fonte:
             status = EXCLUDED.status,
             nome_orgao = EXCLUDED.nome_orgao,
             nome_fornecedor = EXCLUDED.nome_fornecedor
-    """, (
-        municipio_id,
-        fonte,
-        row.get("tipo_documento"),
-        row.get("numero"),
-        row.get("descricao"),
-        row.get("valor_estimado"),
-        row.get("valor_homologado"),
-        parse_data(row.get("data_publicacao")),
-        parse_data(row.get("data_vigencia")),
-        row.get("modalidade"),
-        row.get("cnpj_orgao"),
-        row.get("nome_orgao"),
-        row.get("cnpj_fornecedor"),
-        row.get("nome_fornecedor"),
-        row.get("status"),
-        row.get("uf"),
-    ))
+    """,
+        (
+            municipio_id,
+            fonte,
+            row.get("tipo_documento"),
+            row.get("numero"),
+            row.get("descricao"),
+            row.get("valor_estimado"),
+            row.get("valor_homologado"),
+            parse_data(row.get("data_publicacao")),
+            parse_data(row.get("data_vigencia")),
+            row.get("modalidade"),
+            row.get("cnpj_orgao"),
+            row.get("nome_orgao"),
+            row.get("cnpj_fornecedor"),
+            row.get("nome_fornecedor"),
+            row.get("status"),
+            row.get("uf"),
+        ),
+    )
 
 
 PNCP_MODALIDADES = [6, 8, 12, 1, 2, 3, 4, 5, 7, 9, 10, 13]
@@ -215,7 +220,9 @@ def processar_pncp(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_ru
     return total
 
 
-def processar_dados_abertos(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_run: bool) -> int:
+def processar_dados_abertos(
+    cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_run: bool
+) -> int:
     """Processa contratos do Dados Abertos Compras.gov.br. Retorna quantidade inserida."""
     data_inicio = f"{ano}-01-01"
     data_fim = f"{ano}-12-31"
@@ -273,8 +280,12 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Apenas mostrar, sem salvar")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N registros (0=todos)")
     parser.add_argument("--ano", type=int, default=date.today().year, help="Ano de referência")
-    parser.add_argument("--fonte", choices=["pncp", "dados_abertos", "all"], default="all",
-                        help="Fonte de dados (default: all)")
+    parser.add_argument(
+        "--fonte",
+        choices=["pncp", "dados_abertos", "all"],
+        default="all",
+        help="Fonte de dados (default: all)",
+    )
     args = parser.parse_args()
 
     conn = get_connection()

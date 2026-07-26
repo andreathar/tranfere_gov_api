@@ -12,6 +12,7 @@ Uso:
 # Importar registry e tema (infraestrutura)
 import src.graphs.analitico  # noqa: F401, E501
 import src.graphs.arrecadacao  # noqa: F401, E501
+import src.graphs.economia_cruzada  # noqa: F401, E501
 import src.graphs.economico  # noqa: F401, E501
 import src.graphs.financas  # noqa: F401, E501
 import src.graphs.fiscal  # noqa: F401, E501
@@ -23,6 +24,7 @@ import src.graphs.impacto_social  # noqa: F401, E501
 # Cada módulo, ao ser importado, registra seus gráficos no CHART_REGISTRY.
 import src.graphs.parlamentar  # noqa: F401, E501
 import src.graphs.prefeitos  # noqa: F401, E501
+import src.graphs.radar_diario  # noqa: F401, E501
 import src.graphs.siconfi  # noqa: F401, E501
 import src.graphs.socioeconomico  # noqa: F401, E501
 from src.graphs.registry import (

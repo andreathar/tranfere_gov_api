@@ -19,7 +19,7 @@ In `src/graph_tools.py`, line 155 invokes `query_df(sql_query)` inside the `dyna
 ```python
 16: from src.graph_factory import CHART_REGISTRY, aplicar_tema, register_chart
 17: from src.db_utils import fig_has_data
-18: 
+18:
 ```
 
 #### Lines 153-156 (Current Usage):

@@ -32,8 +32,8 @@ for t in tables:
 # Deputado followup: CORONEL ULYSSES
 print("\n\n=== FOLLOWUP EXAMPLE: CORONEL ULYSSES ===")
 cur.execute("""
-    SELECT 
-        plano_acao_codigo, plano_acao_situacao, 
+    SELECT
+        plano_acao_codigo, plano_acao_situacao,
         valor_total, emenda_codigo, beneficiario_nome, uf
     FROM planos_acao
     WHERE parlamentar_nome = 'CORONEL ULYSSES'

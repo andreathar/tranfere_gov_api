@@ -14,7 +14,6 @@ import pytest
 
 from src.schemas import PlanoAcaoSchema, validate_records
 
-
 # ============================================================================
 # PROMPT 1: analise_emendas_pix (TransfereGov)
 # ============================================================================
@@ -49,24 +48,26 @@ class TestTransfereGovPromptCoverage:
 
     def _sample_plano(self) -> PlanoAcaoSchema:
         """Create a realistic sample plano de ação."""
-        return PlanoAcaoSchema.model_validate({
-            "planoAcaoId": 12345,
-            "planoAcaoCodigo": "202600012345",
-            "planoAcaoSituacao": "EM_EXECUCAO",
-            "objetoId": 301,
-            "objetoDescricao": "Cemitérios",
-            "programaId": 25,
-            "programaCodigo": "TE",
-            "beneficiarioId": 9858,
-            "beneficiarioNome": "Município de Teresina",
-            "beneficiarioCnpj": "12345678000190",
-            "uf": "PI",
-            "codigoEmendaFormatado": "202642740010",
-            "politicasPublicas": "4",
-            "valorCusteio": 50000.0,
-            "valorInvestimento": 100000.0,
-            "valorTotal": 150000.0,
-        })
+        return PlanoAcaoSchema.model_validate(
+            {
+                "planoAcaoId": 12345,
+                "planoAcaoCodigo": "202600012345",
+                "planoAcaoSituacao": "EM_EXECUCAO",
+                "objetoId": 301,
+                "objetoDescricao": "Cemitérios",
+                "programaId": 25,
+                "programaCodigo": "TE",
+                "beneficiarioId": 9858,
+                "beneficiarioNome": "Município de Teresina",
+                "beneficiarioCnpj": "12345678000190",
+                "uf": "PI",
+                "codigoEmendaFormatado": "202642740010",
+                "politicasPublicas": "4",
+                "valorCusteio": 50000.0,
+                "valorInvestimento": 100000.0,
+                "valorTotal": 150000.0,
+            }
+        )
 
     # --- Field coverage tests ---
 
@@ -197,11 +198,22 @@ class TestCamaraPromptCoverage:
     REQUIRED_FIELDS = {"nome", "sigla_partido", "uf"}
     # Fields our enrichment table stores (from camara.py enricher)
     ENRICHED_FIELDS = {
-        "deputado_id", "nome", "nome_urna", "sigla_partido", "uf",
-        "situacao", "gabinete_numero", "gabinete_predio",
-        "gabinete_telefone", "gabinete_email", "url_foto",
-        "ultimo_status", "data_nascimento", "municipio_nascimento",
-        "uf_nascimento", "escolaridade",
+        "deputado_id",
+        "nome",
+        "nome_urna",
+        "sigla_partido",
+        "uf",
+        "situacao",
+        "gabinete_numero",
+        "gabinete_predio",
+        "gabinete_telefone",
+        "gabinete_email",
+        "url_foto",
+        "ultimo_status",
+        "data_nascimento",
+        "municipio_nascimento",
+        "uf_nascimento",
+        "escolaridade",
     }
 
     def test_camara_fields_superset_of_prompt_needs(self):
@@ -319,6 +331,7 @@ class TestBrasilAPIPromptCoverage:
 # CROSS-CUTTING: Schema compatibility between our project and mcp-brasil
 # ============================================================================
 
+
 class TestSchemaCompatibility:
     """Verify our PlanoAcaoSchema is compatible with mcp-brasil's model."""
 
@@ -326,16 +339,16 @@ class TestSchemaCompatibility:
         """Map our field names to mcp-brasil's TransferenciaEspecial fields."""
         mapping = {
             # Our field → mcp-brasil field
-            "planoAcaoId":           "id_plano_acao",
-            "planoAcaoCodigo":       "codigo_plano_acao",
-            "planoAcaoSituacao":     "situacao",
+            "planoAcaoId": "id_plano_acao",
+            "planoAcaoCodigo": "codigo_plano_acao",
+            "planoAcaoSituacao": "situacao",
             "codigoEmendaFormatado": "numero_emenda",
-            "beneficiarioCnpj":      "cnpj_beneficiario",
-            "beneficiarioNome":      "nome_beneficiario",
-            "uf":                    "uf_beneficiario",
-            "politicasPublicas":     "area_politica_publica",
-            "valorCusteio":          "valor_custeio",
-            "valorInvestimento":     "valor_investimento",
+            "beneficiarioCnpj": "cnpj_beneficiario",
+            "beneficiarioNome": "nome_beneficiario",
+            "uf": "uf_beneficiario",
+            "politicasPublicas": "area_politica_publica",
+            "valorCusteio": "valor_custeio",
+            "valorInvestimento": "valor_investimento",
         }
         schema_fields = set(PlanoAcaoSchema.model_fields.keys())
         for our_field in mapping:
@@ -343,17 +356,19 @@ class TestSchemaCompatibility:
 
     def test_sample_record_converts_to_mcpbrasil_format(self):
         """Verify a PlanoAcaoSchema can be mapped to mcp-brasil's format."""
-        p = PlanoAcaoSchema.model_validate({
-            "planoAcaoId": 99999,
-            "planoAcaoCodigo": "2024500099999",
-            "planoAcaoSituacao": "EM_EXECUCAO",
-            "beneficiarioNome": "Teresina",
-            "beneficiarioCnpj": "12345678000190",
-            "uf": "PI",
-            "valorCusteio": 10000.0,
-            "valorInvestimento": 20000.0,
-            "politicasPublicas": "4",
-        })
+        p = PlanoAcaoSchema.model_validate(
+            {
+                "planoAcaoId": 99999,
+                "planoAcaoCodigo": "2024500099999",
+                "planoAcaoSituacao": "EM_EXECUCAO",
+                "beneficiarioNome": "Teresina",
+                "beneficiarioCnpj": "12345678000190",
+                "uf": "PI",
+                "valorCusteio": 10000.0,
+                "valorInvestimento": 20000.0,
+                "politicasPublicas": "4",
+            }
+        )
         # Simulate mcp-brasil's expected fields
         mcp_record = {
             "id_plano_acao": p.planoAcaoId,

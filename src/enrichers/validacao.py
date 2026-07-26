@@ -68,7 +68,7 @@ def main():
     cnpjs = [row[0] for row in cur.fetchall()]
 
     if args.limit > 0:
-        cnpjs = cnpjs[:args.limit]
+        cnpjs = cnpjs[: args.limit]
 
     print(f"CNPJs para validar: {len(cnpjs)}")
     if not cnpjs:
@@ -84,9 +84,12 @@ def main():
 
         if args.dry_run:
             status = "V" if result["valido"] else "X"
-            print(f"  [{i}/{len(cnpjs)}] {cnpj} {status} {result.get('razao_social', result.get('erro', ''))[:50]}")
+            print(
+                f"  [{i}/{len(cnpjs)}] {cnpj} {status} {result.get('razao_social', result.get('erro', ''))[:50]}"
+            )
         else:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO validacao_cnpj
                     (cnpj, razao_social, nome_fantasia, situacao_cadastral,
                      data_situacao, porte, natureza_juridica, cep, telefone, email,
@@ -99,13 +102,22 @@ def main():
                     valido = EXCLUDED.valido,
                     erro = EXCLUDED.erro,
                     checked_at = NOW()
-            """, (
-                cnpj, result.get("razao_social"), result.get("nome_fantasia"),
-                result.get("situacao_cadastral"), result.get("data_situacao"),
-                result.get("porte"), result.get("natureza_juridica"),
-                result.get("cep"), result.get("telefone"), result.get("email"),
-                result["valido"], result.get("erro"),
-            ))
+            """,
+                (
+                    cnpj,
+                    result.get("razao_social"),
+                    result.get("nome_fantasia"),
+                    result.get("situacao_cadastral"),
+                    result.get("data_situacao"),
+                    result.get("porte"),
+                    result.get("natureza_juridica"),
+                    result.get("cep"),
+                    result.get("telefone"),
+                    result.get("email"),
+                    result["valido"],
+                    result.get("erro"),
+                ),
+            )
 
         if result["valido"]:
             validos += 1

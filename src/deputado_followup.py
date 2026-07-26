@@ -45,7 +45,7 @@ def print_table(rows: list[tuple], cols: list[str], brl_cols: set[int] | None = 
     for row in rows:
         sr: list[str] = []
         for i, val in enumerate(row):
-            if i in brl_cols and isinstance(val, (int, float)):
+            if i in brl_cols and isinstance(val, int | float):
                 s = format_brl(val)
             elif val is None:
                 s = "—"

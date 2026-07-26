@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Transferegov Genérico — Extração de Planos de Ação por Objeto.
@@ -83,25 +82,33 @@ def make_request(session, params, use_cache=True):
             status = exc.response.status_code if exc.response else "?"
             logger.warning(
                 "HTTP %s página %s (tent %d/%d)",
-                status, params["pageNumber"], attempt, MAX_RETRIES,
+                status,
+                params["pageNumber"],
+                attempt,
+                MAX_RETRIES,
             )
             if exc.response and exc.response.status_code in (401, 403, 404):
                 return None
         except requests.exceptions.ConnectionError as exc:
             logger.warning(
                 "Conn error página %s (tent %d/%d): %s",
-                params["pageNumber"], attempt, MAX_RETRIES, exc,
+                params["pageNumber"],
+                attempt,
+                MAX_RETRIES,
+                exc,
             )
         except requests.exceptions.Timeout:
             logger.warning(
                 "Timeout página %s (tent %d/%d)",
-                params["pageNumber"], attempt, MAX_RETRIES,
+                params["pageNumber"],
+                attempt,
+                MAX_RETRIES,
             )
         except requests.exceptions.RequestException as exc:
             logger.error("Erro requisição: %s", exc)
             return None
         if attempt < MAX_RETRIES:
-            time.sleep(RETRY_BACKOFF ** attempt)
+            time.sleep(RETRY_BACKOFF**attempt)
     return None
 
 
@@ -162,7 +169,10 @@ def extract_all(objeto, ano, politicas_publicas="", uf=None, programa_id=None, s
         if page == 1:
             logger.info("Total informado pela API: %s", total)
             if records:
-                logger.info("Amostra primeiro registro: %s", json.dumps(records[0], ensure_ascii=False)[:500])
+                logger.info(
+                    "Amostra primeiro registro: %s",
+                    json.dumps(records[0], ensure_ascii=False)[:500],
+                )
 
         if not records:
             logger.info("Página %d vazia — fim.", page)
@@ -171,7 +181,10 @@ def extract_all(objeto, ano, politicas_publicas="", uf=None, programa_id=None, s
         all_records.extend(records)
         logger.info(
             "Página %d: +%d | Acumulado: %d / %s",
-            page, len(records), len(all_records), total,
+            page,
+            len(records),
+            len(all_records),
+            total,
         )
 
         if len(records) < DEFAULT_PAGE_SIZE:
@@ -219,7 +232,9 @@ def discover_objects(ano):
 
         logger.info(
             "Página %d: +%d registros | objetos únicos: %d",
-            page, len(records), len(objetos),
+            page,
+            len(records),
+            len(objetos),
         )
 
         if len(records) < DEFAULT_PAGE_SIZE:
@@ -253,14 +268,14 @@ def export_excel(df, filepath):
         df.to_excel(writer, index=False, sheet_name="Planos de Acao")
         ws = writer.sheets["Planos de Acao"]
         for idx, col in enumerate(df.columns):
-            max_len = max(
-                df[col].fillna("").astype(str).str.len().max() if len(df) else 0,
-                len(str(col)),
-            ) + 2
-            col_letter = (
-                chr(65 + idx) if idx < 26
-                else chr(64 + idx // 26) + chr(65 + idx % 26)
+            max_len = (
+                max(
+                    df[col].fillna("").astype(str).str.len().max() if len(df) else 0,
+                    len(str(col)),
+                )
+                + 2
             )
+            col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
             ws.column_dimensions[col_letter].width = min(max_len, 60)
     logger.info("Excel: %s", filepath)
 
@@ -366,8 +381,13 @@ def import_to_db(records: list[dict]) -> tuple[int, int]:
         cur.execute(
             "INSERT INTO extract_log (objeto_id, ano, total_registros, source, notes) "
             "VALUES (%s, %s, %s, %s, %s)",
-            (records[0].get("objetoId") if records else None,
-             ano, imported, "cli_extract", "via transferegov_extract.py"),
+            (
+                records[0].get("objetoId") if records else None,
+                ano,
+                imported,
+                "cli_extract",
+                "via transferegov_extract.py",
+            ),
         )
     except Exception:
         pass
@@ -397,32 +417,49 @@ Exemplos:
   %(prog)s --objeto 662 --ano 2026 --situacao REPROVADO CANCELADO
         """,
     )
-    parser.add_argument("--discover", action="store_true",
-                        help="Descobrir todos os objetos disponíveis")
-    parser.add_argument("--objeto", type=str, default="301",
-                        help="Código do objeto (default: 301). Use 'all' para todos.")
-    parser.add_argument("--ano", type=str, default="2026",
-                        help="Ano exercício (default: 2026)")
-    parser.add_argument("--uf", type=str, default=None,
-                        help="Filtrar por UF (ex: SP, AL, PI)")
-    parser.add_argument("--programa", type=str, default=None,
-                        help="Filtrar por programaId (25 = Transferências Especiais)")
-    parser.add_argument("--situacao-api", type=str, default=None,
-                        help="Filtrar por situação na API (underscores). Ex: IMPEDIDO_RESTRICAO_TECNICA")
-    parser.add_argument("--situacao", nargs="+", default=None,
-                        help="Filtrar por situação(ões) local. Ex: REPROVADO IMPEDIDO")
-    parser.add_argument("--negados", action="store_true",
-                        help="Atalho: filtra REPROVADO IMPEDIDO CANCELADO NAO_CUMPROU")
-    parser.add_argument("--db", action="store_true",
-                        help="Importar direto para o PostgreSQL (transferegov_db)")
-    parser.add_argument("--csv", action="store_true",
-                        help="Também exportar CSV")
-    parser.add_argument("--output", type=str, default=None,
-                        help="Nome base do arquivo de saída (sem extensão)")
-    parser.add_argument("--no-dedup", action="store_true",
-                        help="Não deduplicar registros")
-    parser.add_argument("-v", "--verbose", action="store_true",
-                        help="Logging verboso")
+    parser.add_argument(
+        "--discover", action="store_true", help="Descobrir todos os objetos disponíveis"
+    )
+    parser.add_argument(
+        "--objeto",
+        type=str,
+        default="301",
+        help="Código do objeto (default: 301). Use 'all' para todos.",
+    )
+    parser.add_argument("--ano", type=str, default="2026", help="Ano exercício (default: 2026)")
+    parser.add_argument("--uf", type=str, default=None, help="Filtrar por UF (ex: SP, AL, PI)")
+    parser.add_argument(
+        "--programa",
+        type=str,
+        default=None,
+        help="Filtrar por programaId (25 = Transferências Especiais)",
+    )
+    parser.add_argument(
+        "--situacao-api",
+        type=str,
+        default=None,
+        help="Filtrar por situação na API (underscores). Ex: IMPEDIDO_RESTRICAO_TECNICA",
+    )
+    parser.add_argument(
+        "--situacao",
+        nargs="+",
+        default=None,
+        help="Filtrar por situação(ões) local. Ex: REPROVADO IMPEDIDO",
+    )
+    parser.add_argument(
+        "--negados",
+        action="store_true",
+        help="Atalho: filtra REPROVADO IMPEDIDO CANCELADO NAO_CUMPROU",
+    )
+    parser.add_argument(
+        "--db", action="store_true", help="Importar direto para o PostgreSQL (transferegov_db)"
+    )
+    parser.add_argument("--csv", action="store_true", help="Também exportar CSV")
+    parser.add_argument(
+        "--output", type=str, default=None, help="Nome base do arquivo de saída (sem extensão)"
+    )
+    parser.add_argument("--no-dedup", action="store_true", help="Não deduplicar registros")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Logging verboso")
     return parser.parse_args()
 
 
@@ -470,21 +507,28 @@ def _resolve_situacao_filter(args: argparse.Namespace) -> set[str] | None:
 
 
 def _build_output_base(
-    objeto: str, ano: str, args: argparse.Namespace,
+    objeto: str,
+    ano: str,
+    args: argparse.Namespace,
     situacao_filter: set[str] | None,
 ) -> str:
     """Monta o nome base dos arquivos de saída."""
     if args.output:
         return args.output
     obj_tag = "all" if objeto == "all" else objeto
-    sit_tag = "_negados" if args.negados else (
-        "_".join(sorted(situacao_filter)) if situacao_filter else ""
+    sit_tag = (
+        "_negados"
+        if args.negados
+        else ("_".join(sorted(situacao_filter)) if situacao_filter else "")
     )
     return f"transferegov_{obj_tag}_{ano}{sit_tag}"
 
 
 def _export_files(
-    df: pd.DataFrame, base: str, ts: str, args: argparse.Namespace,
+    df: pd.DataFrame,
+    base: str,
+    ts: str,
+    args: argparse.Namespace,
 ) -> str:
     """Exporta Excel, CSV (opcional) e JSON. Retorna caminho do XLSX."""
     xlsx_path = OUTPUT_XLSX / f"{base}.xlsx"
@@ -502,9 +546,13 @@ def _export_files(
 
 
 def _print_summary(
-    df: pd.DataFrame, objeto: str, ano: str,
-    xlsx_path: str, args: argparse.Namespace,
-    db_imported: int, db_errors: int,
+    df: pd.DataFrame,
+    objeto: str,
+    ano: str,
+    xlsx_path: str,
+    args: argparse.Namespace,
+    db_imported: int,
+    db_errors: int,
 ) -> None:
     """Imprime resumo da extração no stdout."""
     print("\n" + "=" * 70)
@@ -540,7 +588,8 @@ def run_extraction(args: argparse.Namespace, ts: str) -> int:
 
     # Extração
     records = extract_all(
-        objeto, ano,
+        objeto,
+        ano,
         uf=args.uf,
         programa_id=args.programa,
         situacao_api=args.situacao_api,
@@ -587,8 +636,9 @@ def run_extraction(args: argparse.Namespace, ts: str) -> int:
         df = df[df["planoAcaoSituacao"].isin(list(situacao_filter))].copy()
         logger.info("Filtro situacao: %d → %d registros", before, len(df))
         if df.empty:
-            logger.info("Nenhum registro com situação %s para objeto %s/%s.",
-                        situacao_filter, objeto, ano)
+            logger.info(
+                "Nenhum registro com situação %s para objeto %s/%s.", situacao_filter, objeto, ano
+            )
 
     # Import DB
     db_imported, db_errors = 0, 0
