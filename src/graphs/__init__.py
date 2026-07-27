@@ -19,13 +19,14 @@ import src.graphs.fiscal  # noqa: F401, E501
 import src.graphs.geoespacial  # noqa: F401, E501
 import src.graphs.hierarquico  # noqa: F401, E501
 import src.graphs.impacto_social  # noqa: F401, E501
+import src.graphs.intel_politica  # noqa: F401, E501
+import src.graphs.intel_proposicoes  # noqa: F401, E501
 
 # Importar todos os módulos de gráficos para executar os @register_chart.
 # Cada módulo, ao ser importado, registra seus gráficos no CHART_REGISTRY.
 import src.graphs.parlamentar  # noqa: F401, E501
 import src.graphs.prefeitos  # noqa: F401, E501
 import src.graphs.radar_diario  # noqa: F401, E501
-import src.graphs.intel_proposicoes  # noqa: F401, E501
 import src.graphs.siconfi  # noqa: F401, E501
 import src.graphs.socioeconomico  # noqa: F401, E501
 import src.graphs.votacoes  # noqa: F401, E501

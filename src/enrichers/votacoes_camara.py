@@ -140,8 +140,14 @@ def main():
     parser.add_argument("--ano", type=int, default=2026, help="Ano das votações (default: 2026)")
     parser.add_argument("--dry-run", action="store_true", help="Apenas listar, não salvar")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N votações (0=todas)")
-    parser.add_argument("--skip-votos", action="store_true", help="Pular busca de votos (só votações)")
-    parser.add_argument("--only-nominais", action="store_true", help="Só salvar votações que tenham votos nominais (plenario)")
+    parser.add_argument(
+        "--skip-votos", action="store_true", help="Pular busca de votos (só votações)"
+    )
+    parser.add_argument(
+        "--only-nominais",
+        action="store_true",
+        help="Só salvar votações que tenham votos nominais (plenario)",
+    )
     args = parser.parse_args()
 
     ano = args.ano
@@ -161,7 +167,9 @@ def main():
         for v in votacoes:
             parsed = _parse_votacao(v)
             aprov = "✅" if parsed["aprovacao"] else "❌" if parsed["aprovacao"] is False else "❓"
-            print(f"  {aprov} {parsed['votacao_id']:>8} | {parsed['data_registro'][:10] if parsed['data_registro'] else '?':10} | {parsed['descricao'][:60] if parsed['descricao'] else '?'}")
+            print(
+                f"  {aprov} {parsed['votacao_id']:>8} | {parsed['data_registro'][:10] if parsed['data_registro'] else '?':10} | {parsed['descricao'][:60] if parsed['descricao'] else '?'}"
+            )
         print(f"\nDry-run: {len(votacoes)} votações listadas (sem salvar)")
         return
 
@@ -219,7 +227,10 @@ def main():
                 cur.execute("DELETE FROM votacoes_camara WHERE votacao_id = %s", (vid,))
                 if i % 50 == 0 or i == len(votacoes):
                     conn.commit()
-                    print(f"  [{i}/{len(votacoes)}] votações | {total_votos_salvos} votos salvos (skip sem nominais)", flush=True)
+                    print(
+                        f"  [{i}/{len(votacoes)}] votações | {total_votos_salvos} votos salvos (skip sem nominais)",
+                        flush=True,
+                    )
                 time.sleep(ENRICH_RATE_LIMIT)
                 continue
 
@@ -254,7 +265,10 @@ def main():
             total_votos_salvos += len(votos)
             if i % 10 == 0 or i == len(votacoes):
                 conn.commit()
-                print(f"  [{i}/{len(votacoes)}] votações | {total_votos_salvos} votos salvos", flush=True)
+                print(
+                    f"  [{i}/{len(votacoes)}] votações | {total_votos_salvos} votos salvos",
+                    flush=True,
+                )
             time.sleep(ENRICH_RATE_LIMIT)
         else:
             if i % 10 == 0 or i == len(votacoes):

@@ -58,11 +58,13 @@ def chart_radar_diario_timeline(fonte_filter: str = "TODOS") -> go.Figure:
 
     # Prepara hover text HTML
     df["hover_text"] = df.apply(
-        lambda r: f"<b>{r['tipo_ato']}</b><br>"
-        f"Órgão: {r['orgao']}<br>"
-        f"Data: {r['data_publicacao']}<br>"
-        f"Valor: R$ {r['valor_financeiro']:,.2f}<br>"
-        f"Resumo IA: {r['resumo_ia'][:100]}...",
+        lambda r: (
+            f"<b>{r['tipo_ato']}</b><br>"
+            f"Órgão: {r['orgao']}<br>"
+            f"Data: {r['data_publicacao']}<br>"
+            f"Valor: R$ {r['valor_financeiro']:,.2f}<br>"
+            f"Resumo IA: {r['resumo_ia'][:100]}..."
+        ),
         axis=1,
     )
 

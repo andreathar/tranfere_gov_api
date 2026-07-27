@@ -1021,9 +1021,11 @@ async function openPrefeitoModal(municipioId, selectedAno = null) {
 
   try {
     const anoParam = selectedAno ? `?ano=${selectedAno}` : '';
-    const [p, emendasRes] = await Promise.all([
+    const [p, emendasRes, licitacoesList, ganhadoresList] = await Promise.all([
       fetch(`${API_BASE}/prefeitos/${municipioId}/perfil`).then(r => r.json()),
-      fetch(`${API_BASE}/prefeitos/${municipioId}/emendas${anoParam}`).then(r => r.json())
+      fetch(`${API_BASE}/prefeitos/${municipioId}/emendas${anoParam}`).then(r => r.json()),
+      fetch(`${API_BASE}/prefeitos/${municipioId}/licitacoes`).then(r => r.json()).catch(() => []),
+      fetch(`${API_BASE}/prefeitos/${municipioId}/licitacoes/ganhadores`).then(r => r.json()).catch(() => [])
     ]);
 
     const emendas = emendasRes.emendas || [];
@@ -1061,6 +1063,20 @@ async function openPrefeitoModal(municipioId, selectedAno = null) {
       `;
     }).join('') : '<tr><td colspan="6" style="text-align:center; padding:1rem; color:var(--text-muted);">Nenhuma emenda registrada para este filtro.</td></tr>';
 
+    // Montar linhas de licitações
+    const licitacoesRows = (Array.isArray(licitacoesList) && licitacoesList.length > 0) ? licitacoesList.map(l => {
+      const vHomolog = l.valor_homologado ? formatBRL(l.valor_homologado) : (l.valor_estimado ? formatBRL(l.valor_estimado) + ' (Estimado)' : 'Sob consulta');
+      const fornStr = l.nome_fornecedor || 'Adjudicatário homologado PNCP';
+      return `
+        <tr style="border-bottom: 1px solid var(--border-color);">
+          <td style="padding:0.6rem 0.75rem; font-family:monospace; font-size:0.8rem; color:#38bdf8;">${l.numero || 'S/N'}</td>
+          <td style="padding:0.6rem 0.75rem; font-size:0.85rem;"><span class="badge" style="background:rgba(56,189,248,0.15); color:#38bdf8;">${l.modalidade || 'Licitação'}</span></td>
+          <td style="padding:0.6rem 0.75rem; font-size:0.85rem; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${l.descricao || ''}">${l.descricao || '-'}</td>
+          <td style="padding:0.6rem 0.75rem;"><strong style="color:var(--success);">${vHomolog}</strong></td>
+          <td style="padding:0.6rem 0.75rem; font-size:0.85rem; color:#f1f5f9;"><strong>${fornStr}</strong></td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="5" style="text-align:center; padding:1rem; color:var(--text-muted);">Nenhuma licitação homologada registrada no PNCP para esta prefeitura no período.</td></tr>';
 
     // Montar seção SICONFI
     const siconfiHtml = p.siconfi_receitas_correntes && p.siconfi_receitas_correntes > 0 ? `
@@ -1119,6 +1135,30 @@ async function openPrefeitoModal(municipioId, selectedAno = null) {
         <div style="margin-top:0.75rem; font-size:0.85rem; padding-top:0.5rem; border-top:1px dashed var(--border-color); display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
           <div><span style="color:var(--text-muted);">Coligação Eleitoral:</span> <strong style="color:#e2e8f0;">${p.coligacao || 'Partido Isolado'}</strong></div>
           <div><span style="color:var(--text-muted);">Patrimônio Declarado (TSE):</span> <strong style="color:var(--info);">${p.patrimonio_total && p.patrimonio_total > 0 ? formatBRL(p.patrimonio_total) : 'Declarado à Justiça Eleitoral'}</strong></div>
+        </div>
+      </div>
+
+      <!-- Card Licitações & Compras Públicas (PNCP / Compras.gov) -->
+      <div style="margin-bottom:1.5rem; background:#0f172a; padding:1.25rem; border-radius:8px; border:1px solid var(--border-color);">
+        <h4 style="margin-bottom:1rem; color:#38bdf8; font-size:1.05rem; display:flex; justify-content:space-between; align-items:center;">
+          <span>📜 Licitações Publicadas & Fornecedores Vencedores (PNCP)</span>
+          <span style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;">Base Portal Nacional de Contratações</span>
+        </h4>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem;">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border-color); color:var(--text-muted);">
+                <th style="padding:0.5rem 0.75rem;">Nº Controle PNCP</th>
+                <th style="padding:0.5rem 0.75rem;">Modalidade</th>
+                <th style="padding:0.5rem 0.75rem;">Objeto da Licitação</th>
+                <th style="padding:0.5rem 0.75rem;">Valor Homologado</th>
+                <th style="padding:0.5rem 0.75rem;">Fornecedor Vencedor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${licitacoesRows}
+            </tbody>
+          </table>
         </div>
       </div>
 

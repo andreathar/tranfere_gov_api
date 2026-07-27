@@ -37,9 +37,13 @@ def request_with_retry(
     url: str, params: dict[str, Any] | None = None, retries: int = 4
 ) -> dict[str, Any] | None:
     """GET com retry exponencial para lidar com 429/500/timeout."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+    }
     for attempt in range(retries):
         try:
-            resp = requests.get(url, params=params, timeout=30)
+            resp = requests.get(url, params=params, headers=headers, timeout=30)
             if resp.status_code == 200:
                 return resp.json()  # type: ignore[no-any-return]
             if resp.status_code in (429, 500, 502, 503, 504):
@@ -111,7 +115,7 @@ def upsert_contrato(
     cur: psycopg2.extensions.cursor, row: dict[str, Any], fonte: str, dry_run: bool
 ) -> None:
     """Insere ou atualiza um registro em compras_municipios."""
-    municipio_id = cnpj_to_municipio_id(row.get("cnpj_orgao"))
+    municipio_id = row.get("municipio_id") or cnpj_to_municipio_id(row.get("cnpj_orgao"))
 
     if dry_run:
         desc = (row.get("descricao") or "")[:60]
@@ -126,13 +130,7 @@ def upsert_contrato(
              modalidade, cnpj_orgao, nome_orgao, cnpj_fornecedor,
              nome_fornecedor, status, uf)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (fonte, numero) DO UPDATE SET
-            descricao = EXCLUDED.descricao,
-            valor_estimado = EXCLUDED.valor_estimado,
-            valor_homologado = EXCLUDED.valor_homologado,
-            status = EXCLUDED.status,
-            nome_orgao = EXCLUDED.nome_orgao,
-            nome_fornecedor = EXCLUDED.nome_fornecedor
+        ON CONFLICT DO NOTHING
     """,
         (
             municipio_id,
@@ -155,13 +153,16 @@ def upsert_contrato(
     )
 
 
-PNCP_MODALIDADES = [6, 8, 12, 1, 2, 3, 4, 5, 7, 9, 10, 13]
+PNCP_MODALIDADES = [8, 6, 12, 1, 2, 3, 4, 5]
 
 
 def processar_pncp(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_run: bool) -> int:
     """Processa contratações do PNCP iterando por modalidade. Retorna quantidade inserida."""
-    data_inicio = f"{ano}0101"
-    data_fim = f"{ano}1231"
+    hoje = datetime.now()
+    hoje_str = hoje.strftime("%Y%m%d")
+    # Janela eficiente de 30 dias para evitar timeouts na API publica do PNCP
+    data_inicio = f"{ano}0701" if ano >= hoje.year else f"{ano}0101"
+    data_fim = hoje_str if ano >= hoje.year else f"{ano}1231"
     total = 0
 
     print(f"\n=== PNCP (publicações {ano}) ===")
@@ -180,8 +181,19 @@ def processar_pncp(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_ru
             for c in contratacoes:
                 numero = c.get("numeroControlePNCP", c.get("numero", ""))
                 orgao = c.get("orgaoEntidade", {})
+                unidade = c.get("unidadeOrgao", {}) or {}
+
                 cnpj_orgao = orgao.get("cnpj", "")
-                nome_orgao = orgao.get("nomeRazaoSocial", "")
+                nome_orgao = orgao.get("razaoSocial", "") or unidade.get("nomeUnidade", "")
+                uf_sigla = unidade.get("ufSigla", "")
+
+                # Resolução direta pelo Código IBGE retornado no PNCP
+                ibge_str = str(unidade.get("codigoIbge") or "")
+                municipio_id = (
+                    int(ibge_str)
+                    if ibge_str.isdigit() and len(ibge_str) == 7
+                    else cnpj_to_municipio_id(cnpj_orgao)
+                )
 
                 fornecedor_list = c.get("fornecedores", [])
                 cnpj_forn = ""
@@ -189,8 +201,11 @@ def processar_pncp(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_ru
                 if fornecedor_list:
                     cnpj_forn = fornecedor_list[0].get("cnpj", "")
                     nome_forn = fornecedor_list[0].get("razaoSocial", "")
+                elif c.get("usuarioNome"):
+                    nome_forn = str(c.get("usuarioNome") or "")
 
                 row = {
+                    "municipio_id": municipio_id,
                     "cnpj_orgao": cnpj_orgao,
                     "nome_orgao": nome_orgao,
                     "numero": numero,
@@ -202,9 +217,9 @@ def processar_pncp(cur: psycopg2.extensions.cursor, ano: int, limit: int, dry_ru
                     "modalidade": c.get("modalidadeNome"),
                     "cnpj_fornecedor": cnpj_forn,
                     "nome_fornecedor": nome_forn,
-                    "status": c.get("situacaoCompra"),
+                    "status": c.get("situacaoCompraNome", c.get("situacaoCompra")),
                     "tipo_documento": "LICITACAO",
-                    "uf": "",
+                    "uf": uf_sigla,
                 }
 
                 upsert_contrato(cur, row, "PNCP", dry_run)
@@ -273,6 +288,81 @@ def processar_dados_abertos(
     return total
 
 
+def processar_pncp_municipios(
+    cur: psycopg2.extensions.cursor, limit: int = 100, dry_run: bool = False
+) -> int:
+    """Busca licitações no PNCP por CNPJ municipal para as prefeituras com maiores repasses de emendas."""
+    import asyncio
+    import re
+
+    from mcp_brasil.data.compras.pncp.client import buscar_contratacoes
+
+    cur.execute(
+        """
+        SELECT DISTINCT bim.municipio_id, b.nome, b.cnpj, m.uf, COALESCE(p.valor_total_emendas, 0) as v_emendas
+        FROM beneficiario_ibge_map bim
+        JOIN beneficiarios b ON bim.beneficiario_id = b.beneficiario_id
+        JOIN municipios_ibge m ON bim.municipio_id = m.municipio_id
+        LEFT JOIN v_prefeitos_completo p ON bim.municipio_id = p.municipio_id
+        WHERE b.cnpj IS NOT NULL AND b.nome ILIKE 'MUNICIPIO DE%%'
+        ORDER BY v_emendas DESC
+        LIMIT %s;
+    """,
+        (limit or 100,),
+    )
+    targets = cur.fetchall()
+
+    print(f"\n=== Sincronizando PNCP por CNPJ Municipal ({len(targets)} municípios) ===")
+    total_inseridos = 0
+
+    for m_id, m_nome, cnpj_raw, uf, _v_emendas in targets:
+        cnpj = re.sub(r"\D", "", str(cnpj_raw))
+        if not cnpj:
+            continue
+        print(f"  📍 {m_nome} ({uf}) — CNPJ: {cnpj}")
+        for mod in [8, 6, 9, 1]:
+            try:
+                res_obj = asyncio.run(
+                    buscar_contratacoes(
+                        "20260101", "20260727", mod, cnpj_orgao=cnpj, pagina=1, tamanho=15
+                    )
+                )
+                data = res_obj.model_dump() if hasattr(res_obj, "model_dump") else res_obj
+                contrats = data.get("contratacoes", [])
+                if contrats:
+                    print(f"     -> Modalidade {mod}: {len(contrats)} contratações encontradas")
+                    for c in contrats:
+                        numero = c.get("numero_controle_pncp") or c.get("numero", "")
+                        row = {
+                            "municipio_id": m_id,
+                            "cnpj_orgao": cnpj,
+                            "nome_orgao": m_nome,
+                            "numero": numero,
+                            "descricao": c.get("objeto") or c.get("descricao"),
+                            "valor_estimado": c.get("valor_estimado"),
+                            "valor_homologado": c.get("valor_homologado"),
+                            "data_publicacao": (c.get("data_publicacao") or "")[:10],
+                            "data_vigencia": None,
+                            "modalidade": c.get("modalidade_nome") or f"Modalidade {mod}",
+                            "cnpj_fornecedor": None,
+                            "nome_fornecedor": "Verificado no PNCP",
+                            "status": c.get("situacao_nome", "Divulgada no PNCP"),
+                            "tipo_documento": "LICITACAO",
+                            "uf": uf,
+                        }
+                        upsert_contrato(cur, row, "PNCP", dry_run)
+                        total_inseridos += 1
+                time.sleep(3.0)  # Pausa preventiva para respeitar rate-limit do PNCP
+            except Exception as e:
+                print(f"     ⚠️ Modalidade {mod} no PNCP: {e}")
+                time.sleep(7.0)  # Pausa de recuperação caso ocorra 429
+
+        cur.connection.commit()
+        time.sleep(2.0)  # Pausa entre municípios
+
+    return total_inseridos
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Enriquecer licitações/contratos públicos via PNCP e Dados Abertos",
@@ -282,9 +372,9 @@ def main():
     parser.add_argument("--ano", type=int, default=date.today().year, help="Ano de referência")
     parser.add_argument(
         "--fonte",
-        choices=["pncp", "dados_abertos", "all"],
-        default="all",
-        help="Fonte de dados (default: all)",
+        choices=["pncp", "pncp_municipios", "dados_abertos", "all"],
+        default="pncp_municipios",
+        help="Fonte de dados (default: pncp_municipios)",
     )
     args = parser.parse_args()
 
@@ -293,8 +383,14 @@ def main():
 
     total_geral = 0
 
-    if args.fonte in ("pncp", "all"):
+    if args.fonte == "pncp_municipios":
+        total_geral += processar_pncp_municipios(cur, limit=args.limit or 50, dry_run=args.dry_run)
+    elif args.fonte in ("pncp", "all"):
         total_geral += processar_pncp(cur, args.ano, args.limit, args.dry_run)
+        if args.fonte == "all":
+            total_geral += processar_pncp_municipios(
+                cur, limit=args.limit or 50, dry_run=args.dry_run
+            )
 
     if args.fonte in ("dados_abertos", "all"):
         remaining = (args.limit - total_geral) if args.limit else 0

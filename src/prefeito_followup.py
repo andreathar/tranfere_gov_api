@@ -142,7 +142,58 @@ def mostrar_perfil_prefeito(termo: str) -> bool:
         for dep_nome, qtd, val in deputados:
             print(f"   {dep_nome:<35} {fmt_num(qtd):<10} {fmt_brl(val):>18}")
 
-    print("=" * 75 + "\n")
+    # Buscar Licitações e Fornecedores Vencedores da Prefeitura
+    cur.execute(
+        """
+        SELECT numero, modalidade, descricao, valor_homologado, status, nome_fornecedor, cnpj_fornecedor
+        FROM compras_municipios
+        WHERE municipio_id = %s
+        ORDER BY data_publicacao DESC NULLS LAST
+        LIMIT 5
+    """,
+        (mun_id,),
+    )
+    licitacoes = cur.fetchall()
+
+    if licitacoes:
+        print("\n📜 LICITAÇÕES PUBLICADAS E CONTRATOS DA GESTÃO (PNCP):")
+        print(
+            f"   {'Nº Processo':<22} {'Modalidade':<15} {'Fornecedor Vencedor':<25} {'Valor Homologado':>15}"
+        )
+        print("   " + "-" * 80)
+        for num, mod, _desc, val_h, _stat, forn_nome, _forn_cnpj in licitacoes:
+            num_str = (num or "S/N")[:22]
+            mod_str = (mod or "Licitação")[:15]
+            forn_str = (forn_nome or "Em Andamento")[:25]
+            val = float(val_h) if val_h else 0.0
+            print(f"   {num_str:<22} {mod_str:<15} {forn_str:<25} {fmt_brl(val):>15}")
+
+    cur.execute(
+        """
+        SELECT nome_fornecedor, cnpj_fornecedor, COUNT(*) as qtd_ganhas, SUM(COALESCE(valor_homologado, valor_estimado, 0)) as total_ganho
+        FROM compras_municipios
+        WHERE municipio_id = %s AND nome_fornecedor IS NOT NULL AND nome_fornecedor <> ''
+        GROUP BY nome_fornecedor, cnpj_fornecedor
+        ORDER BY total_ganho DESC
+        LIMIT 5
+    """,
+        (mun_id,),
+    )
+    ganhadores = cur.fetchall()
+
+    if ganhadores:
+        print("\n🏆 PRINCIPAIS EMPRESAS / FORNECEDORES VENCEDORES:")
+        print(
+            f"   {'Razão Social / Fornecedor':<35} {'CNPJ':<18} {'Vencedor em':<12} {'Total Ganho (R$)':>16}"
+        )
+        print("   " + "-" * 85)
+        for forn_nome, forn_cnpj, qtd, val in ganhadores:
+            cnpj_str = forn_cnpj or "N/I"
+            print(
+                f"   {forn_nome[:35]:<35} {cnpj_str:<18} {fmt_num(qtd) + ' licitações':<12} {fmt_brl(val):>16}"
+            )
+
+    print("=" * 85 + "\n")
     conn.close()
     return True
 

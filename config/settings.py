@@ -169,8 +169,10 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = "deputados_perfis"
 EMBEDDER_MODEL = "nomic-embed-text-v1.5"
 EMBEDDING_DIM = 768
-RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "gemma-4-e2b-it")  # gemma-4-e2b-it (qualidade/velocidade ideal)
+RAG_LLM_MODEL = os.getenv(
+    "RAG_LLM_MODEL", "gemma-4-e2b-it"
+)  # gemma-4-e2b-it (qualidade/velocidade ideal)
 RAG_PERSONA_VERSION = 3  # Incrementar para a nova versão enriquecida
-RAG_MIN_CHUNKS = 3       # Mínimo de chunks para gerar persona (evitar análises vazias)
-RAG_MAX_CHUNKS = 30      # Máximo de chunks por deputado no contexto final
-RAG_BATCH_SIZE = 50      # Tamanho do batch para embedding em lote
+RAG_MIN_CHUNKS = 3  # Mínimo de chunks para gerar persona (evitar análises vazias)
+RAG_MAX_CHUNKS = 30  # Máximo de chunks por deputado no contexto final
+RAG_BATCH_SIZE = 50  # Tamanho do batch para embedding em lote

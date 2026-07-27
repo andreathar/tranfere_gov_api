@@ -59,7 +59,7 @@ class TestPlanoAcaoSchema:
         assert plano.planoAcaoId == 1
 
     def test_is_negado_true(self):
-        for sit in ("REPROVADO", "IMPEDIDO", "CANCELADO", "NAO_CUMPROU"):
+        for sit in ("REPROVADO", "IMPEDIDO", "IMPEDIDO_REJEICAO_PLANO_TRABALHO", "CANCELADO", "NAO_CUMPROU"):
             plano = PlanoAcaoSchema.model_validate(
                 {**self.MINIMAL_VALID, "planoAcaoSituacao": sit}
             )

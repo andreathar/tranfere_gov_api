@@ -24,16 +24,15 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import psycopg2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
     LOCALAI_BASE_URL,
-    QDRANT_URL,
     QDRANT_COLLECTION,
-    PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASS,
+    QDRANT_URL,
 )
+from src.localai_manager import manager as localai_manager
 
 # ---------------------------------------------------------------------------
 # Modelos candidatos para benchmark
@@ -94,10 +93,12 @@ SECOES_ESPERADAS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def get_deputado_context(nome: str) -> tuple[str, list[str]]:
     """Busca contexto RAG de um deputado via Qdrant + banco."""
     try:
         from qdrant_client import QdrantClient
+
         from src.enrichers.rag_qdrant_indexer import embed_text
 
         client = QdrantClient(url=QDRANT_URL)
@@ -204,7 +205,9 @@ def call_model(model_id: str, prompt: str, timeout: int = 300) -> dict[str, Any]
             "tempo_segundos": round(elapsed, 1),
             "tokens_prompt": usage.get("prompt_tokens", 0),
             "tokens_completion": usage.get("completion_tokens", 0),
-            "tokens_por_segundo": round(usage.get("completion_tokens", len(texto.split())) / max(elapsed, 1), 1),
+            "tokens_por_segundo": round(
+                usage.get("completion_tokens", len(texto.split())) / max(elapsed, 1), 1
+            ),
         }
     except httpx.TimeoutException:
         return {"sucesso": False, "erro": "TIMEOUT", "tempo_segundos": timeout}
@@ -229,15 +232,16 @@ def unload_all_models():
 # Runner principal
 # ---------------------------------------------------------------------------
 
+
 def run_benchmark(
     deputado_nome: str,
     modelos_ids: list[str] | None,
     exportar: str | None,
 ):
-    print(f"\n{'='*60}")
-    print(f"  BENCHMARK DE MODELOS LOCALAI")
+    print(f"\n{'=' * 60}")
+    print("  BENCHMARK DE MODELOS LOCALAI")
     print(f"  Deputado: {deputado_nome}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Filtra modelos
     modelos = [m for m in MODELOS_BENCHMARK if modelos_ids is None or m["id"] in modelos_ids]
@@ -272,30 +276,36 @@ def run_benchmark(
             print(f"  ✓ Concluído em {resultado['tempo_segundos']}s")
             print(f"    Score qualidade: {qualidade['score_total']}/100")
             print(f"    Seções ausentes: {qualidade['secoes_ausentes']}")
-            print(f"    Palavras: {qualidade['palavras']} | Tokens/s: {resultado.get('tokens_por_segundo', '?')}")
-            resultados.append({
-                "modelo_id": mid,
-                "modelo_label": label,
-                **resultado,
-                "qualidade": qualidade,
-            })
+            print(
+                f"    Palavras: {qualidade['palavras']} | Tokens/s: {resultado.get('tokens_por_segundo', '?')}"
+            )
+            resultados.append(
+                {
+                    "modelo_id": mid,
+                    "modelo_label": label,
+                    **resultado,
+                    "qualidade": qualidade,
+                }
+            )
         else:
             print(f"  ✗ FALHOU: {resultado['erro']}")
-            resultados.append({
-                "modelo_id": mid,
-                "modelo_label": label,
-                **resultado,
-                "qualidade": None,
-            })
+            resultados.append(
+                {
+                    "modelo_id": mid,
+                    "modelo_label": label,
+                    **resultado,
+                    "qualidade": None,
+                }
+            )
 
         print()
 
     # ---------------------------------------------------------------------------
     # Tabela de resultados
     # ---------------------------------------------------------------------------
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  RESULTADO FINAL DO BENCHMARK")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"{'Modelo':<40} {'Score':>6} {'Tempo':>8} {'Tok/s':>6} {'Palavras':>8}")
     print("-" * 70)
 
@@ -312,13 +322,15 @@ def run_benchmark(
 
     if ok:
         melhor = ok[0]
-        print(f"\n🏆 Melhor qualidade: {melhor['modelo_label']} (score {melhor['qualidade']['score_total']}/100)")
+        print(
+            f"\n🏆 Melhor qualidade: {melhor['modelo_label']} (score {melhor['qualidade']['score_total']}/100)"
+        )
         mais_rapido = min(ok, key=lambda r: r["tempo_segundos"])
         print(f"⚡ Mais rápido: {mais_rapido['modelo_label']} ({mais_rapido['tempo_segundos']}s)")
 
         if melhor["modelo_id"] != mais_rapido["modelo_id"]:
             razao = mais_rapido["tempo_segundos"] / max(melhor["tempo_segundos"], 1)
-            print(f"   (melhor qualidade é {1/razao:.1f}x mais lento que o mais rápido)")
+            print(f"   (melhor qualidade é {1 / razao:.1f}x mais lento que o mais rápido)")
 
     # Exportar
     if exportar:
@@ -329,17 +341,19 @@ def run_benchmark(
     # Imprime o melhor dossiê gerado
     if ok:
         melhor = ok[0]
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  DOSSIÊ GERADO PELO MELHOR MODELO: {melhor['modelo_label']}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(melhor["texto"][:3000])
         if len(melhor["texto"]) > 3000:
-            print(f"\n[... +{len(melhor['texto'])-3000} chars omitidos ...]")
+            print(f"\n[... +{len(melhor['texto']) - 3000} chars omitidos ...]")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark de modelos LocalAI para dossiês.")
-    parser.add_argument("--nome", default="Afonso Florence", help="Nome do deputado para o benchmark.")
+    parser.add_argument(
+        "--nome", default="Afonso Florence", help="Nome do deputado para o benchmark."
+    )
     parser.add_argument(
         "--modelos",
         nargs="+",
@@ -347,7 +361,9 @@ def main():
         metavar="MODEL_ID",
         help="IDs dos modelos a testar (padrão: todos).",
     )
-    parser.add_argument("--exportar", default=None, metavar="ARQUIVO.json", help="Exportar resultados como JSON.")
+    parser.add_argument(
+        "--exportar", default=None, metavar="ARQUIVO.json", help="Exportar resultados como JSON."
+    )
     args = parser.parse_args()
 
     run_benchmark(

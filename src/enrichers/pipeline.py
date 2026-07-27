@@ -65,25 +65,22 @@ def fase3_vinculacao(dry_run: bool):
 
     print("\n\n>>> FASE 3: Vinculação parlamentar-beneficiário")
 
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO parlamentar_beneficiario
-            (parlamentar_nome, beneficiario_id, emenda_codigo, valor_total, plano_acao_situacao)
-        SELECT parlamentar_nome, beneficiario_id, emenda_codigo,
-            SUM(valor_total), MAX(plano_acao_situacao)
-        FROM planos_acao
-        WHERE parlamentar_nome IS NOT NULL AND parlamentar_nome != ''
-          AND beneficiario_id IS NOT NULL
-        GROUP BY parlamentar_nome, beneficiario_id, emenda_codigo
-        ON CONFLICT (parlamentar_nome, beneficiario_id, emenda_codigo) DO UPDATE SET
-            valor_total = EXCLUDED.valor_total,
-            plano_acao_situacao = EXCLUDED.plano_acao_situacao
-    """)
-    vinculados = cur.rowcount
-    conn.commit()
-    conn.close()
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO parlamentar_beneficiario
+                (parlamentar_nome, beneficiario_id, emenda_codigo, valor_total, plano_acao_situacao)
+            SELECT parlamentar_nome, beneficiario_id, emenda_codigo,
+                SUM(valor_total), MAX(plano_acao_situacao)
+            FROM planos_acao
+            WHERE parlamentar_nome IS NOT NULL AND parlamentar_nome != ''
+              AND beneficiario_id IS NOT NULL
+            GROUP BY parlamentar_nome, beneficiario_id, emenda_codigo
+            ON CONFLICT (parlamentar_nome, beneficiario_id, emenda_codigo) DO UPDATE SET
+                valor_total = EXCLUDED.valor_total,
+                plano_acao_situacao = EXCLUDED.plano_acao_situacao
+        """)
+        vinculados = cur.rowcount
+        conn.commit()
 
     print(f"  Vinculações: {vinculados}")
 

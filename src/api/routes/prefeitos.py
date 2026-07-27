@@ -36,3 +36,15 @@ async def get_perfil(municipio_id: int):
 async def get_emendas(municipio_id: int, ano: int | None = None, limit: int = 100):
     """Retorna as emendas recebidas pelo município com os deputados autores, opcionalmente filtrado por ano."""
     return db_service.get_emendas_municipio(municipio_id, ano=ano, limit=limit)
+
+
+@router.get("/{municipio_id}/licitacoes")
+async def get_licitacoes(municipio_id: int, limit: int = 50):
+    """Retorna as licitações e processos de compra publicados pela prefeitura, acompanhados dos vencedores."""
+    return db_service.get_licitacoes_prefeitura(municipio_id, limit=limit)
+
+
+@router.get("/{municipio_id}/licitacoes/ganhadores")
+async def get_ganhadores_licitacoes(municipio_id: int, limit: int = 15):
+    """Retorna o ranking de fornecedores e empresas contratadas/vencedoras de licitações na prefeitura."""
+    return db_service.get_ganhadores_licitacoes_prefeitura(municipio_id, limit=limit)

@@ -208,32 +208,49 @@ def build_layout():
                 ],
             )
             tab_cards.append(card)
-            
+
         tabs.append(
             dcc.Tab(
                 label=cat,
                 children=[html.Div(tab_cards, style={"paddingTop": "2rem"})],
-                style={"backgroundColor": "#1e293b", "color": "#94a3b8", "border": "none", "borderBottom": "1px solid #334155"},
-                selected_style={"backgroundColor": "#3b82f6", "color": "white", "border": "none", "fontWeight": "bold"}
+                style={
+                    "backgroundColor": "#1e293b",
+                    "color": "#94a3b8",
+                    "border": "none",
+                    "borderBottom": "1px solid #334155",
+                },
+                selected_style={
+                    "backgroundColor": "#3b82f6",
+                    "color": "white",
+                    "border": "none",
+                    "fontWeight": "bold",
+                },
             )
         )
-        
+
     # --- Nova Aba: RAG Dossiê IA ---
     # Puxa os deputados que já tem Dossiê gerado no DB
     try:
         from src.db_utils import get_connection
+
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT pp.deputado_id, pd.nome FROM parlamentares_personas pp JOIN parlamentares_dados pd ON pp.deputado_id = pd.deputado_id ORDER BY pd.nome")
+            cur.execute(
+                "SELECT DISTINCT pp.deputado_id, pd.nome FROM parlamentares_personas pp JOIN parlamentares_dados pd ON pp.deputado_id = pd.deputado_id ORDER BY pd.nome"
+            )
             deputados_rag = cur.fetchall()
             options_rag = [{"label": nome, "value": str(dep_id)} for dep_id, nome in deputados_rag]
-            
-            cur.execute("SELECT AVG(duracao_segundos), COUNT(id) FROM parlamentares_personas WHERE duracao_segundos IS NOT NULL")
+
+            cur.execute(
+                "SELECT AVG(duracao_segundos), COUNT(id) FROM parlamentares_personas WHERE duracao_segundos IS NOT NULL"
+            )
             avg_dur, total_personas = cur.fetchone()
             if avg_dur:
-                perf_text = f"Hardware (CPU) AI Perf: {avg_dur:.1f}s por dossiê ({total_personas} gerados)"
+                perf_text = (
+                    f"Hardware (CPU) AI Perf: {avg_dur:.1f}s por dossiê ({total_personas} gerados)"
+                )
             else:
                 perf_text = "Hardware (CPU) AI Perf: Aguardando primeira geração..."
-            
+
     except Exception as e:
         log.error(f"Erro ao buscar personas: {e}")
         options_rag = []
@@ -246,7 +263,7 @@ def build_layout():
             "padding": "1.5rem",
             "marginTop": "2rem",
             "border": "1px solid #334155",
-            "position": "relative"
+            "position": "relative",
         },
         children=[
             html.Div(
@@ -261,16 +278,24 @@ def build_layout():
                     "borderRadius": "20px",
                     "fontSize": "0.8rem",
                     "fontWeight": "bold",
-                    "boxShadow": "0 2px 4px rgba(0,0,0,0.2)"
-                }
+                    "boxShadow": "0 2px 4px rgba(0,0,0,0.2)",
+                },
             ),
-            html.H2("Dossiê Comportamental (RAG + LLaMA)", style={"color": "#f8fafc", "marginBottom": "1rem"}),
-            html.P("Selecione um parlamentar que já foi processado pelo RAG para visualizar o seu Dossiê gerado pela Inteligência Artificial.", style={"color": "#94a3b8", "marginBottom": "1.5rem"}),
+            html.H2(
+                "Dossiê Comportamental (RAG + LLaMA)",
+                style={"color": "#f8fafc", "marginBottom": "1rem"},
+            ),
+            html.P(
+                "Selecione um parlamentar que já foi processado pelo RAG para visualizar o seu Dossiê gerado pela Inteligência Artificial.",
+                style={"color": "#94a3b8", "marginBottom": "1.5rem"},
+            ),
             dcc.Dropdown(
                 id="rag-deputado-dropdown",
                 options=options_rag,
-                placeholder="Selecione um Deputado..." if options_rag else "Nenhum dossiê gerado ainda.",
-                style={"width": "300px", "marginBottom": "2rem", "color": "#0f172a"}
+                placeholder="Selecione um Deputado..."
+                if options_rag
+                else "Nenhum dossiê gerado ainda.",
+                style={"width": "300px", "marginBottom": "2rem", "color": "#0f172a"},
             ),
             dcc.Loading(
                 id="loading-rag",
@@ -278,26 +303,36 @@ def build_layout():
                 children=html.Div(
                     id="rag-output-container",
                     style={
-                        "backgroundColor": "#0f172a", 
-                        "padding": "1.5rem", 
-                        "borderRadius": "8px", 
+                        "backgroundColor": "#0f172a",
+                        "padding": "1.5rem",
+                        "borderRadius": "8px",
                         "color": "#cbd5e1",
                         "fontFamily": "monospace",
                         "whiteSpace": "pre-wrap",
-                        "border": "1px solid #3b82f6"
+                        "border": "1px solid #3b82f6",
                     },
-                    children="O dossiê aparecerá aqui."
-                )
-            )
-        ]
+                    children="O dossiê aparecerá aqui.",
+                ),
+            ),
+        ],
     )
 
     tabs.append(
         dcc.Tab(
             label="🧠 Dossiê IA (RAG)",
             children=[rag_tab_content],
-            style={"backgroundColor": "#1e293b", "color": "#94a3b8", "border": "none", "borderBottom": "1px solid #334155"},
-            selected_style={"backgroundColor": "#8b5cf6", "color": "white", "border": "none", "fontWeight": "bold"}
+            style={
+                "backgroundColor": "#1e293b",
+                "color": "#94a3b8",
+                "border": "none",
+                "borderBottom": "1px solid #334155",
+            },
+            selected_style={
+                "backgroundColor": "#8b5cf6",
+                "color": "white",
+                "border": "none",
+                "fontWeight": "bold",
+            },
         )
     )
     # ---------------------------------
@@ -336,30 +371,35 @@ log.info(
     "Registrados %d gráficos interativos e resilientes no Dash MCP Server!", len(CHART_REGISTRY)
 )
 
+
 @callback(
     Output("rag-output-container", "children"),
     Input("rag-deputado-dropdown", "value"),
-    prevent_initial_call=True
+    prevent_initial_call=True,
 )
 def update_rag_dossie(deputado_id):
     if not deputado_id:
         return "Nenhum deputado selecionado."
-        
+
     try:
         from src.db_utils import get_connection
+
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT analise_gerada FROM parlamentares_personas WHERE deputado_id = %s ORDER BY data_analise DESC LIMIT 1",
-                (deputado_id,)
+                (deputado_id,),
             )
             result = cur.fetchone()
             if result:
                 return result[0]
             else:
-                return "Dossiê não encontrado para este deputado. É necessário rodar o pipeline RAG."
+                return (
+                    "Dossiê não encontrado para este deputado. É necessário rodar o pipeline RAG."
+                )
     except Exception as e:
         log.error(f"Erro ao buscar Dossiê RAG: {e}")
         return f"Erro ao buscar dossiê: {e}"
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8050, debug=False)

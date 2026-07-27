@@ -75,7 +75,13 @@ class PlanoAcaoSchema(BaseModel):
 
     @property
     def is_negado(self) -> bool:
-        return self.planoAcaoSituacao in {"REPROVADO", "IMPEDIDO", "CANCELADO", "NAO_CUMPROU"}
+        return self.planoAcaoSituacao in {
+            "REPROVADO",
+            "IMPEDIDO",
+            "IMPEDIDO_REJEICAO_PLANO_TRABALHO",
+            "CANCELADO",
+            "NAO_CUMPROU",
+        }
 
     @property
     def valor_total_real(self) -> float:

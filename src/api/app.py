@@ -18,9 +18,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.background import BackgroundTask
 
-from src.api.routes import analytics, auditoria, compras, deputados, diario, prefeitos, vereadores
+from src.api.routes import (
+    analytics,
+    auditoria,
+    compras,
+    deputados,
+    diario,
+    fnde,
+    prefeitos,
+    vereadores,
+)
 
 # ---------------------------------------------------------------------------
 # App
@@ -78,6 +86,13 @@ app.include_router(
     vereadores.router,
     prefix="/api/v1/vereadores",
     tags=["vereadores"],
+)
+
+# Register FNDE verbas educacionais routes
+app.include_router(
+    fnde.router,
+    prefix="/api/v1/fnde",
+    tags=["fnde", "educação"],
 )
 
 # ---------------------------------------------------------------------------

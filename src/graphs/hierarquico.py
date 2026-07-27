@@ -392,3 +392,125 @@ def chart_sankey_fluxo_financeiro(uf_filter: str = "TODOS") -> go.Figure:
         "28. Fluxo Financeiro: Parlamentar → Beneficiário → Status",
         altura=600,
     )
+
+
+# ---------------------------------------------------------------------------
+# Chart 39 — Clusters Políticos por Hierarquia: Partido → UF → Deputado → Prefeito
+# ---------------------------------------------------------------------------
+
+
+@register_chart(
+    id="sunburst_cluster_politico_hierarquia",
+    title="39. Clusters Políticos por Hierarquia: Partido → UF → Deputado → Prefeito",
+    description=(
+        "Agrupamento hierárquico das conexões políticas em Sunburst / Treemap: "
+        "Partido → Estado (UF) → Deputado Federal → Prefeito Aliado, ponderado pelo "
+        "volume total de Emendas PIX repassadas."
+    ),
+    category="Hierárquico",
+    controls=[
+        ControlSpec(
+            id="uf_filter",
+            label="Filtrar por UF",
+            options=["TODAS"] + TODAS_UFS,
+            default="TODAS",
+        ),
+    ],
+)
+def chart_sunburst_cluster_politico_hierarquia(uf_filter: str = "TODAS") -> go.Figure:
+    params: tuple[str, ...]
+    params = (uf_filter, uf_filter)
+
+    query = """
+        SELECT
+            partido_deputado,
+            uf,
+            deputado_nome,
+            CONCAT(municipio_nome, ' (Prefeito: ', prefeito_nome, ' - ', partido_prefeito, ')') AS prefeito_no_municipio,
+            relacao_partidaria_prefeito,
+            SUM(total_emendas_brl) AS total_emendas
+        FROM v_triangulo_politico
+        WHERE (%s = 'TODAS' OR uf = %s)
+          AND total_emendas_brl > 0
+        GROUP BY
+            partido_deputado, uf, deputado_nome, municipio_nome, prefeito_nome, partido_prefeito, relacao_partidaria_prefeito
+        ORDER BY total_emendas DESC
+        LIMIT 250;
+    """
+    df = query_df(query, params)
+
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Nenhum cluster político encontrado para o filtro selecionado",
+            showarrow=False,
+            font=dict(size=16, color="#64748b"),
+        )
+        return aplicar_tema(
+            fig,
+            "39. Clusters Políticos por Hierarquia: Partido → UF → Deputado → Prefeito",
+            altura=650,
+        )
+
+    # --- Build Sunburst Hierarchy Arrays ---
+    ids: list[str] = []
+    labels: list[str] = []
+    parents: list[str] = []
+    values: list[float] = []
+
+    # Level 1: Partidos
+    df_partido = df.groupby("partido_deputado")["total_emendas"].sum().reset_index()
+    for _, r in df_partido.iterrows():
+        p_id = f"P_{r['partido_deputado']}"
+        ids.append(p_id)
+        labels.append(f"Partido {r['partido_deputado']}")
+        parents.append("")
+        values.append(float(r["total_emendas"]))
+
+    # Level 2: UF per Partido
+    df_uf = df.groupby(["partido_deputado", "uf"])["total_emendas"].sum().reset_index()
+    for _, r in df_uf.iterrows():
+        uf_id = f"P_{r['partido_deputado']}/UF_{r['uf']}"
+        ids.append(uf_id)
+        labels.append(f"UF: {r['uf']}")
+        parents.append(f"P_{r['partido_deputado']}")
+        values.append(float(r["total_emendas"]))
+
+    # Level 3: Deputado per Partido/UF
+    df_dep = (
+        df.groupby(["partido_deputado", "uf", "deputado_nome"])["total_emendas"]
+        .sum()
+        .reset_index()
+    )
+    for _, r in df_dep.iterrows():
+        dep_id = f"P_{r['partido_deputado']}/UF_{r['uf']}/DEP_{r['deputado_nome']}"
+        ids.append(dep_id)
+        labels.append(f"Dep. {r['deputado_nome']}")
+        parents.append(f"P_{r['partido_deputado']}/UF_{r['uf']}")
+        values.append(float(r["total_emendas"]))
+
+    # Level 4: Prefeito / Município
+    for _, r in df.iterrows():
+        muni_id = f"P_{r['partido_deputado']}/UF_{r['uf']}/DEP_{r['deputado_nome']}/MUNI_{r['prefeito_no_municipio']}"
+        ids.append(muni_id)
+        labels.append(r["prefeito_no_municipio"])
+        parents.append(f"P_{r['partido_deputado']}/UF_{r['uf']}/DEP_{r['deputado_nome']}")
+        values.append(float(r["total_emendas"]))
+
+    fig = go.Figure(
+        go.Sunburst(
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values,
+            branchvalues="total",
+            hovertemplate="<b>%{label}</b><br>Volume Emendas: R$ %{value:,.2f}<extra></extra>",
+            marker=dict(line=dict(color=THEME_CARD_BG, width=1)),
+        )
+    )
+
+    return aplicar_tema(
+        fig,
+        "39. Clusters Políticos por Hierarquia: Partido → UF → Deputado → Prefeito",
+        altura=680,
+    )

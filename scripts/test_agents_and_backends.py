@@ -17,9 +17,8 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.localai_manager import manager as localai_manager
 from config.settings import LOCALAI_BASE_URL
-
+from src.localai_manager import manager as localai_manager
 
 SYSTEM_PROMPT_AGENTE = """Você é o AGENTE INVESTIGATIVO OFICIAL do TransfereGov API.
 Sua missão é realizar auditorias e análises detalhadas do comportamento parlamentar de deputados federais brasileiros.
@@ -36,7 +35,7 @@ Seja estritamente factual, objetivo e estruture a resposta sempre nas seguintes 
 def test_model_agent(model_id: str, label: str, prompt_user: str) -> dict:
     """Executa inferência com gerenciamento de lifecycle de VRAM."""
     print(f"\n🤖 Testando Agente com Modelo: '{label}' ({model_id})")
-    
+
     # 1. Gerenciamento de ciclo de vida (Unload preventivo de outros modelos)
     localai_manager.ensure_model_loaded(model_id)
     time.sleep(2)
@@ -46,7 +45,7 @@ def test_model_agent(model_id: str, label: str, prompt_user: str) -> dict:
         "model": model_id,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT_AGENTE},
-            {"role": "user", "content": prompt_user}
+            {"role": "user", "content": prompt_user},
         ],
         "temperature": 0.3,
         "max_tokens": 1500,
@@ -65,7 +64,7 @@ def test_model_agent(model_id: str, label: str, prompt_user: str) -> dict:
             tps = round(tokens / max(elapsed, 1), 1)
 
             print(f"  ✅ Resposta em {elapsed:.1f}s | {tokens} tokens ({tps} tok/s)")
-            print(f"  📝 Amostra ({len(content)} chars):\n" + "-"*40)
+            print(f"  📝 Amostra ({len(content)} chars):\n" + "-" * 40)
             print(content[:350] + ("..." if len(content) > 350 else ""))
             print("-" * 40)
             return {"sucesso": True, "tempo": elapsed, "tps": tps, "length": len(content)}
@@ -98,18 +97,26 @@ Dados do contexto:
 Elabore o dossiê investigativo conforme suas instruções de agente."""
 
     # 1. Testar Agente Rápido (Qwen2.5 1.5B)
-    res_rapido = test_model_agent("qwen2.5-1.5b-instruct-q4-k-m", "Agente Rápido (Qwen 1.5B)", prompt_teste)
+    res_rapido = test_model_agent(
+        "qwen2.5-1.5b-instruct-q4-k-m", "Agente Rápido (Qwen 1.5B)", prompt_teste
+    )
 
     # 2. Testar Agente Investigativo (Llama 3.1 8B CUDA)
-    res_investigativo = test_model_agent("llama-3.1-8b-q4-k-m", "Agente Investigativo (Llama 3.1 8B CUDA)", prompt_teste)
+    res_investigativo = test_model_agent(
+        "llama-3.1-8b-q4-k-m", "Agente Investigativo (Llama 3.1 8B CUDA)", prompt_teste
+    )
 
     print("\n============================================================")
     print("  RESUMO COMPARATIVO DE PERFORMANCE DOS AGENTES")
     print("============================================================")
     if res_rapido.get("sucesso"):
-        print(f"Agente Rápido (Qwen 1.5B):        Tempo: {res_rapido['tempo']:.1f}s | Velocidade: {res_rapido['tps']} tok/s")
+        print(
+            f"Agente Rápido (Qwen 1.5B):        Tempo: {res_rapido['tempo']:.1f}s | Velocidade: {res_rapido['tps']} tok/s"
+        )
     if res_investigativo.get("sucesso"):
-        print(f"Agente Investigativo (Llama 8B):   Tempo: {res_investigativo['tempo']:.1f}s | Velocidade: {res_investigativo['tps']} tok/s")
+        print(
+            f"Agente Investigativo (Llama 8B):   Tempo: {res_investigativo['tempo']:.1f}s | Velocidade: {res_investigativo['tps']} tok/s"
+        )
 
 
 if __name__ == "__main__":

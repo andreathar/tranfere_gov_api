@@ -41,9 +41,12 @@ def fmt_num(valor) -> str:
 
     Aceita float, int, None, NaN.
     """
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+    if valor is None or pd.isna(valor):
         return "0"
-    return f"{int(valor):,}".replace(",", ".")
+    try:
+        return f"{int(valor):,}".replace(",", ".")
+    except (ValueError, TypeError):
+        return "0"
 
 
 def fmt_pct(valor) -> str:
@@ -51,6 +54,9 @@ def fmt_pct(valor) -> str:
 
     Aceita float, int, None, NaN.
     """
-    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+    if valor is None or pd.isna(valor):
         return "0%"
-    return f"{valor:.1f}%"
+    try:
+        return f"{float(valor):.1f}%".replace(".", ",")
+    except (ValueError, TypeError):
+        return "0%"

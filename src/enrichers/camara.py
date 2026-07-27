@@ -8,6 +8,7 @@ Busca dados dos deputados que são autores de emendas no programa.
 
 import argparse
 import time
+from typing import Any
 
 import requests
 
@@ -18,21 +19,23 @@ from config.settings import (
 from src.db_utils import get_connection
 
 
-def buscar_deputado(nome: str) -> dict | None:
+def buscar_deputado(nome: str) -> dict[str, object] | None:
     """Busca deputado por nome na API da Câmara (1 request apenas)."""
     url = f"{CAMARA_API_BASE}/deputados"
-    params = {"nome": nome, "itens": 5, "ordem": "ASC", "ordenarPor": "nome"}
+    params: dict[str, int | str] = {"nome": nome, "itens": 5, "ordem": "ASC", "ordenarPor": "nome"}
     try:
-        resp = requests.get(url, params=params, timeout=15)  # type: ignore[arg-type]
+        resp = requests.get(url, params=params, timeout=15)
         if resp.status_code == 200:
-            data: dict = resp.json()
-            deputados: list = data.get("dados", [])
+            data: dict[str, Any] = resp.json()
+            deputados: list[dict[str, Any]] = data.get("dados", [])
             if deputados:
                 dep_id = deputados[0].get("id")
                 # Busca detalhada
                 detalhe_resp = requests.get(f"{url}/{dep_id}", timeout=15)
                 if detalhe_resp.status_code == 200:
-                    return detalhe_resp.json().get("dados", {})
+                    detail_json = detalhe_resp.json()
+                    detail_data: dict[str, object] = detail_json.get("dados", {})
+                    return detail_data
                 return deputados[0]
     except Exception:
         pass
@@ -67,7 +70,10 @@ def main():
 
     for i, nome in enumerate(nomes, 1):
         # Pular se já existe e está preenchido
-        cur.execute("SELECT id FROM parlamentares_dados WHERE nome = %s AND ultimo_status IS NOT NULL", (nome,))
+        cur.execute(
+            "SELECT id FROM parlamentares_dados WHERE nome = %s AND ultimo_status IS NOT NULL",
+            (nome,),
+        )
         if cur.fetchone():
             continue
 

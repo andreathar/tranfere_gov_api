@@ -70,16 +70,14 @@ async def process_diario_oficial(
         # 2. Processar a string inteira (Markdown) com LLM
         ai_client = LocalAIClient(model=LOCALAI_MODELS["fast"])
         resposta_llm = ai_client.chat_json(
-            prompt=f"Analise o resultado de busca a seguir:\n\n{str(res_mcp)[:4000]}", system=NER_PROMPT
+            prompt=f"Analise o resultado de busca a seguir:\n\n{str(res_mcp)[:4000]}",
+            system=NER_PROMPT,
         )
     except Exception as e:
         log.error(f"Erro no LLM: {e}")
         return []
 
-    if isinstance(resposta_llm, list):
-        itens = resposta_llm
-    else:
-        itens = resposta_llm.get("itens", [])
+    itens = resposta_llm if isinstance(resposta_llm, list) else resposta_llm.get("itens", [])
     if not itens:
         log.warning("LLM não extraiu nenhum item.")
         return []
@@ -90,6 +88,7 @@ async def process_diario_oficial(
         for item in itens:
             texto_ato = item.get("resumo") or "Resumo não gerado"
             import pandas as pd
+
             raw_date = item.get("data_publicacao") or datetime.today().strftime("%Y-%m-%d")
             if isinstance(raw_date, list):
                 raw_date = str(raw_date[0]) if raw_date else datetime.today().strftime("%Y-%m-%d")
@@ -208,14 +207,18 @@ async def process_proposicoes(deputado_id: int, nome: str) -> None:
             if cur.fetchone():
                 continue
 
-
             # Safe date extraction for data_apresentacao
             raw_date_prop = item.get("data") or datetime.today().strftime("%Y-%m-%d")
             if isinstance(raw_date_prop, list):
-                raw_date_prop = str(raw_date_prop[0]) if raw_date_prop else datetime.today().strftime("%Y-%m-%d")
+                raw_date_prop = (
+                    str(raw_date_prop[0])
+                    if raw_date_prop
+                    else datetime.today().strftime("%Y-%m-%d")
+                )
             raw_date_prop = str(raw_date_prop)
             try:
                 import pandas as pd
+
                 data_prop = pd.to_datetime(raw_date_prop, dayfirst=True).strftime("%Y-%m-%d")
             except Exception:
                 data_prop = datetime.today().strftime("%Y-%m-%d")
@@ -243,12 +246,16 @@ async def process_proposicoes(deputado_id: int, nome: str) -> None:
 
 async def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="Worker do Diário Oficial")
-    parser.add_argument("--limit", type=int, default=10, help="Quantidade de deputados a processar no lote")
+    parser.add_argument(
+        "--limit", type=int, default=10, help="Quantidade de deputados a processar no lote"
+    )
     args = parser.parse_args()
 
     # Garantir que o modelo de LLM (fast) esteja carregado e limpe a memória
     from src.localai_manager import manager as localai_manager
+
     localai_manager.ensure_model_loaded(LOCALAI_MODELS["fast"])
 
     await _mcp_client.connect()
@@ -260,13 +267,15 @@ async def main():
 
     with get_connection() as conn, conn.cursor() as cur:
         # Adiciona coluna de controle se não existir
-        cur.execute("ALTER TABLE parlamentares_dados ADD COLUMN IF NOT EXISTS ultimo_check_diario TIMESTAMP DEFAULT '1970-01-01'")
+        cur.execute(
+            "ALTER TABLE parlamentares_dados ADD COLUMN IF NOT EXISTS ultimo_check_diario TIMESTAMP DEFAULT '1970-01-01'"
+        )
         conn.commit()
 
         # Puxa N deputados priorizando os que não são checados há mais tempo
         cur.execute(
             "SELECT deputado_id, nome FROM parlamentares_dados ORDER BY ultimo_check_diario ASC NULLS FIRST LIMIT %s",
-            (args.limit,)
+            (args.limit,),
         )
         deputados = cur.fetchall()
 
@@ -287,9 +296,12 @@ async def main():
 
             # Atualiza a data de checagem com sucesso
             with get_connection() as conn, conn.cursor() as cur:
-                cur.execute("UPDATE parlamentares_dados SET ultimo_check_diario = NOW() WHERE deputado_id = %s", (dep_id,))
+                cur.execute(
+                    "UPDATE parlamentares_dados SET ultimo_check_diario = NOW() WHERE deputado_id = %s",
+                    (dep_id,),
+                )
                 conn.commit()
-                
+
         except Exception as e:
             log.error(f"Falha não tratada ao processar {nome}: {e}")
 

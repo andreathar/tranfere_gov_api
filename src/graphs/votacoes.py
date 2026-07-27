@@ -10,13 +10,14 @@ from src.graphs.registry import ControlSpec, register_chart
 from src.graphs.theme import aplicar_tema
 
 CORES_VOTO = {
-    "Sim": "#10b981",       # emerald-500
-    "Não": "#ef4444",       # red-500
-    "Abstenção": "#64748b", # slate-500
-    "Obstrução": "#f59e0b", # amber-500
+    "Sim": "#10b981",  # emerald-500
+    "Não": "#ef4444",  # red-500
+    "Abstenção": "#64748b",  # slate-500
+    "Obstrução": "#f59e0b",  # amber-500
     "Liberado": "#3b82f6",  # blue-500
-    "Art. 17": "#8b5cf6",   # violet-500
+    "Art. 17": "#8b5cf6",  # violet-500
 }
+
 
 @register_chart(
     id="votacoes_temas_geral",
@@ -28,13 +29,13 @@ CORES_VOTO = {
             id="deputado_nome",
             label="Buscar Deputado (Opcional)",
             options=["TODOS"],
-            default="TODOS"
+            default="TODOS",
         )
     ],
 )
 def chart_votacoes_temas_geral(deputado_nome: str = "TODOS") -> go.Figure:
     query = """
-        SELECT 
+        SELECT
             vc.tema,
             v.tipo_voto,
             COUNT(*) as total_votos
@@ -64,8 +65,12 @@ def chart_votacoes_temas_geral(deputado_nome: str = "TODOS") -> go.Figure:
         color_discrete_map=CORES_VOTO,
         orientation="h",
         barmode="stack",
-        labels={"total_votos": "Quantidade de Votos", "tema": "Tema da Votação", "tipo_voto": "Voto"},
+        labels={
+            "total_votos": "Quantidade de Votos",
+            "tema": "Tema da Votação",
+            "tipo_voto": "Voto",
+        },
     )
-    
-    fig.update_layout(yaxis={'categoryorder':'total ascending'})
+
+    fig.update_layout(yaxis={"categoryorder": "total ascending"})
     return aplicar_tema(fig, "Comportamento de Voto por Tema")

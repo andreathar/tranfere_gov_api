@@ -306,9 +306,7 @@ def get_emendas_municipio(municipio_id: int, ano: int | None = None, limit: int 
 # ---------------------------------------------------------------------------
 
 
-def get_votacoes_deputado(
-    deputado_id: int, limit: int = 50, ano: int | None = None
-) -> list[dict]:
+def get_votacoes_deputado(deputado_id: int, limit: int = 50, ano: int | None = None) -> list[dict]:
     """Retorna votações em que o deputado participou, com seu voto."""
     with _get_connection() as conn, conn.cursor() as cur:
         query = """
@@ -537,5 +535,164 @@ def get_vereadores_por_uf(uf: str) -> list[dict]:
                 ORDER BY municipio_nome, votos DESC
             """,
             (uf.upper(),),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Licitações Públicas & Fornecedores Vencedores da Prefeitura
+# ---------------------------------------------------------------------------
+
+
+def get_licitacoes_prefeitura(municipio_id: int, limit: int = 50) -> list[dict]:
+    """Retorna as licitações e contratos públicos registrados para o município."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT id, fonte, tipo_documento, numero, descricao,
+                       valor_estimado, valor_homologado, data_publicacao,
+                       data_vigencia, modalidade, cnpj_orgao, nome_orgao,
+                       cnpj_fornecedor, nome_fornecedor, status, uf
+                FROM compras_municipios
+                WHERE municipio_id = %s
+                ORDER BY data_publicacao DESC NULLS LAST, id DESC
+                LIMIT %s
+            """,
+            (municipio_id, limit),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_ganhadores_licitacoes_prefeitura(municipio_id: int, limit: int = 15) -> list[dict]:
+    """Retorna o ranking de empresas e fornecedores vencedores de licitações no município."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    cnpj_fornecedor,
+                    nome_fornecedor AS razao_social,
+                    COUNT(*) AS total_licitacoes_ganhas,
+                    SUM(COALESCE(valor_homologado, valor_estimado, 0)) AS total_valor_ganho_brl
+                FROM compras_municipios
+                WHERE municipio_id = %s AND nome_fornecedor IS NOT NULL AND nome_fornecedor <> ''
+                GROUP BY cnpj_fornecedor, nome_fornecedor
+                ORDER BY total_valor_ganho_brl DESC, total_licitacoes_ganhas DESC
+                LIMIT %s
+            """,
+            (municipio_id, limit),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# FNDE — Verbas Educacionais (FUNDEB, PNAE, PNLD, PNATE)
+# ---------------------------------------------------------------------------
+
+
+def get_fnde_resumo_estado(uf: str | None = None) -> list[dict]:
+    """Retorna resumo FNDE por estado, opcionalmente filtrado por UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        if uf:
+            cur.execute(
+                """
+                    SELECT * FROM v_fnde_resumo_estado
+                    WHERE uf = %s
+                """,
+                (uf.upper(),),
+            )
+        else:
+            cur.execute("SELECT * FROM v_fnde_resumo_estado")
+        return _rows_to_list(cur.fetchall())
+
+
+def get_fnde_resumo_municipio(
+    municipio_id: int | None = None,
+    uf: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Retorna resumo FNDE por município, com filtros opcionais."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        where_parts: list[str] = ["1=1"]
+        params: list = []
+
+        if municipio_id:
+            where_parts.append("municipio_id = %s")
+            params.append(municipio_id)
+        if uf:
+            where_parts.append("uf = %s")
+            params.append(uf.upper())
+
+        where_sql = " AND ".join(where_parts)
+        params.append(limit)
+
+        cur.execute(
+            f"""
+                SELECT * FROM v_fnde_resumo_municipio
+                WHERE {where_sql}
+                ORDER BY total_beneficiados DESC
+                LIMIT %s
+            """,
+            tuple(params),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_fnde_programas_municipio(
+    municipio_id: int,
+    programa: str | None = None,
+) -> list[dict]:
+    """Retorna programas FNDE para um município específico."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        if programa:
+            cur.execute(
+                """
+                    SELECT * FROM v_fnde_programas_municipio
+                    WHERE municipio_id = %s AND programa = %s
+                    ORDER BY ano DESC
+                """,
+                (municipio_id, programa.upper()),
+            )
+        else:
+            cur.execute(
+                """
+                    SELECT * FROM v_fnde_programas_municipio
+                    WHERE municipio_id = %s
+                    ORDER BY programa, ano DESC
+                """,
+                (municipio_id,),
+            )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_fnde_programas_disponiveis() -> list[dict]:
+    """Retorna lista de programas FNDE disponíveis no banco."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT programa, COUNT(*) as total_registros,
+                       MIN(ano) as ano_minimo, MAX(ano) as ano_maximo,
+                       SUM(COALESCE(quantidade_matriculas, 0)) as total_matriculas,
+                       SUM(COALESCE(quantidade_alunos, 0)) as total_alunos
+                FROM fnde_repasses
+                GROUP BY programa
+                ORDER BY programa
+            """
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def search_fnde_municipios(query: str, limit: int = 20) -> list[dict]:
+    """Busca municípios com dados FNDE por nome ou UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT DISTINCT m.municipio_id, m.nome, m.uf, m.populacao
+                FROM municipios_ibge m
+                JOIN fnde_repasses f ON m.municipio_id = f.municipio_id
+                WHERE m.nome ILIKE %s OR m.uf ILIKE %s
+                ORDER BY m.nome
+                LIMIT %s
+            """,
+            (f"%{query}%", f"%{query}%", limit),
         )
         return _rows_to_list(cur.fetchall())

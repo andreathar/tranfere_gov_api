@@ -18,7 +18,6 @@ import requests
 from config.settings import ENRICH_RATE_LIMIT, SENADO_API_BASE
 from src.db_utils import get_connection
 
-
 SENADO_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "TransfereGov-Enricher/1.0",
@@ -85,8 +84,10 @@ def _contar_relatorias(codigo: int) -> int:
     Tenta /materias/relatorias.json e /materias.json como fallback.
     A API do Senado pode mudar endpoints entre versões.
     """
-    for path in (f"/senador/{codigo}/materias/relatorias.json",
-                 f"/senador/{codigo}/materias.json"):
+    for path in (
+        f"/senador/{codigo}/materias/relatorias.json",
+        f"/senador/{codigo}/materias.json",
+    ):
         data = _get(path)
         if not data:
             continue
@@ -132,9 +133,8 @@ def sync_senadores(dry_run: bool = False, limit: int = 0) -> None:
             continue
 
         # Dados básicos da listagem (fonte primária — já traz tudo)
-        nome_completo = (
-            ident.get("NomeCompletoParlamentar", "")
-            or ident.get("NomeParlamentar", "")
+        nome_completo = ident.get("NomeCompletoParlamentar", "") or ident.get(
+            "NomeParlamentar", ""
         )
         nome_parlamentar = ident.get("NomeParlamentar", "") or nome_completo
         partido = ident.get("SiglaPartidoParlamentar", "")
@@ -155,20 +155,22 @@ def sync_senadores(dry_run: bool = False, limit: int = 0) -> None:
 
         print(f"  [{i}/{len(senadores)}] {nome_completo} ({partido}/{uf}) ✅")
 
-        records.append((
-            codigo,              # senador_codigo (PK)
-            nome_completo,       # nome_completo
-            nome_parlamentar,    # nome_parlamentar
-            partido,             # sigla_partido
-            uf,                  # uf
-            email,               # email
-            foto_url,            # foto_url
-            mandato_inicio,      # mandato_inicio
-            mandato_fim,         # mandato_fim
-            legislatura,         # legislatura
-            0,                   # total_votacoes (enriquecer depois se necessário)
-            0,                   # total_relatorias (enriquecer depois se necessário)
-        ))
+        records.append(
+            (
+                codigo,  # senador_codigo (PK)
+                nome_completo,  # nome_completo
+                nome_parlamentar,  # nome_parlamentar
+                partido,  # sigla_partido
+                uf,  # uf
+                email,  # email
+                foto_url,  # foto_url
+                mandato_inicio,  # mandato_inicio
+                mandato_fim,  # mandato_fim
+                legislatura,  # legislatura
+                0,  # total_votacoes (enriquecer depois se necessário)
+                0,  # total_relatorias (enriquecer depois se necessário)
+            )
+        )
 
     print(f"\n✅ Senadores coletados: {len(records)} | Erros: {erros}")
 
@@ -206,17 +208,9 @@ def sync_senadores(dry_run: bool = False, limit: int = 0) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Sincronizar senadores via API do Senado Federal"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Não salvar alterações no banco"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=0,
-        help="Limitar N senadores (0=todos)"
-    )
+    parser = argparse.ArgumentParser(description="Sincronizar senadores via API do Senado Federal")
+    parser.add_argument("--dry-run", action="store_true", help="Não salvar alterações no banco")
+    parser.add_argument("--limit", type=int, default=0, help="Limitar N senadores (0=todos)")
     args = parser.parse_args()
     sync_senadores(dry_run=args.dry_run, limit=args.limit)
 

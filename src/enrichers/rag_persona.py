@@ -23,25 +23,23 @@ Uso:
 import argparse
 import logging
 import time
-from typing import List, Tuple
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
 
 from config.settings import (
-    QDRANT_URL,
-    QDRANT_COLLECTION,
     EMBEDDER_MODEL,
-    EMBEDDING_DIM,
+    QDRANT_COLLECTION,
+    QDRANT_URL,
     RAG_LLM_MODEL,
-    RAG_PERSONA_VERSION,
-    RAG_MIN_CHUNKS,
     RAG_MAX_CHUNKS,
+    RAG_MIN_CHUNKS,
+    RAG_PERSONA_VERSION,
 )
 from src.db_utils import get_connection
-from src.localai_manager import manager as localai_manager
-from src.localai_client import LocalAIClient
 from src.enrichers.rag_qdrant_indexer import embed_text
+from src.localai_client import LocalAIClient
+from src.localai_manager import manager as localai_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -59,9 +57,7 @@ QUERIES_TEMATICAS = [
 ]
 
 
-def search_context_qdrant(
-    deputado_id: int, query_text: str, limit: int = 10
-) -> List[str]:
+def search_context_qdrant(deputado_id: int, query_text: str, limit: int = 10) -> list[str]:
     """Busca chunks relevantes no Qdrant para um deputado e query específica."""
     localai_manager.ensure_model_loaded(EMBEDDER_MODEL)
     query_vector = embed_text(query_text)
@@ -95,11 +91,9 @@ def search_context_qdrant(
     return contextos
 
 
-def search_context_multiquery(
-    deputado_id: int, top_k_per_query: int = 8
-) -> List[str]:
+def search_context_multiquery(deputado_id: int, top_k_per_query: int = 8) -> list[str]:
     """Executa 5 queries temáticas, merge + dedup, retorna top chunks únicos."""
-    all_chunks: List[str] = []
+    all_chunks: list[str] = []
     for q in QUERIES_TEMATICAS:
         chunks = search_context_qdrant(deputado_id, q, limit=top_k_per_query)
         all_chunks.extend(chunks)
@@ -107,7 +101,7 @@ def search_context_multiquery(
 
     # Dedup por prefixo do texto (primeiros 100 chars)
     seen: set[str] = set()
-    unique: List[str] = []
+    unique: list[str] = []
     for c in all_chunks:
         key = c[:100]
         if key not in seen:
@@ -116,8 +110,7 @@ def search_context_multiquery(
 
     result = unique[:RAG_MAX_CHUNKS]
     log.info(
-        f"Multi-query: {len(all_chunks)} brutos -> "
-        f"{len(unique)} unicos -> {len(result)} finais"
+        f"Multi-query: {len(all_chunks)} brutos -> {len(unique)} unicos -> {len(result)} finais"
     )
     return result
 
@@ -126,11 +119,16 @@ def search_context_multiquery(
 # Prompt Adaptativo — adapta seções baseado nos dados disponíveis
 # ---------------------------------------------------------------------------
 
-def _count_sources(context_list: List[str]) -> dict:
+
+def _count_sources(context_list: list[str]) -> dict[str, int]:
     """Conta chunks por tipo de fonte."""
     counts = {
-        "votos": 0, "emendas": 0, "proposicoes": 0,
-        "diario_oficial": 0, "perfil": 0, "conexao_politica": 0,
+        "votos": 0,
+        "emendas": 0,
+        "proposicoes": 0,
+        "diario_oficial": 0,
+        "perfil": 0,
+        "conexao_politica": 0,
     }
     for c in context_list:
         upper = c.upper()
@@ -149,7 +147,7 @@ def _count_sources(context_list: List[str]) -> dict:
     return counts
 
 
-def build_analysis_prompt(context_list: List[str], deputado_nome: str) -> str:
+def build_analysis_prompt(context_list: list[str], deputado_nome: str) -> str:
     """Monta prompt adaptativo baseado na quantidade e tipo de dados."""
     src = _count_sources(context_list)
 
@@ -231,12 +229,13 @@ NAO invente informacoes ausentes do contexto. Se um dado nao esta disponivel, di
 # Geração + persistência
 # ---------------------------------------------------------------------------
 
+
 def _save_persona(
     deputado_id: int,
     query_text: str,
     contexto_rag: str,
     analise: str,
-    fontes_usadas: List[str],
+    fontes_usadas: list[str],
     duracao: float,
     conn=None,
 ):
@@ -248,7 +247,8 @@ def _save_persona(
 
     try:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO parlamentares_personas
                     (deputado_id, query_text, contexto_rag, analise_gerada,
                      fontes_usadas, versao_prompt, duracao_segundos)
@@ -260,15 +260,17 @@ def _save_persona(
                     data_analise = NOW(),
                     duracao_segundos = EXCLUDED.duracao_segundos,
                     query_text = EXCLUDED.query_text
-            """, (
-                deputado_id,
-                query_text,
-                contexto_rag,
-                analise,
-                fontes_usadas,
-                RAG_PERSONA_VERSION,
-                duracao,
-            ))
+            """,
+                (
+                    deputado_id,
+                    query_text,
+                    contexto_rag,
+                    analise,
+                    fontes_usadas,
+                    RAG_PERSONA_VERSION,
+                    duracao,
+                ),
+            )
             conn.commit()
     except Exception as e:
         log.error(f"Erro ao salvar persona para deputado {deputado_id}: {e}")
@@ -278,12 +280,11 @@ def _save_persona(
             conn.close()
 
 
-def _extract_fontes(context_list: List[str]) -> List[str]:
+def _extract_fontes(context_list: list[str]) -> list[str]:
     """Extrai lista de fontes usadas a partir dos prefixes [TYPE]."""
-    fontes: List[str] = []
+    fontes: list[str] = []
     for c in context_list:
-        for prefix in ("[VOTO]", "[EMENDA]", "[PROPOSICAO]",
-                        "[DIARIO_OFICIAL]", "[PERFIL]"):
+        for prefix in ("[VOTO]", "[EMENDA]", "[PROPOSICAO]", "[DIARIO_OFICIAL]", "[PERFIL]"):
             if c.startswith(prefix):
                 tag = prefix.strip("[]").lower()
                 if tag not in fontes:
@@ -295,7 +296,7 @@ def generate_persona_analysis(
     deputado_id: int,
     nome: str,
     query: str | None = None,
-) -> Tuple[str, float, List[str]]:
+) -> tuple[str, float, list[str]]:
     """Gera dossiê comportamental via RAG multi-query + LLM.
 
     Returns:
@@ -315,7 +316,6 @@ def generate_persona_analysis(
 
     # 2. Montar prompt adaptativo
     prompt = build_analysis_prompt(context_list, nome)
-    query_text = query or "Analise comportamental multi-query v2"
 
     # 3. Gerar com LLM
     llm_model = RAG_LLM_MODEL
@@ -324,9 +324,7 @@ def generate_persona_analysis(
 
     ai_client = LocalAIClient(model=llm_model)
 
-    log.info(
-        f"Gerando dossier para {nome} ({len(context_list)} chunks no contexto)..."
-    )
+    log.info(f"Gerando dossier para {nome} ({len(context_list)} chunks no contexto)...")
     inicio = time.time()
     try:
         resposta = ai_client.chat(
@@ -353,21 +351,25 @@ def generate_persona_analysis(
 # CLI
 # ---------------------------------------------------------------------------
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Gera dossies comportamentais via RAG v2 (multi-query)"
     )
     parser.add_argument("--nome", type=str, help="Nome do deputado")
     parser.add_argument(
-        "--query", type=str,
+        "--query",
+        type=str,
         help="Query customizada (override das 4 tematicas)",
     )
     parser.add_argument(
-        "--lote", type=int,
+        "--lote",
+        type=int,
         help="Gerar para N deputados sem persona (v2)",
     )
     parser.add_argument(
-        "--regerar", action="store_true",
+        "--regerar",
+        action="store_true",
         help="Regenerar mesmo se ja existir",
     )
     args = parser.parse_args()
@@ -385,8 +387,7 @@ def main():
     # Descobrir deputado
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT deputado_id, nome FROM parlamentares_dados "
-            "WHERE nome ILIKE %s LIMIT 1",
+            "SELECT deputado_id, nome FROM parlamentares_dados WHERE nome ILIKE %s LIMIT 1",
             (f"%{args.nome}%",),
         )
         result = cur.fetchone()
@@ -398,21 +399,22 @@ def main():
     dep_id, nome_real = result
     log.info(f"Gerando dossier para: {nome_real} (ID: {dep_id})")
 
-    analise, duracao, fontes = generate_persona_analysis(
-        dep_id, nome_real, args.query
-    )
+    analise: str
+    duracao: float
+    fontes: list[str]
+    analise, duracao, fontes = generate_persona_analysis(dep_id, nome_real, args.query)
 
     # Output
     print("\n" + "=" * 80)
     print(f" DOSSIE COMPORTAMENTAL v2: {nome_real} ".center(80, "="))
-    fontes_str = ", ".join(fontes) if fontes else "nenhuma"
+    fontes_str: str = ", ".join(fontes) if fontes else "nenhuma"
     print(f" Fontes: {fontes_str} ".center(80, "-"))
     print("=" * 80 + "\n")
     print(analise)
     print("\n" + "=" * 80 + "\n")
 
     # Salvar
-    context_list = search_context_multiquery(dep_id)
+    context_list: list[str] = search_context_multiquery(dep_id)
     _save_persona(
         dep_id,
         args.query or "Analise comportamental multi-query v2",
@@ -429,14 +431,13 @@ def _generate_with_client(
     deputado_id: int,
     nome: str,
     query: str | None = None,
-) -> Tuple[str, float, List[str]]:
+) -> tuple[str, float, list[str]]:
     """Gera persona usando um client ja existente (sem reload de modelo)."""
     # Multi-query
     context_list = search_context_multiquery(deputado_id)
     if len(context_list) < RAG_MIN_CHUNKS:
         return (
-            f"Dados insuficientes: {len(context_list)} chunks "
-            f"(minimo {RAG_MIN_CHUNKS})",
+            f"Dados insuficientes: {len(context_list)} chunks (minimo {RAG_MIN_CHUNKS})",
             0.0,
             [],
         )
@@ -461,17 +462,17 @@ def _generate_with_client(
     return resposta, duracao, fontes
 
 
-def _run_lote(lote: int, query: str | None, regenerar: bool):
+def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
     """Gera personas em lote para deputados sem persona v2."""
     with get_connection() as conn, conn.cursor() as cur:
         if regenerar:
             cur.execute(
-                "SELECT deputado_id, nome FROM parlamentares_dados "
-                "ORDER BY deputado_id LIMIT %s",
+                "SELECT deputado_id, nome FROM parlamentares_dados ORDER BY deputado_id LIMIT %s",
                 (lote,),
             )
         else:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT pd.deputado_id, pd.nome
                 FROM parlamentares_dados pd
                 LEFT JOIN parlamentares_personas pp
@@ -480,7 +481,12 @@ def _run_lote(lote: int, query: str | None, regenerar: bool):
                 WHERE pp.deputado_id IS NULL
                 ORDER BY pd.deputado_id
                 LIMIT %s
-            """, (RAG_PERSONA_VERSION, lote,))
+            """,
+                (
+                    RAG_PERSONA_VERSION,
+                    lote,
+                ),
+            )
         deputados = cur.fetchall()
 
     if not deputados:
@@ -499,9 +505,7 @@ def _run_lote(lote: int, query: str | None, regenerar: bool):
         for idx, (dep_id, nome_real) in enumerate(deputados, 1):
             log.info(f"[{idx}/{len(deputados)}] {nome_real} (ID: {dep_id})...")
 
-            analise, duracao, fontes = _generate_with_client(
-                ai_client, dep_id, nome_real, query
-            )
+            analise, duracao, fontes = _generate_with_client(ai_client, dep_id, nome_real, query)
 
             if analise.startswith("Dados insuficientes") or analise.startswith("Erro"):
                 log.warning(f"  -> {analise[:80]}")

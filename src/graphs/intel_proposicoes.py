@@ -1,14 +1,15 @@
 import plotly.express as px
-import pandas as pd
+
+from src.db_utils import query_df
 from src.graphs.registry import register_chart
 from src.graphs.theme import aplicar_tema
-from src.db_utils import query_df
+
 
 @register_chart(
     id="emendas_vs_proposicoes",
     title="Emendas PIX vs Proposições (Atividade Legislativa)",
     description="Cruza o valor total recebido por cada parlamentar com o volume de proposições.",
-    category="Inteligência Política"
+    category="Inteligência Política",
 )
 def grafico_emendas_vs_proposicoes():
     """
@@ -27,7 +28,7 @@ def grafico_emendas_vs_proposicoes():
             FROM parlamentar_proposicoes
             GROUP BY parlamentar_nome
         )
-        SELECT 
+        SELECT
             e.parlamentar_nome,
             e.valor_recebido,
             COALESCE(p.qtd_proposicoes, 0) as qtd_proposicoes
@@ -40,37 +41,51 @@ def grafico_emendas_vs_proposicoes():
         return px.scatter(title="Sem dados suficientes")
 
     # Formatação de texto para o hover
-    df['valor_formatado'] = df['valor_recebido'].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    
+    df["valor_formatado"] = df["valor_recebido"].apply(
+        lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    )
+
     # Criar bolhas com variação de tamanho, cor baseado no valor_recebido
     fig = px.scatter(
         df,
         x="qtd_proposicoes",
         y="valor_recebido",
         hover_name="parlamentar_nome",
-        hover_data={"qtd_proposicoes": True, "valor_recebido": False, "valor_formatado": True, "parlamentar_nome": False},
-        labels={
-            "qtd_proposicoes": "Volume de Proposições (Últimos 30 dias)",
-            "valor_recebido": "Total em Emendas PIX (R$)"
+        hover_data={
+            "qtd_proposicoes": True,
+            "valor_recebido": False,
+            "valor_formatado": True,
+            "parlamentar_nome": False,
         },
-        template=GRAPH_THEME
+        labels={
+            "qtd_proposicoes": "Volume de Proposições",
+            "valor_recebido": "Total em Emendas PIX (R$)",
+        },
     )
-    
+    fig = aplicar_tema(fig, "Emendas PIX vs Proposições (Atividade Legislativa)")
+
     # Textos seletivos para não poluir
-    df['text'] = df.apply(lambda row: row['parlamentar_nome'] if row['qtd_proposicoes'] > 3 or row['valor_recebido'] > 10000000 else '', axis=1)
-    
-    fig.update_traces(
-        mode='markers+text',
-        text=df['text'],
-        textposition='top center', 
-        marker=dict(size=14, opacity=0.8, color="#ff4b4b", line=dict(width=1, color="white"))
+    df["text"] = df.apply(
+        lambda row: (
+            row["parlamentar_nome"]
+            if row["qtd_proposicoes"] > 3 or row["valor_recebido"] > 10000000
+            else ""
+        ),
+        axis=1,
     )
-    
+
+    fig.update_traces(
+        mode="markers+text",
+        text=df["text"],
+        textposition="top center",
+        marker=dict(size=14, opacity=0.8, color="#ff4b4b", line=dict(width=1, color="white")),
+    )
+
     fig.update_layout(
-        yaxis_type="log", # Facilita visualização de grandes variações de R$
+        yaxis_type="log",  # Facilita visualização de grandes variações de R$
         margin=dict(l=40, r=40, t=60, b=40),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        title_font=dict(size=18, color="white")
+        title_font=dict(size=18, color="white"),
     )
     return fig

@@ -13,8 +13,8 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.localai_manager import manager as localai_manager
 from config.settings import LOCALAI_BASE_URL
+from src.localai_manager import manager as localai_manager
 
 SYSTEM_PROMPT_AGENTE = """Você é o AGENTE INVESTIGATIVO OFICIAL do TransfereGov API.
 Sua missão é realizar auditorias e análises detalhadas do comportamento parlamentar de deputados federais brasileiros.
@@ -31,7 +31,7 @@ Seja estritamente factual, objetivo e estruture a resposta sempre nas seguintes 
 def test_model(model_id: str, label: str, prompt_user: str) -> dict:
     """Executa inferência testando modelo e descarregando anteriores."""
     print(f"\n🤖 Testando Modelo: '{label}' ({model_id})")
-    
+
     # Gerenciamento de ciclo de vida
     localai_manager.ensure_model_loaded(model_id)
     time.sleep(2)
@@ -41,7 +41,7 @@ def test_model(model_id: str, label: str, prompt_user: str) -> dict:
         "model": model_id,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT_AGENTE},
-            {"role": "user", "content": prompt_user}
+            {"role": "user", "content": prompt_user},
         ],
         "temperature": 0.4,
         "max_tokens": 1500,
@@ -60,10 +60,16 @@ def test_model(model_id: str, label: str, prompt_user: str) -> dict:
             tps = round(tokens / max(elapsed, 1), 1)
 
             print(f"  ✅ Resposta em {elapsed:.1f}s | {tokens} tokens ({tps} tok/s)")
-            print(f"  📝 Amostra ({len(content)} chars):\n" + "-"*40)
+            print(f"  📝 Amostra ({len(content)} chars):\n" + "-" * 40)
             print(content[:350] + ("..." if len(content) > 350 else ""))
             print("-" * 40)
-            return {"sucesso": True, "modelo": label, "tempo": elapsed, "tps": tps, "length": len(content)}
+            return {
+                "sucesso": True,
+                "modelo": label,
+                "tempo": elapsed,
+                "tps": tps,
+                "length": len(content),
+            }
         else:
             print(f"  ❌ Erro HTTP {resp.status_code}: {resp.text[:200]}")
             return {"sucesso": False, "modelo": label, "erro": resp.text, "tempo": elapsed}
@@ -102,7 +108,9 @@ Elabore o dossiê investigativo conforme suas instruções de agente."""
     print("============================================================")
     for r in resultados:
         if r.get("sucesso"):
-            print(f"{r['modelo']:<35} | Tempo: {r['tempo']:.1f}s | Velocidade: {r['tps']} tok/s | Chars: {r['length']}")
+            print(
+                f"{r['modelo']:<35} | Tempo: {r['tempo']:.1f}s | Velocidade: {r['tps']} tok/s | Chars: {r['length']}"
+            )
         else:
             print(f"{r['modelo']:<35} | FALHOU ({r.get('erro', 'erro')[:40]})")
 

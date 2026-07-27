@@ -25,11 +25,14 @@ def normalize(text: str) -> str:
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     text = text.upper().strip()
     for prefix in [
-        "MUNICIPIO DE ", "MUNICÍPIO DE ",
-        "ESTADO DE ", "ESTADO DA ", "ESTADO DO ",
+        "MUNICIPIO DE ",
+        "MUNICÍPIO DE ",
+        "ESTADO DE ",
+        "ESTADO DA ",
+        "ESTADO DO ",
     ]:
         if text.startswith(prefix):
-            text = text[len(prefix):]
+            text = text[len(prefix) :]
     return text.strip()
 
 
@@ -93,17 +96,16 @@ async def sync_vereadors(
         """
         print("🔎 Consultando votos por candidato (tse_votacao)...")
         tse_votos = await executar_query(VOT_SPEC, sql_votos, [])
-        votos_map = {
-            int(r["sq_candidato"]): int(r.get("total_votos") or 0)
-            for r in tse_votos
-        }
+        votos_map = {int(r["sq_candidato"]): int(r.get("total_votos") or 0) for r in tse_votos}
         print(f"🗳️  Votos mapeados para {len(votos_map)} candidatos")
     except Exception as e:
         print(f"⚠️  Aviso: não foi possível consultar votos (tse_votacao): {e}")
         print("    Os votos ficarão zerados. O enriquecedor continua normalmente.")
 
     # ── 4. Mapear candidatos → municípios IBGE ────────────────────────
-    matched_records: list[tuple] = []
+    matched_records: list[
+        tuple[int, int, str, str, str, str, str, str, int, int, str, str]
+    ] = []
     unmatched_count = 0
 
     for r in tse_cand:
@@ -122,20 +124,22 @@ async def sync_vereadors(
 
         if ibge_match:
             mun_id, mun_nome, mun_uf = ibge_match
-            matched_records.append((
-                sq_cand,           # sq_candidato (PK)
-                mun_id,            # municipio_id
-                mun_nome,          # municipio_nome
-                mun_uf,            # uf
-                nome_completo,     # nome_completo
-                nome_urna,         # nome_urna
-                partido,           # sigla_partido
-                "",                # numero_candidato (not in DuckDB dataset)
-                ano,               # ano_eleicao
-                votos,             # votos
-                situacao,          # situacao_candidatura
-                coligacao,         # coligacao
-            ))
+            matched_records.append(
+                (
+                    sq_cand,  # sq_candidato (PK)
+                    mun_id,  # municipio_id
+                    mun_nome,  # municipio_nome
+                    mun_uf,  # uf
+                    nome_completo,  # nome_completo
+                    nome_urna,  # nome_urna
+                    partido,  # sigla_partido
+                    "",  # numero_candidato (not in DuckDB dataset)
+                    ano,  # ano_eleicao
+                    votos,  # votos
+                    situacao,  # situacao_candidatura
+                    coligacao,  # coligacao
+                )
+            )
         else:
             unmatched_count += 1
             if dry_run and unmatched_count <= 5:
@@ -146,20 +150,47 @@ async def sync_vereadors(
     # ── 5. Calcular percentual de votos por município ──────────────────
     votos_por_municipio: dict[int, int] = {}
     for rec in matched_records:
-        mun_id = rec[1]
-        votos_por_municipio[mun_id] = votos_por_municipio.get(mun_id, 0) + rec[9]
+        m_id: int = rec[1]
+        votos_por_municipio[m_id] = votos_por_municipio.get(m_id, 0) + rec[9]
 
     # Atualizar records com percentual
-    final_records: list[tuple] = []
+    final_records: list[
+        tuple[int | str, int, str, str, str, str, str, str, int, int, float, str, str]
+    ] = []
     for rec in matched_records:
-        sq_cand, mun_id, mun_nome, mun_uf, nome_completo, nome_urna, \
-            partido, numero, ano_eleicao, votos, situacao, coligacao = rec
+        (
+            sq_cand,
+            mun_id,
+            mun_nome,
+            mun_uf,
+            nome_completo,
+            nome_urna,
+            partido,
+            numero,
+            ano_eleicao,
+            votos,
+            situacao,
+            coligacao,
+        ) = rec
         total_municipio = votos_por_municipio.get(mun_id, 0)
         pct = round(votos / total_municipio * 100, 2) if total_municipio > 0 else 0.0
-        final_records.append((
-            sq_cand, mun_id, mun_nome, mun_uf, nome_completo, nome_urna,
-            partido, numero, ano_eleicao, votos, pct, situacao, coligacao,
-        ))
+        final_records.append(
+            (
+                sq_cand,
+                mun_id,
+                mun_nome,
+                mun_uf,
+                nome_completo,
+                nome_urna,
+                partido,
+                numero,
+                ano_eleicao,
+                votos,
+                pct,
+                situacao,
+                coligacao,
+            )
+        )
 
     # ── 6. UPSERT no PostgreSQL ───────────────────────────────────────
     if not dry_run and final_records:
@@ -210,21 +241,10 @@ async def sync_vereadors(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Sincronizar candidatos a vereador via TSE"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Não salvar alterações no banco"
-    )
-    parser.add_argument(
-        "--uf", type=str,
-        help="Filtrar por UF específica (ex: AL, SP, BA)"
-    )
-    parser.add_argument(
-        "--ano", type=int, default=2024,
-        help="Ano da eleição (padrão: 2024)"
-    )
+    parser = argparse.ArgumentParser(description="Sincronizar candidatos a vereador via TSE")
+    parser.add_argument("--dry-run", action="store_true", help="Não salvar alterações no banco")
+    parser.add_argument("--uf", type=str, help="Filtrar por UF específica (ex: AL, SP, BA)")
+    parser.add_argument("--ano", type=int, default=2024, help="Ano da eleição (padrão: 2024)")
     args = parser.parse_args()
 
     asyncio.run(
