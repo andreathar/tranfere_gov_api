@@ -159,3 +159,16 @@ LOCALAI_MODELS = {
 
 # Modelo padrão para jobs de pipeline
 LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["general"]
+
+# ---------------------------------------------------------------------------
+# RAG — Qdrant + Embeddings + Persona
+# ---------------------------------------------------------------------------
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_COLLECTION = "deputados_perfis"
+EMBEDDER_MODEL = "nomic-embed-text-v1.5"
+EMBEDDING_DIM = 768
+RAG_LLM_MODEL = LOCALAI_MODELS["general"]
+RAG_PERSONA_VERSION = 2  # Incrementar para regenerar todas as personas
+RAG_MIN_CHUNKS = 3       # Mínimo de chunks para gerar persona (evitar análises vazias)
+RAG_MAX_CHUNKS = 25      # Máximo de chunks por deputado no contexto final
+RAG_BATCH_SIZE = 50      # Tamanho do batch para embedding em lote

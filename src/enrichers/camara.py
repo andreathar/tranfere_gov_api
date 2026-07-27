@@ -28,8 +28,12 @@ def buscar_deputado(nome: str) -> dict | None:
             data: dict = resp.json()
             deputados: list = data.get("dados", [])
             if deputados:
-                result: dict = deputados[0]
-                return result
+                dep_id = deputados[0].get("id")
+                # Busca detalhada
+                detalhe_resp = requests.get(f"{url}/{dep_id}", timeout=15)
+                if detalhe_resp.status_code == 200:
+                    return detalhe_resp.json().get("dados", {})
+                return deputados[0]
     except Exception:
         pass
     return None
@@ -62,8 +66,8 @@ def main():
     nao_encontrados = 0
 
     for i, nome in enumerate(nomes, 1):
-        # Pular se já existe
-        cur.execute("SELECT id FROM parlamentares_dados WHERE nome = %s", (nome,))
+        # Pular se já existe e está preenchido
+        cur.execute("SELECT id FROM parlamentares_dados WHERE nome = %s AND ultimo_status IS NOT NULL", (nome,))
         if cur.fetchone():
             continue
 
@@ -88,7 +92,16 @@ def main():
                     ON CONFLICT (deputado_id) DO UPDATE SET
                         nome = EXCLUDED.nome,
                         sigla_partido = EXCLUDED.sigla_partido,
-                        uf = EXCLUDED.uf
+                        uf = EXCLUDED.uf,
+                        gabinete_numero = EXCLUDED.gabinete_numero,
+                        gabinete_predio = EXCLUDED.gabinete_predio,
+                        gabinete_telefone = EXCLUDED.gabinete_telefone,
+                        gabinete_email = EXCLUDED.gabinete_email,
+                        ultimo_status = EXCLUDED.ultimo_status,
+                        data_nascimento = EXCLUDED.data_nascimento,
+                        municipio_nascimento = EXCLUDED.municipio_nascimento,
+                        uf_nascimento = EXCLUDED.uf_nascimento,
+                        escolaridade = EXCLUDED.escolaridade
                 """,
                     (
                         dep.get("id"),
