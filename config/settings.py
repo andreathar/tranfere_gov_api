@@ -141,24 +141,26 @@ LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080/v1")
 LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "300"))  # segundos
 LOCALAI_MAX_RETRIES = int(os.getenv("LOCALAI_MAX_RETRIES", "3"))
 
-# Modelos categorizados por tarefa
+# Modelos categorizados por tarefa (validados via benchmark)
 LOCALAI_MODELS = {
-    # Análise pesada (melhor qualidade, mais lento)
-    "analysis": "qwen3.6-27b-fable-fusion-711-uncensored-heretic-nm-dau-neo-max-mtp",
+    # Análise de dossiês (qualidade e redação em PT-BR ideal — 36.8 tok/s)
+    "gemma": "gemma-4-e2b-it",
+    # Análise profunda / auditoria pesada (7.7 tok/s)
+    "analysis": "llama-3.1-8b-q4-k-m",
     # Código
     "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
-    # Classificação / tarefas simples (rápido - CPU friendly)
-    "fast": "minicpm5-1b-claude-opus-fable5-v2-thinking",
-    # Uso geral (equilíbrio qualidade/velocidade)
-    "general": "llama-3.1-8b-q4-k-m",
+    # Tarefas ultra-rápidas / NER (88.9 tok/s - resposta em 11s)
+    "fast": "qwen2.5-1.5b-instruct-q4-k-m",
+    # Uso geral
+    "general": "gemma-4-e2b-it",
     # Embeddings
     "embedding": "nomic-embed-text-v1.5",
-    # Roteamento inteligente (deixa o LocalAI escolher)
+    # Roteamento inteligente
     "router": "intelligent-router",
 }
 
 # Modelo padrão para jobs de pipeline
-LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["general"]
+LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["gemma"]
 
 # ---------------------------------------------------------------------------
 # RAG — Qdrant + Embeddings + Persona
@@ -167,8 +169,8 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = "deputados_perfis"
 EMBEDDER_MODEL = "nomic-embed-text-v1.5"
 EMBEDDING_DIM = 768
-RAG_LLM_MODEL = LOCALAI_MODELS["general"]
-RAG_PERSONA_VERSION = 2  # Incrementar para regenerar todas as personas
+RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "gemma-4-e2b-it")  # gemma-4-e2b-it (qualidade/velocidade ideal)
+RAG_PERSONA_VERSION = 3  # Incrementar para a nova versão enriquecida
 RAG_MIN_CHUNKS = 3       # Mínimo de chunks para gerar persona (evitar análises vazias)
-RAG_MAX_CHUNKS = 25      # Máximo de chunks por deputado no contexto final
+RAG_MAX_CHUNKS = 30      # Máximo de chunks por deputado no contexto final
 RAG_BATCH_SIZE = 50      # Tamanho do batch para embedding em lote

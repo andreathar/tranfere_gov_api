@@ -284,7 +284,7 @@ function switchTab(tabName) {
 
 async function loadTabData(tab) {
   const id = state.currentDeputadoId;
-  if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer' && tab !== 'diario' && tab !== 'prefeitos') return;
+  if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer' && tab !== 'diario' && tab !== 'prefeitos' && tab !== 'vereadores') return;
 
 
   try {
@@ -336,6 +336,9 @@ async function loadTabData(tab) {
     }
     if(tab === 'prefeitos') {
       loadPrefeitosTab('');
+    }
+    if(tab === 'vereadores') {
+      loadVereadoresTab('');
     }
 
   } catch(e) {
@@ -924,6 +927,40 @@ document.addEventListener('DOMContentLoaded', () => {
       loadPrefeitosTab('');
     });
   }
+
+  // Vereadores Listeners
+  const btnSearchVereadores = document.getElementById('btn-search-vereadores');
+  const btnRankingVereadores = document.getElementById('btn-ranking-vereadores');
+  const inputVereador = document.getElementById('vereador-search-input');
+  const ufFilter = document.getElementById('vereador-uf-filter');
+  const partidoFilter = document.getElementById('vereador-partido-filter');
+
+  if (btnSearchVereadores && inputVereador) {
+    btnSearchVereadores.addEventListener('click', () => {
+      loadVereadoresTab(inputVereador.value, ufFilter?.value, partidoFilter?.value);
+    });
+    inputVereador.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') loadVereadoresTab(inputVereador.value, ufFilter?.value, partidoFilter?.value);
+    });
+  }
+  if (btnRankingVereadores) {
+    btnRankingVereadores.addEventListener('click', () => {
+      if (inputVereador) inputVereador.value = '';
+      if (ufFilter) ufFilter.value = '';
+      if (partidoFilter) partidoFilter.value = '';
+      loadVereadoresTab('');
+    });
+  }
+  if (ufFilter) {
+    ufFilter.addEventListener('change', () => {
+      loadVereadoresTab(inputVereador?.value || '', ufFilter.value, partidoFilter?.value);
+    });
+  }
+  if (partidoFilter) {
+    partidoFilter.addEventListener('change', () => {
+      loadVereadoresTab(inputVereador?.value || '', ufFilter?.value, partidoFilter.value);
+    });
+  }
 });
 
 // Prefeitos Explorer Tab
@@ -1135,3 +1172,118 @@ async function openPrefeitoModal(municipioId, selectedAno = null) {
     body.innerHTML = `<p style="color:var(--danger); text-align:center;">Erro ao carregar perfil: ${e.message}</p>`;
   }
 }
+
+// =========================================================================
+// Vereadores em Exercício Tab
+// =========================================================================
+
+let vereadoresDataCache = null;
+
+async function loadVereadoresTab(query, uf, partido) {
+  const tableBody = document.querySelector('#table-vereadores tbody');
+  if (!tableBody) return;
+
+  tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;"><div class="spinner" style="margin:0 auto 0.5rem;"></div>Carregando vereadores...</td></tr>';
+
+  try {
+    // 1. Carregar KPIs + gráfico de partido (uma vez)
+    if (!vereadorPartidosLoaded) {
+      loadVereadoresKpis();
+      loadVereadoresPartidoChart(uf);
+    }
+
+    // 2. Carregar tabela
+    let url;
+    if (query && query.trim() !== '') {
+      url = `${API_BASE}/vereadores/search?q=${encodeURIComponent(query.trim())}`;
+    } else {
+      const params = new URLSearchParams();
+      params.set('limit', '50');
+      if (uf) params.set('uf', uf);
+      if (partido) params.set('partido', partido);
+      url = `${API_BASE}/vereadores/ranking?${params.toString()}`;
+    }
+
+    const res = await fetch(url).then(r => r.json());
+    renderVereadoresTable(res);
+  } catch (e) {
+    tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--danger); text-align:center; padding:1.5rem;">Erro ao carregar vereadores: ${e.message}</td></tr>`;
+  }
+}
+
+let vereadorPartidosLoaded = false;
+
+async function loadVereadoresKpis() {
+  try {
+    const res = await fetch(`${API_BASE}/vereadores/resumo`).then(r => r.json());
+    document.getElementById('kpi-ver-total').textContent = formatNum(res.total_eleitos);
+    document.getElementById('kpi-ver-municipios').textContent = formatNum(res.total_municipios);
+    document.getElementById('kpi-ver-partidos').textContent = formatNum(res.total_partidos);
+    document.getElementById('kpi-ver-media-votos').textContent = formatNum(res.media_votos);
+  } catch (e) {
+    console.error('Erro ao carregar KPIs de vereadores:', e);
+  }
+}
+
+async function loadVereadoresPartidoChart(uf) {
+  try {
+    const params = new URLSearchParams();
+    if (uf) params.set('uf', uf);
+    const url = `${API_BASE}/vereadores/por-partido${params.toString() ? '?' + params.toString() : ''}`;
+    const data = await fetch(url).then(r => r.json());
+
+    const labels = data.map(d => d.partido);
+    const values = data.map(d => d.total_eleitos);
+    const colors = data.map((_, i) => `hsl(${210 + i * 15}, 70%, 55%)`);
+
+    Plotly.newPlot('chart-vereadores-partido', [{
+      type: 'bar',
+      x: labels,
+      y: values,
+      marker: { color: colors },
+      text: values.map(v => formatNum(v)),
+      textposition: 'outside'
+    }], {
+      ...plotlyDarkLayout(''),
+      xaxis: { ...plotlyDarkLayout('').xaxis, tickangle: -45 },
+      yaxis: { ...plotlyDarkLayout('').yaxis, title: 'Vereadores Eleitos' },
+      margin: { t: 20, r: 20, l: 50, b: 80 },
+      showlegend: false
+    });
+
+    vereadorPartidosLoaded = true;
+  } catch (e) {
+    console.error('Erro ao carregar gráfico de partidos:', e);
+  }
+}
+
+function renderVereadoresTable(rows) {
+  const tableBody = document.querySelector('#table-vereadores tbody');
+  if (!tableBody) return;
+
+  // Guard: ensure rows is an array (API may return error dict)
+  if (!Array.isArray(rows)) {
+    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--danger);">Resposta inválida da API. Verifique se a migration 018 foi executada.</td></tr>';
+    return;
+  }
+
+  if (rows.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Nenhum vereador encontrado.</td></tr>';
+    return;
+  }
+
+  tableBody.innerHTML = rows.map(r => `
+    <tr>
+      <td><strong>${r.nome_urna || r.nome_completo || '-'}</strong></td>
+      <td>${r.municipio_nome || '-'} <span style="color:var(--text-muted);">(${r.uf || ''})</span></td>
+      <td><span class="badge badge-default" style="background:#1e293b; border:1px solid #475569; color:#f8fafc;">${r.partido || 'N/I'}</span></td>
+      <td><strong style="color:var(--success);">${formatNum(r.votos)}</strong></td>
+      <td>${r.percentual_votos ? r.percentual_votos + '%' : '-'}</td>
+      <td>${r.ibge_populacao ? formatNum(r.ibge_populacao) + ' hab' : '-'}</td>
+      <td>${r.ano_eleicao || '-'}</td>
+    </tr>
+  `).join('');
+}
+
+// Reset cache when switching to vereadores tab
+const _origSwitchNavMode = typeof switchNavMode === 'function' ? switchNavMode : null;

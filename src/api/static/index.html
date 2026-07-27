@@ -16,6 +16,7 @@
             <nav class="main-nav">
                 <button class="nav-btn active" data-nav="deputados" onclick="switchNavMode('deputados')">👥 Deputados</button>
                 <button class="nav-btn" data-nav="prefeitos" onclick="switchNavMode('prefeitos')">🏛️ Prefeitos</button>
+                <button class="nav-btn" data-nav="vereadores" onclick="switchNavMode('vereadores')">🗣️ Vereadores</button>
                 <button class="nav-btn" data-nav="inteligencia" onclick="switchNavMode('inteligencia')">🚀 Inteligência</button>
                 <button class="nav-btn" data-nav="saude-explorer" onclick="switchNavMode('saude-explorer')">🏥 Saúde</button>
                 <button class="nav-btn" data-nav="diario" onclick="switchNavMode('diario')">📰 Diário Oficial</button>
@@ -227,6 +228,76 @@
                 </div>
 
 
+                <!-- Vereadores em Exercício Tab -->
+                <div id="tab-vereadores" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Vereadores em Exercício 🗣️</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Vereadores eleitos nas eleições municipais (TSE 2024). Dados de votação, partido e município.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <input type="text" id="vereador-search-input" placeholder="Buscar por nome, município, partido ou UF..." style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none; min-width:300px;">
+                            <select id="vereador-uf-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 0.75rem; border-radius:8px; outline:none;">
+                                <option value="">Todas UFs</option>
+                            </select>
+                            <select id="vereador-partido-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 0.75rem; border-radius:8px; outline:none;">
+                                <option value="">Todos Partidos</option>
+                            </select>
+                            <button id="btn-search-vereadores" style="background:var(--accent-blue); color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Buscar</button>
+                            <button id="btn-ranking-vereadores" style="background:var(--border-color); color:var(--text-main); border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Top Ranking</button>
+                        </div>
+                    </header>
+
+                    <div class="kpi-grid" id="vereadores-kpis" style="margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem;">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Total Eleitos</span>
+                            <span id="kpi-ver-total" class="kpi-value">—</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Municípios</span>
+                            <span id="kpi-ver-municipios" class="kpi-value">—</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Partidos</span>
+                            <span id="kpi-ver-partidos" class="kpi-value">—</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Média de Votos</span>
+                            <span id="kpi-ver-media-votos" class="kpi-value">—</span>
+                        </div>
+                    </div>
+
+                    <div class="charts-row" style="margin-bottom: 1.5rem;">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>Vereadores por Partido</h3>
+                            <div id="chart-vereadores-partido" class="chart-container" style="height:350px;"></div>
+                        </div>
+                    </div>
+
+                    <div class="table-card">
+                        <h3>Lista de Vereadores Eleitos</h3>
+                        <div class="table-responsive">
+                            <table id="table-vereadores">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Município / UF</th>
+                                        <th>Partido</th>
+                                        <th>Votos</th>
+                                        <th>% Mun.</th>
+                                        <th>Pop. Mun.</th>
+                                        <th>Ano</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Carregando vereadores...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+
                 <!-- Inteligência Tab -->
                 <div id="tab-inteligencia" class="tab-pane">
                     <div class="tab-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
@@ -291,7 +362,7 @@
         </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260727"></script>
 
     <!-- Modals for Auditoria -->
     <div id="modal-saude" class="modal hidden">

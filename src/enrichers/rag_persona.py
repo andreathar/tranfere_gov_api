@@ -47,7 +47,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Multi-Query RAG — 4 queries temáticas
+# Multi-Query RAG — 5 queries temáticas (incluindo TSE / Conexões Partidárias)
 # ---------------------------------------------------------------------------
 
 QUERIES_TEMATICAS = [
@@ -55,6 +55,7 @@ QUERIES_TEMATICAS = [
     "Emendas parlamentares Pix, municípios beneficiários e valores transferidos",
     "Proposições legislativas apresentadas e áreas temáticas de foco",
     "Atos no diário oficial, fiscalização, decretos e movimentações relevantes",
+    "Conexão política local, partido dos prefeitos beneficiados e alinhamento eleitoral municipal",
 ]
 
 
@@ -82,6 +83,7 @@ def search_context_qdrant(
         collection_name=QDRANT_COLLECTION,
         query=query_vector,
         query_filter=filtro,
+        search_params=qdrant_models.SearchParams(hnsw_ef=128),
         limit=limit,
     )
 
@@ -96,7 +98,7 @@ def search_context_qdrant(
 def search_context_multiquery(
     deputado_id: int, top_k_per_query: int = 8
 ) -> List[str]:
-    """Executa 4 queries temáticas, merge + dedup, retorna top chunks únicos."""
+    """Executa 5 queries temáticas, merge + dedup, retorna top chunks únicos."""
     all_chunks: List[str] = []
     for q in QUERIES_TEMATICAS:
         chunks = search_context_qdrant(deputado_id, q, limit=top_k_per_query)
@@ -128,7 +130,7 @@ def _count_sources(context_list: List[str]) -> dict:
     """Conta chunks por tipo de fonte."""
     counts = {
         "votos": 0, "emendas": 0, "proposicoes": 0,
-        "diario_oficial": 0, "perfil": 0,
+        "diario_oficial": 0, "perfil": 0, "conexao_politica": 0,
     }
     for c in context_list:
         upper = c.upper()
@@ -142,6 +144,8 @@ def _count_sources(context_list: List[str]) -> dict:
             counts["diario_oficial"] += 1
         elif "[PERFIL]" in upper:
             counts["perfil"] += 1
+        elif "[CONEXAO_POLITICA]" in upper:
+            counts["conexao_politica"] += 1
     return counts
 
 
@@ -181,6 +185,15 @@ def build_analysis_prompt(context_list: List[str], deputado_nome: str) -> str:
    - Coerencia entre proposicoes e emendas (o que propoe vs. onde gasta)
 """
 
+    # Seção de conexao política
+    secao_politica = ""
+    if src["conexao_politica"] > 0:
+        secao_politica = """
+9. **FISIOLOGISMO E ALINHAMENTO MUNICIPAL (TSE x EMENDAS)**:
+   - Analise se as emendas foram concentradas em prefeituras governadas pelo MESMO PARTIDO do deputado ou da sua coligação.
+   - Identifique indícios de apadrinhamento político ou favorecimento partidário local em repasses de emendas PIX.
+"""
+
     contexto_str = "\n".join(f"  - {c}" for c in context_list)
     fontes_str = ", ".join(f"{k}: {v}" for k, v in src.items() if v > 0)
 
@@ -199,14 +212,14 @@ INSTRUCOES DE ANALISE (Markdown):
 
 3. **CRUZAMENTO DE DADOS**: Conecte votos com emendas e proposicoes.
    Exemplo: "Votou contra PEC da saude mas destinou R$ 2M para hospitais."
-   Busque contradies e coerencias entre o que o deputado vota, propoe e financia.
+   Busque contradicoes e coerencias entre o que o deputado vota, propoe e financia.
 
 4. **ALINHAMENTO POLITICO**: Com base nos votos nominais, estime o grau de
-   alinhamento com a base do governo. Identifique momentos de dissesso.
+   alinhamento com a base do governo. Identifique momentos de dissenso.
 
-5. **ANOMALIAS**: Valores atipicos em emendas, entidades pouco transparentes,
-   padroes que merecem investigacao mais profunda.
-{secao_votos}{secao_emendas}{secao_props}
+5. **ANOMALIAS E FISIOLOGISMO**: Valores atipicos em emendas, apadrinhamento de prefeitos do mesmo partido,
+   entidades pouco transparentes, padroes que merecem investigacao mais profunda.
+{secao_votos}{secao_emendas}{secao_props}{secao_politica}
 
 FORMATO: Markdown com titulos, bullet points e dados numericos.
 TOM: Firme, critico, fundamentado em dados reais.

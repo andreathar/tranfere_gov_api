@@ -399,3 +399,143 @@ def get_votos_por_votacao(votacao_id: str) -> list[dict]:
             (votacao_id,),
         )
         return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Vereadores em Exercício (TSE / Eleições Municipais)
+# ---------------------------------------------------------------------------
+
+
+def search_vereadores(query: str) -> list[dict]:
+    """Busca vereadores eleitos por nome, município, partido ou UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT sq_candidato, municipio_nome, uf, nome_completo,
+                       nome_urna, partido, ano_eleicao, votos, percentual_votos,
+                       situacao_candidatura, coligacao, ibge_populacao, ibge_regiao
+                FROM v_vereadores_em_exercicio
+                WHERE nome_completo ILIKE %s
+                   OR nome_urna ILIKE %s
+                   OR municipio_nome ILIKE %s
+                   OR partido ILIKE %s
+                   OR uf ILIKE %s
+                ORDER BY votos DESC
+                LIMIT 30
+            """,
+            (f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%", f"%{query}%"),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_ranking_vereadores(
+    limit: int = 30,
+    partido: str | None = None,
+    uf: str | None = None,
+) -> list[dict]:
+    """Ranking de vereadores por votos, com filtros opcionais."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        where_parts: list[str] = ["1=1"]
+        params: list = []
+        if partido:
+            where_parts.append("partido = %s")
+            params.append(partido.upper())
+        if uf:
+            where_parts.append("uf = %s")
+            params.append(uf.upper())
+        where_sql = " AND ".join(where_parts)
+        params.append(limit)
+        cur.execute(
+            f"""
+                SELECT sq_candidato, municipio_nome, uf, nome_completo,
+                       nome_urna, partido, ano_eleicao, votos, percentual_votos,
+                       situacao_candidatura, coligacao, ibge_populacao, ibge_regiao
+                FROM v_vereadores_em_exercicio
+                WHERE {where_sql}
+                ORDER BY votos DESC
+                LIMIT %s
+            """,
+            tuple(params),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_resumo_vereadores() -> dict:
+    """Retorna KPIs agregados dos vereadores eleitos."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    COUNT(*) AS total_eleitos,
+                    COUNT(DISTINCT municipio_id) AS total_municipios,
+                    COUNT(DISTINCT partido) AS total_partidos,
+                    COUNT(DISTINCT uf) AS total_ufs,
+                    SUM(votos) AS total_votos,
+                    ROUND(AVG(votos), 0) AS media_votos
+                FROM v_vereadores_em_exercicio
+            """
+        )
+        row = cur.fetchone()
+        return _row_to_dict(row) or {}
+
+
+def get_vereadores_por_partido(uf: str | None = None) -> list[dict]:
+    """Retorna contagem de vereadores eleitos por partido, opcionalmente filtrado por UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        if uf:
+            cur.execute(
+                """
+                    SELECT partido, COUNT(*) AS total_eleitos, SUM(votos) AS total_votos
+                    FROM v_vereadores_em_exercicio
+                    WHERE uf = %s
+                    GROUP BY partido
+                    ORDER BY total_eleitos DESC
+                """,
+                (uf.upper(),),
+            )
+        else:
+            cur.execute(
+                """
+                    SELECT partido, COUNT(*) AS total_eleitos, SUM(votos) AS total_votos
+                    FROM v_vereadores_em_exercicio
+                    GROUP BY partido
+                    ORDER BY total_eleitos DESC
+                """
+            )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_vereadores_por_municipio(municipio_id: int) -> list[dict]:
+    """Retorna todos os vereadores eleitos de um município específico."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT sq_candidato, municipio_nome, uf, nome_completo,
+                       nome_urna, partido, numero_candidato, ano_eleicao,
+                       votos, percentual_votos, situacao_candidatura,
+                       coligacao, ibge_populacao, ibge_regiao, ibge_idhm
+                FROM v_vereadores_em_exercicio
+                WHERE municipio_id = %s
+                ORDER BY votos DESC
+            """,
+            (municipio_id,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_vereadores_por_uf(uf: str) -> list[dict]:
+    """Retorna todos os vereadores eleitos de uma UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT sq_candidato, municipio_nome, uf, nome_completo,
+                       nome_urna, partido, numero_candidato, ano_eleicao,
+                       votos, percentual_votos, situacao_candidatura,
+                       coligacao, ibge_populacao, ibge_regiao
+                FROM v_vereadores_em_exercicio
+                WHERE uf = %s
+                ORDER BY municipio_nome, votos DESC
+            """,
+            (uf.upper(),),
+        )
+        return _rows_to_list(cur.fetchall())

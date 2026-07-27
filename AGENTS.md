@@ -241,6 +241,23 @@ Gera documentos seguindo Manual de Redação da Presidência 3ª edição. Tipos
 
 ---
 
+## RAG v3 & Integração LocalAI
+
+- **LocalAIManager (`src/localai_manager.py`)**: Gerencia a exclusividade de VRAM na GPU. Antes de chamar qualquer modelo, faz a varredura (`is_model_loaded`) e descarrega os inativos (`unload_model` via `/backend/shutdown`), eliminando erros de estouro (OOM / RPC EOF).
+- **Modelos Validados e Categorizados (`config/settings.py`)**:
+  - `gemma-4-e2b-it` (Padrão RAG): **36.8 tok/s** (dossiê completo em ~30s). Redação em PT-BR perfeita e tabelas Markdown ricas.
+  - `qwen2.5-1.5b-instruct-q4-k-m` (Fast): **88.9 tok/s** (resposta em ~11s). Ideal para triagens diárias e NER.
+  - `llama-3.1-8b-q4-k-m` (Analysis): **7.7 tok/s** (respostas em ~120s). Análise investigativa profunda com 24 GPU layers.
+- **Multi-Query RAG v3 (`src/enrichers/rag_persona.py`)**: 5 queries temáticas no Qdrant:
+  1. Padrão de votos nominais
+  2. Emendas PIX e valores por município
+  3. Proposições legislativas
+  4. Atos do Diário Oficial
+  5. **Conexões políticas municipais (TSE x Emendas)**: cruza partido do deputado x prefeito eleito no município receptor para identificar apadrinhamento local / fisiologismo.
+- **Suíte de Benchmark (`scripts/benchmark_models.py`)**: Avalia automaticamente modelos com pontuação de qualidade (0-100), velocidade e preenchimento de seções analíticas.
+
+---
+
 ## Pitfalls
 
 1. **Response key**: `listaPlanosAcao` (não `data`/`content`/`items`)
@@ -257,11 +274,12 @@ Gera documentos seguindo Manual de Redação da Presidência 3ª edição. Tipos
 12. Novos gráficos: `@register_chart` em módulo `src/graphs/`, auto-import via `__init__.py`
 13. Connection pooling: `psycopg2.pool.ThreadedConnectionPool` (min=2, max=10)
 14. RREO A03 (`--rreo`): usa `nr_periodo=6` (consolidação anual), parser normaliza acentos
+15. VRAM LocalAI: sempre invocar `localai_manager.ensure_model_loaded(model)` antes de requisições pesadas para evitar crash de GPU
 
 ---
 
 ## Referência
 
 - `references/mcp-brasil/` — MCP server gov.br (533 tools, 70 features)
-- `docs/MIGRATIONS.md` — Ordem correta das migrations (002-012)
+- `docs/MIGRATIONS.md` — Ordem correta das migrations (002-014)
 - `data/schema.sql` — Schema completo do banco

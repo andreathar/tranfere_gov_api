@@ -18,6 +18,7 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 013 | migration_013_diario_oficial.sql | Cache diário oficial | 002 |
 | 014 | migration_014_vereadores.sql | Tabela vereadores_dados + views de vereadores | 003, 004 |
 | 015 | migration_015_senadores.sql | Tabela senadores_dados + views de senadores | 002 |
+| 018 | migration_018_vereadores_em_exercicio.sql | Views de vereadores em exercício (frontend): v_vereadores_em_exercicio, v_vereadores_por_partido_resumo, v_vereadores_por_municipio | 014, 004 |
 
 ## Execução
 

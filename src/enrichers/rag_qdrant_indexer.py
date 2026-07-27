@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def ensure_collection(client: QdrantClient, recreate: bool = False):
-    """Cria ou recria a coleção Qdrant."""
+    """Cria ou recria a coleção Qdrant com configurações otimizadas e payload indexes."""
     try:
         collections = [c.name for c in client.get_collections().collections]
         if recreate and QDRANT_COLLECTION in collections:
@@ -58,10 +58,31 @@ def ensure_collection(client: QdrantClient, recreate: bool = False):
                     size=EMBEDDING_DIM,
                     distance=qdrant_models.Distance.COSINE,
                 ),
+                hnsw_config=qdrant_models.HnswConfigDiff(
+                    m=16,
+                    ef_construct=200,
+                    full_scan_threshold=10000,
+                ),
             )
             log.info("Coleção criada com sucesso.")
-        else:
-            log.info(f"Coleção {QDRANT_COLLECTION} já existe.")
+
+        # Garantir payload indexes para busca filtrada ultra-rápida (deputado_id, type, uf)
+        log.info("Garantindo payload indexes no Qdrant (deputado_id, type, uf)...")
+        client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name="deputado_id",
+            field_schema=qdrant_models.PayloadSchemaType.INTEGER,
+        )
+        client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name="type",
+            field_schema=qdrant_models.PayloadSchemaType.KEYWORD,
+        )
+        client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name="uf",
+            field_schema=qdrant_models.PayloadSchemaType.KEYWORD,
+        )
     except Exception as e:
         log.error(f"Erro ao verificar/criar coleção Qdrant: {e}")
         raise
@@ -270,6 +291,44 @@ def _extract_diario_oficial(cur, deputado_id: int, nome: str) -> List[Dict[str, 
     return docs
 
 
+def _extract_prefeitos_aliados(cur, deputado_id: int, nome: str) -> List[Dict[str, Any]]:
+    """Chunks: Cruzamento partidário entre Deputado x Prefeitos Receptores de Emendas (TSE)."""
+    cur.execute("""
+        SELECT b.nome as municipio, pd_dep.sigla_partido as partido_deputado,
+               pr.prefeito_nome, pr.sigla_partido as partido_prefeito, pr.coligacao,
+               SUM(pa.valor_total) as valor_total
+        FROM planos_acao pa
+        JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+        JOIN parlamentares_dados pd_dep
+            ON pa.parlamentar_nome = pd_dep.nome_urna OR pa.parlamentar_nome = pd_dep.nome
+        JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
+        JOIN prefeitos_dados pr ON bm.municipio_id = pr.municipio_id
+        WHERE pd_dep.deputado_id = %s
+        GROUP BY b.nome, pd_dep.sigla_partido, pr.prefeito_nome, pr.sigla_partido, pr.coligacao
+        ORDER BY valor_total DESC
+        LIMIT 15
+    """, (deputado_id,))
+    
+    docs = []
+    for muni, part_dep, pref_nome, part_pref, coligacao, valor in cur.fetchall():
+        mesmo_partido = (part_dep == part_pref)
+        em_coligacao = bool(part_dep and coligacao and part_dep in coligacao)
+        
+        relacao = "MESMO PARTIDO DO DEPUTADO" if mesmo_partido else ("ALIANÇA/COLIGAÇÃO" if em_coligacao else "OPOSIÇÃO/OUTRO PARTIDO")
+        
+        txt = (
+            f"Conexão política local em {muni}: Prefeito {pref_nome} ({part_pref}). "
+            f"Relação com o deputado {nome} ({part_dep}): {relacao}. Total emendas recebidas: R$ {valor:,.2f}."
+        )
+        docs.append({
+            "text": txt,
+            "type": "conexao_politica",
+            "deputado_id": deputado_id,
+            "ref": f"Prefeito de {muni}",
+        })
+    return docs
+
+
 # ---------------------------------------------------------------------------
 # Orchestrador: extrai todos os chunks de um deputado
 # ---------------------------------------------------------------------------
@@ -292,6 +351,7 @@ def get_deputado_texts(deputado_id: int) -> List[Dict[str, Any]]:
         docs.extend(_extract_emendas(cur, deputado_id, nome))
         docs.extend(_extract_votos(cur, deputado_id, nome))
         docs.extend(_extract_diario_oficial(cur, deputado_id, nome))
+        docs.extend(_extract_prefeitos_aliados(cur, deputado_id, nome))
         return docs
 
 
