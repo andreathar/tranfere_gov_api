@@ -1,6 +1,7 @@
 # AGENTS.md — src/api
 
-FastAPI web app — Painel de Inteligência Parlamentar. Consulta deputados, emendas Pix, despesas CEAP, comissões, votações e proposições legislativas.
+Aplicação FastAPI — Painel de Inteligência Parlamentar & Municipal. API REST com 38 endpoints
+distribuídos em 8 routers, suportada por 4 serviços e uma SPA vanilla com Plotly.js.
 
 ---
 
@@ -20,95 +21,212 @@ uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
 
 ```
 src/api/
-├── app.py                  App FastAPI principal (CORS, routers, static files)
+├── app.py                  App FastAPI principal (CORS, 8 routers, static files)
 ├── routes/
-│   └── deputados.py        Rotas REST de deputados (/api/v1/deputados/*)
+│   ├── deputados.py        /api/v1/deputados/*     (10 endpoints)
+│   ├── prefeitos.py        /api/v1/prefeitos/*     (6 endpoints)
+│   ├── vereadores.py       /api/v1/vereadores/*    (6 endpoints)
+│   ├── analytics.py        /api/v1/analytics/*     (4 endpoints)
+│   ├── auditoria.py        /api/v1/auditoria/*     (3 endpoints)
+│   ├── compras.py          /api/v1/compras/*       (2 endpoints)
+│   ├── diario.py           /api/v1/diario/*        (2 endpoints)
+│   └── fnde.py             /api/v1/fnde/*          (5 endpoints)
 ├── services/
-│   ├── db_service.py       Consultas PostgreSQL (psycopg2, sem ORM)
-│   └── camara_service.py   HTTP client assíncrono para API Câmara dos Deputados
+│   ├── db_service.py       Consultas PostgreSQL (psycopg2, 30+ funcoes)
+│   ├── camara_service.py   HTTP client assincrono para API Camara dos Deputados
+│   ├── analytics_service.py Agregacoes analiticas (party-efficiency, deputy-roi, etc.)
+│   └── mcp_service.py      Cliente MCPBrasilClient singleton (mcp-brasil)
 └── static/
-    ├── index.html          Frontend SPA
-    ├── app.js              Lógica JS
-    └── style.css           Estilos
+    ├── index.html          Frontend SPA (vanilla JS, Plotly.js)
+    ├── app.js              Logica JS (1400+ linhas)
+    └── style.css           Estilos (dark theme)
 ```
 
 ---
 
-## Endpoints
+## Endpoints — 38 totais
 
-| Método | Rota | Descrição | Fonte |
+### Deputados (10)
+
+| Metodo | Rota | Descricao | Fonte |
 |--------|------|-----------|-------|
-| GET | `/api/v1/deputados/search?q=` | Busca por nome | DB + API Câmara |
-| GET | `/{id}/perfil` | Perfil completo | DB → API Câmara fallback |
-| GET | `/{id}/emendas` | Emendas do deputado | DB |
-| GET | `/{id}/emendas/resumo` | Resumo agregado | DB |
-| GET | `/{id}/despesas?ano=` | Despesas CEAP | API Câmara |
-| GET | `/{id}/comissoes` | Comissões | API Câmara |
-| GET | `/{id}/votacoes?limit=` | Últimas votações | API Câmara |
-| GET | `/{id}/proposicoes` | Proposições legislativas | API Câmara |
+| GET | `/api/v1/deputados/search?q=` | Busca por nome (ILIKE) | DB + API Camara (fallback) |
+| GET | `/{deputado_id}/perfil` | Perfil completo do deputado | DB -> API Camara fallback |
+| GET | `/{deputado_id}/emendas` | Emendas PIX do deputado | DB |
+| GET | `/{deputado_id}/emendas/resumo` | Resumo agregado de emendas | DB |
+| GET | `/{deputado_id}/despesas?ano=` | Despesas CEAP (paginado, max 500) | API Camara |
+| GET | `/{deputado_id}/comissoes` | Orgaos/comissoes que integra | API Camara |
+| GET | `/{deputado_id}/votacoes?limit=` | Ultimas votacoes nominais | DB (tabela votos_camara) |
+| GET | `/{deputado_id}/proposicoes` | Proposicoes legislativas | API Camara |
+| GET | `/{deputado_id}/full_report?ano=` | Relatorio completo via executar_lote | MCP-Brasil (lote paralelo) |
+| GET | `/{deputado_id}/dossie` | Dossie comportamental RAG | DB (parlamentares_personas_v2) |
+
+### Prefeitos (6)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/prefeitos/search?q=` | Busca por nome, municipio ou UF | DB |
+| GET | `/api/v1/prefeitos/ranking?limit=` | Ranking de prefeituras por captacao | DB |
+| GET | `/{municipio_id}/perfil` | Perfil do prefeito + indicadores | DB |
+| GET | `/{municipio_id}/emendas?ano=&limit=` | Emendas recebidas pelo municipio | DB |
+| GET | `/{municipio_id}/licitacoes?limit=` | Licitacoes e processos de compra | DB |
+| GET | `/{municipio_id}/licitacoes/ganhadores?limit=` | Ranking de fornecedores vencedores | DB |
+
+### Vereadores (6)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/vereadores/search?q=` | Busca por nome, municipio, partido ou UF | DB |
+| GET | `/api/v1/vereadores/ranking?limit=&partido=&uf=` | Ranking por votos | DB |
+| GET | `/api/v1/vereadores/resumo` | KPIs agregados de vereadores | DB |
+| GET | `/api/v1/vereadores/por-partido?uf=` | Contagem por partido | DB |
+| GET | `/api/v1/vereadores/municipio/{municipio_id}` | Vereadores de um municipio | DB |
+| GET | `/api/v1/vereadores/uf/{uf}` | Vereadores de uma UF | DB |
+
+### Analytics (4)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/analytics/party-efficiency` | Eficiencia de execucao por partido | DB (view v_emendas_unificadas) |
+| GET | `/api/v1/analytics/socioeconomic` | Emendas vs IDHM e PIB per capita | DB (JOIN com municipios_ibge) |
+| GET | `/api/v1/analytics/deputy-roi` | Comparativo CEAP vs Emendas | DB + API Camara (despesas) |
+| GET | `/api/v1/analytics/top-municipios` | Top municipios por valor total | DB (JOIN com municipios_ibge) |
+
+### Auditoria (3)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/auditoria/saude/{codigo_ibge}` | Rede municipal de saude | MCP-Brasil (farmacia_popular) |
+| GET | `/api/v1/auditoria/justica?query=` | Processos judiciais por CNPJ | MCP-Brasil (DataJud, cache 30d) |
+| GET | `/api/v1/auditoria/tcu?cnpj=` | Sancoes TCU (inidoneos + inabilitados) | MCP-Brasil (executar_lote) |
+
+### Compras (2)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/compras/fornecedor?cnpj=` | Dados do fornecedor no PNCP | MCP-Brasil (compras_pncp) |
+| GET | `/api/v1/compras/bps?termo=` | Precos de saude no BPS | MCP-Brasil (bps_buscar) |
+
+### Diario Oficial (2)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/diario/buscar?q=&escopo=` | Busca no DOU + Diarios municipais | MCP-Brasil (diario_oficial_unificado) |
+| POST | `/api/v1/diario/buscar-perfil` | Citacoes de politico no DOU (body: q, escopo, uf_municipio, data_inicio, data_fim) | MCP-Brasil (DOU + Querido Diario) |
+
+### FNDE — Verbas Educacionais (5)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/fnde/resumo?uf=` | Resumo FNDE por estado | DB (fnde_repasses) |
+| GET | `/api/v1/fnde/municipios?municipio_id=&uf=&limit=` | Resumo FNDE por municipio | DB |
+| GET | `/api/v1/fnde/municipio/{municipio_id}?programa=` | Programas FNDE de um municipio | DB |
+| GET | `/api/v1/fnde/programas` | Lista de programas disponiveis | DB |
+| GET | `/api/v1/fnde/search?q=&limit=` | Busca municipios com dados FNDE | DB |
 
 ---
 
-## Padrão de Fallback
+## Padrao de Fallback
 
 ```
-Requisição → Busca local (PostgreSQL)
-                  │
-                  ├── ≥5 resultados → retorna
-                  └── <5 resultados → enriquece com API Câmara
-                                         │
-                                         ├── sucesso → merge + retorna
-                                         └── falha   → degrade graceful (retorna local)
+Requisicao -> Busca local (PostgreSQL)
+                  |
+                  |-> >=5 resultados -> retorna
+                  |-> <5 resultados  -> enriquece com API Camara
+                                          |
+                                          |-> sucesso -> merge + retorna
+                                          |-> falha   -> degrade graceful (retorna local)
 ```
 
-**Regra**: Nunca quebrar por falha de API externa. Sempre retornar dados parciais quando a Câmara falhar.
+**Regra**: Nunca quebrar por falha de API externa. Sempre retornar dados parciais quando a Camara falhar.
 
 ---
 
-## Serviços
+## Servicos
 
-### db_service.py
+### db_service.py — Acesso ao PostgreSQL
 
-- Consultas SQL diretas via `psycopg2` (sem ORM)
-- `RealDictCursor` para retorno como dicts
-- Conversão automática `Decimal → float` para serialização JSON
-- Conexão recriada a cada chamada (sem pool — sync driver)
+- **Driver**: `psycopg2` com `RealDictCursor` (sincrono, sem ORM)
+- **Conexao**: `get_real_dict_connection()` de `src.db_utils` (recriada a cada chamada)
+- **30+ funcoes publicas** organizadas por dominio:
+  - Deputados: `search_deputados`, `get_perfil_deputado`, `get_nome_by_id`, `get_emendas_deputado`, `get_resumo_emendas`, `get_municipios_deputado`, `get_dossie_deputado`
+  - Prefeitos: `search_prefeitos`, `get_perfil_prefeito`, `get_ranking_prefeitos`, `get_emendas_municipio`, `get_licitacoes_prefeitura`, `get_ganhadores_licitacoes_prefeitura`
+  - Vereadores: `search_vereadores`, `get_ranking_vereadores`, `get_resumo_vereadores`, `get_vereadores_por_partido`, `get_vereadores_por_municipio`, `get_vereadores_por_uf`
+  - Votacoes: `get_votacoes_deputado`, `get_resumo_votos_deputado`, `get_resumo_votacao`, `get_votacoes_recentes`, `get_votos_por_votacao`
+  - FNDE: `get_fnde_resumo_estado`, `get_fnde_resumo_municipio`, `get_fnde_programas_municipio`, `get_fnde_programas_disponiveis`, `search_fnde_municipios`
+- **Conversao**: `_rows_to_list()` e `_row_to_dict()` convertem `Decimal -> float` automaticamente
 
-### camara_service.py
+### camara_service.py — API Camara dos Deputados
 
-- HTTP client assíncrono (`httpx.AsyncClient`)
-- Endpoints da API Câmara: `/api/v2/deputados`, `/deputados/{id}/despesas`, etc.
-- Rate limit: respeitar `ENRICH_RATE_LIMIT` entre chamadas
-- Erros de rede → eleva exceção (handler do route faz degrade)
+- **Driver**: `httpx.AsyncClient` (assincrono)
+- **Cache em memoria**: dict com TTL de 3600s
+- **Funcoes**: `buscar_deputado`, `search_deputados_api`, `listar_despesas` (paginado, max 500), `listar_orgaos`, `listar_votacoes` (delega ao DB local), `listar_proposicoes`
+- **Rate limit**: respeitar `ENRICH_RATE_LIMIT` entre chamadas externas
+
+### analytics_service.py — Agregacoes Analiticas
+
+- **Execucao**: queries SQL síncronas envoltas em `asyncio.run_in_executor()` para nao bloquear o event loop
+- **Funcoes**: `get_party_efficiency`, `get_socioeconomic_data`, `get_deputy_roi` (cruza DB + API Camara), `get_top_municipios`
+- **View principal**: `v_emendas_unificadas` (JOIN parlamentares_dados + emendas)
+
+### mcp_service.py — Cliente MCP-Brasil
+
+- **Classe**: `MCPBrasilClient` (singleton via `_mcp_client`)
+- **Transporte**: MCP sobre stdio (`uvx mcp-brasil`)
+- **Cache**: dict com TTL configuravel (default 3600s), com double-check por lock
+- **Funcoes expostas**: `get_saude_resumo`, `buscar_processos_datajud` (retry com backoff), `executar_lote` (lote paralelo), `buscar_diario_perfil` (DOU + Querido Diario)
+- **Uso nos routes**: directly por auditoria, compras, diario e deputados (full_report)
 
 ---
 
-## Convenções
+## Frontend SPA
 
-- **Rotas**: Prefixo `/api/v1/deputados` — versionamento explícito
-- **Erro handling**: `try/except Exception` no route → `HTTPException(502)` se API externa falhar
-- **Logging**: `logging.getLogger(__name__)` nos serviços
+- **Stack**: vanilla JavaScript (sem framework), Plotly.js para graficos
+- **Arquivos**: `index.html` (450+ linhas), `app.js` (1400+ linhas), `style.css` (dark theme)
+- **6 secoes de navegacao**: Deputados, Prefeitos, Vereadores, Inteligencia, Saude, Diario Oficial
+- **Subtabs do deputado**: Emendas, Despesas, Comissoes, Votacoes, Proposicoes, Dossie IA
+- **4 modais**: Saude Municipal, Justica/TCU (integridade), Perfil Prefeito, Diario Oficial Perfil
+- **Features**:
+  - Autocomplete de busca com debounce
+  - Cache em memoria por deputado/secao
+  - Graficos Plotly com dark theme (layout padronizado `plotlyDarkLayout`)
+  - KPIs agregados na sidebar (total emendas, valor, municipios)
+  - Status colors mapeados por situacao do plano de acao
+
+---
+
+## Convencoes
+
+- **Rotas**: prefixo `/api/v1/{recurso}` — versionamento explicito
+- **Error handling**: `try/except Exception` no route -> `HTTPException(502)` se API externa falhar
+- **Logging**: `logging.getLogger(__name__)` nos servicos
 - **DB**: `config.settings.PG_*` — nunca hardcodar credenciais
-- **Frontend**: SPA vanilla (React não usado) — index.html + app.js + style.css
-- **CORS**: Permissivo para dev (`allow_origins=["*"]`) — restringir em produção
+- **Frontend**: vanilla JS, nao React — nao criar componentes React
+- **CORS**: configuravel via env var `CORS_ORIGINS` (default local dev) — restringir em producao
+- **Diario buscar-perfil**: unico endpoint POST (body JSON), todos os demais sao GET
 
 ---
 
 ## Pitfalls
 
-1. `db_service.py` recria conexão a cada chamada — não usar em loops (performance)
-2. `camara_service.py` é async mas `db_service.py` é sync — não misturar sem cuidado
-3. Frontend é vanilla JS, não React — não criar componentes React
-4. `Decimal` do PostgreSQL não serializa JSON — sempre converter via `_rows_to_list()`
-5. Rotas usam `/{deputado_id}/` — ID numérico, não slug
-6. `search` retorna merge de DB + API — pode haver duplicatas se IDs coincidem
-7. API Câmara tem rate limit — não fazer batch requests sem delay
+1. `db_service.py` recria conexao a cada chamada — nao usar em loops (performance)
+2. `camara_service.py` e async mas `db_service.py` e sync — nao misturar sem cuidado
+3. Frontend e vanilla JS, nao React — nao criar componentes React
+4. `Decimal` do PostgreSQL nao serializa JSON — sempre converter via `_rows_to_list()`
+5. Rotas usam `/{deputado_id}/` ou `/{municipio_id}/` — IDs numericos, nao slug
+6. `search` de deputados retorna merge de DB + API — pode haver duplicatas se IDs coincidirem
+7. API Camara tem rate limit — nao fazer batch requests sem delay
+8. `mcp_service.py` inicia conexao MCP sob demanda (lazy connect) — primeira chamada tem latencia
+9. `analytics_service.py` usa `run_in_executor` para queries sync — nao e verdadeiramente paralelo
+10. `diario/buscar-perfil` aceita POST com body JSON — nao e GET como os demais
+11. `auditoria/justica` tem cache de 30 dias no DB (`beneficiario_processos`) — dados podem ficar stale
+12. `listar_votacoes` delega ao `db_service` (tabela local `votos_camara`), nao a API Camara
 
 ---
 
-## Configuração
+## Configuracao
 
-Variáveis relevantes em `config/settings.py`:
+Variaveis relevantes em `config/settings.py`:
 
 ```python
 # PostgreSQL
@@ -118,11 +236,14 @@ PG_DB = "transferegov_db"
 PG_USER = "cognee"
 PG_PASS = "cognee"
 
-# API Câmara
+# API Camara
 CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"
 
 # Enriquecimento
 ENRICH_RATE_LIMIT = 0.2  # 5s entre requests (compartilhado com enrichers)
+
+# CORS (env var)
+CORS_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
 ```
 
 Para a app completa, ver `AGENTS.md` na raiz do projeto.

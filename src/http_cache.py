@@ -18,7 +18,7 @@ DEFAULT_TTL = 300  # 5 minutos
 MAX_CACHE_ENTRIES = 2000
 
 
-def _evict_oldest_if_needed():
+def _evict_oldest_if_needed() -> None:
     """Remove arquivos mais antigos quando cache excede MAX_CACHE_ENTRIES."""
     files = sorted(CACHE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
     if len(files) <= MAX_CACHE_ENTRIES:
@@ -62,21 +62,42 @@ def cache_get(url: str, params: dict, ttl: int = DEFAULT_TTL) -> dict | None:
 
 
 def cache_set(url: str, params: dict, data: dict) -> None:
-    """Salva no cache com eviction automática."""
+    """Salva no cache com eviction automática e URL persistida para invalidação."""
     key = _cache_key(url, params)
     cache_file = CACHE_DIR / f"{key}.json"
-
-    entry = {"ts": time.time(), "data": data}
+    entry = {"ts": time.time(), "url": url, "data": data}
     with open(cache_file, "w") as f:
         json.dump(entry, f)
-
     _evict_oldest_if_needed()
+
+
+def cache_invalidate(url_pattern: str) -> int:
+    """Remove entradas do cache cuja URL contém o padrão (substring).
+
+    Útil para invalidar cache de chat completions sem limpar embeddings.
+
+    Exemplo:
+        cache_invalidate("chat/completions")  # limpa apenas chat
+        cache_invalidate("embeddings")         # limpa apenas embeddings
+    """
+    count = 0
+    for f in CACHE_DIR.glob("*.json"):
+        try:
+            with open(f) as fh:
+                entry = json.load(fh)
+            stored_url = entry.get("url", "")
+            if url_pattern in stored_url:
+                f.unlink(missing_ok=True)
+                count += 1
+        except (json.JSONDecodeError, KeyError, OSError):
+            continue
+    return count
 
 
 def cache_clear() -> int:
     """Limpa todo o cache. Retorna número de arquivos removidos."""
     count = 0
     for f in CACHE_DIR.glob("*.json"):
-        f.unlink()
+        f.unlink(missing_ok=True)
         count += 1
     return count

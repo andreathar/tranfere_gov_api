@@ -86,8 +86,8 @@ case "${1:-help}" in
         $PYTHON "$SRC/dashboard.py" "${@:2}"
         ;;
     web)
-        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8080 ..."
-        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8080
+        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8000 ..."
+        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
         ;;
     enrich)
         $PYTHON -m src.enrichers.pipeline "${@:2}"

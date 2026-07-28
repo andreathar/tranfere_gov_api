@@ -38,10 +38,13 @@ from config.settings import (
     LOCALAI_BASE_URL,
     LOCALAI_DEFAULT_MODEL,
     LOCALAI_MAX_RETRIES,
+    LOCALAI_MODEL_TIMEOUTS,
     LOCALAI_MODELS,
     LOCALAI_TIMEOUT,
 )
 from src.http_cache import cache_get, cache_set
+from src.localai_circuit import circuit_breaker
+from src.localai_metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -427,22 +430,66 @@ class LocalAIClient:
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    def _post(self, endpoint: str, payload: dict, ttl: int = 604800) -> dict:
-        """POST com retry e cache (7 dias por padrão para LLM)."""
+    @staticmethod
+    def _cache_ttl(endpoint: str) -> int | None:
+        """Retorna o TTL de cache adequado para cada endpoint.
+
+        /embeddings       → 604800s (7 dias) — determinístico
+        /chat/completions → None (sem cache) — respostas não-determinísticas
+        /jobs             → None (sem cache)
+        """
+        if "/embeddings" in endpoint:
+            return 604800  # 7 dias — determinístico
+        return None  # sem cache para chat e jobs
+
+    @staticmethod
+    def _model_timeout(payload: dict) -> int:
+        """Retorna timeout apropriado para o modelo no payload."""
+        model_name = payload.get("model", LOCALAI_DEFAULT_MODEL)
+        return LOCALAI_MODEL_TIMEOUTS.get(model_name, LOCALAI_TIMEOUT)
+
+    def _post(self, endpoint: str, payload: dict, ttl: int | None = None) -> dict:
+        """POST com circuit breaker, métricas, retry e cache seletivo.
+
+        TTL explícito sobrescreve a detecção automática.
+        Passar ttl=0 para forçar sem cache.
+        """
+        if not circuit_breaker.allow_request():
+            raise RuntimeError(
+                f"LocalAI indisponível (circuit breaker OPEN): "
+                f"{circuit_breaker.status()}"
+            )
+
+        if ttl is None:
+            ttl = self._cache_ttl(endpoint)
         url = f"{self.base_url}{endpoint}"
 
-        cached = cache_get(url, payload, ttl=ttl)
-        if cached is not None:
-            return cached
+        if ttl and ttl > 0:
+            cached = cache_get(url, payload, ttl=ttl)
+            if cached is not None:
+                return cached
+
+        model_name = payload.get("model", "unknown")
+        timeout = self._model_timeout(payload)
+        start = time.monotonic()
 
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
-                with httpx.Client(timeout=self.timeout) as client:
+                with httpx.Client(timeout=timeout) as client:
                     resp = client.post(url, json=payload)
                     resp.raise_for_status()
                     data = resp.json()
-                    cache_set(url, payload, data)
+                    latency_ms = (time.monotonic() - start) * 1000
+                    circuit_breaker.record_success()
+                    metrics.record(
+                        model=model_name,
+                        endpoint=endpoint,
+                        latency_ms=latency_ms,
+                        error=False,
+                    )
+                    if ttl and ttl > 0:
+                        cache_set(url, payload, data)
                     return data
             except Exception as exc:
                 last_exc = exc
@@ -456,24 +503,55 @@ class LocalAIClient:
                         wait,
                     )
                     time.sleep(wait)
+
+        latency_ms = (time.monotonic() - start) * 1000
+        circuit_breaker.record_failure()
+        metrics.record(
+            model=model_name,
+            endpoint=endpoint,
+            latency_ms=latency_ms,
+            error=True,
+        )
         raise last_exc  # type: ignore[misc]
 
-    async def _apost(self, endpoint: str, payload: dict, ttl: int = 604800) -> dict:
-        """POST async com retry e cache."""
+    async def _apost(self, endpoint: str, payload: dict, ttl: int | None = None) -> dict:
+        """POST async com circuit breaker, métricas, retry e cache seletivo."""
+        if not circuit_breaker.allow_request():
+            raise RuntimeError(
+                f"LocalAI indisponível (circuit breaker OPEN): "
+                f"{circuit_breaker.status()}"
+            )
+
+        if ttl is None:
+            ttl = self._cache_ttl(endpoint)
         url = f"{self.base_url}{endpoint}"
 
-        cached = cache_get(url, payload, ttl=ttl)
-        if cached is not None:
-            return cached
+        if ttl and ttl > 0:
+            cached = cache_get(url, payload, ttl=ttl)
+            if cached is not None:
+                return cached
+
+        model_name = payload.get("model", "unknown")
+        timeout = self._model_timeout(payload)
+        start = time.monotonic()
 
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(url, json=payload)
                     resp.raise_for_status()
                     data = resp.json()
-                    cache_set(url, payload, data)
+                    latency_ms = (time.monotonic() - start) * 1000
+                    circuit_breaker.record_success()
+                    metrics.record(
+                        model=model_name,
+                        endpoint=endpoint,
+                        latency_ms=latency_ms,
+                        error=False,
+                    )
+                    if ttl and ttl > 0:
+                        cache_set(url, payload, data)
                     return data
             except Exception as exc:
                 last_exc = exc
@@ -487,6 +565,15 @@ class LocalAIClient:
                         LOCALAI_MAX_RETRIES,
                         exc,
                     )
+
+        latency_ms = (time.monotonic() - start) * 1000
+        circuit_breaker.record_failure()
+        metrics.record(
+            model=model_name,
+            endpoint=endpoint,
+            latency_ms=latency_ms,
+            error=True,
+        )
         raise last_exc  # type: ignore[misc]
 
     def _sync_fallback(

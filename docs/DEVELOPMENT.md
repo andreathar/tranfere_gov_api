@@ -213,33 +213,346 @@ O projeto possui duas suítes de teste automatizadas para validação funcional 
 
 ### 5.1. Testes Unitários e de Integração (`pytest`)
 - Configurado em `pyproject.toml` sob a seção `[tool.pytest.ini_options]`.
+- Cobertura: schemas Pydantic, utilitários de formatação (`fmt_brl`, `fmt_num`, `fmt_pct`), upsert idempotente, parsers de dados (SICONFI, IBGE, TSE) e endpoints FastAPI.
 - Execução:
   ```bash
-  pytest
+  pytest                          # Todos os testes
+  pytest -v                       # Saída detalhada
+  pytest tests/test_schemas.py    # Módulo específico
   ```
 
 ### 5.2. Suíte de Auditoria de Gráficos (`src/verify_graphs.py`)
-Valida a integridade, resiliência e ausência de telas brancas em todos os 31 gráficos registrados no dashboard Dash (`CHART_REGISTRY`).
+Valida a integridade, resiliência e ausência de telas brancas em todos os 68 gráficos registrados no dashboard Dash (`CHART_REGISTRY`), distribuídos em 17 módulos (`src/graphs/`).
 
-- Checa a contagem de pontos de dados (`x`, `y`, `values`, `z`, `locations`, `link.value`).
-- Garante o funcionamento do wrapper anti-falha `safe_build_chart`.
+- Para cada gráfico: verifica retorno `go.Figure`, contagem de traces e pontos de dados (`x`, `y`, `values`, `z`, `locations`, `link.value`), tempo de resposta e ausência de erros.
+- Garante o funcionamento do wrapper anti-falha `safe_build_chart` (captura exceções SQL, dados ausentes e erros inesperados).
 - Execução:
   ```bash
   python3 src/verify_graphs.py
   ```
+- A saída gera um relatório consolidado com contagem de gráficos OK, com aviso, com erro e tempo total.
 
 ---
 
-## 6. Fluxo de Trabalho de Contribuição e Pull Requests
+## 6. Padrões de Código LocalAI
+
+O projeto integra modelos de linguagem locais via API compatível OpenAI. Três módulos formam a camada de integração: gerenciamento de VRAM, cliente HTTP e configuração centralizada de modelos.
+
+### 6.1. Gerenciamento de VRAM (`src/localai_manager.py`)
+
+Antes de invocar qualquer modelo, **sempre** chamar `ensure_model_loaded()` para garantir exclusividade de VRAM na GPU. Esta função descarrega todos os modelos inativos antes de carregar o modelo alvo, eliminando erros de estouro de memória (OOM / RPC EOF).
+
+```python
+from src.localai_manager import manager as localai_manager
+
+# Obrigatorio antes de qualquer chamada de modelo
+localai_manager.ensure_model_loaded("gemma-4-e2b-it")
+```
+
+Fluxo interno de `ensure_model_loaded(target_model)`:
+1. Lista todos os modelos carregados via `get_all_models()`.
+2. Para cada modelo diferente de `target_model`, verifica se esta carregado via `is_model_loaded()`.
+3. Descarrega modelos inativos via `unload_model()` (POST `/backend/shutdown`).
+
+O singleton `manager` e instanciado uma vez no modulo e compartilhado por todos os consumidores.
+
+### 6.2. Cliente HTTP (`src/localai_client.py`)
+
+`LocalAIClient` e o cliente centralizado para todas as chamadas ao LocalAI. Fornece wrappers de alto nivel com retry, timeout e cache HTTP.
+
+**Instancia singleton** via `get_localai_client()`:
+
+```python
+from src.localai_client import get_localai_client
+
+client = get_localai_client()
+```
+
+**Metodos principais**:
+
+| Metodo | Uso | Retorno |
+|--------|-----|---------|
+| `chat(prompt, system=, model=, temperature=, max_tokens=)` | Chat completion simples | `str` |
+| `chat_json(prompt, system=, model=)` | Chat que retorna JSON parseado automaticamente | `Any` |
+| `achat(prompt, ...)` | Versao async do chat | `str` (coroutine) |
+| `chat_stream(prompt, ...)` | Streaming de tokens | `Iterator[str]` |
+| `classify_batch(texts, labels=, model=)` | Classificacao em lote de textos | `list[str]` |
+| `embed(texts, model=)` | Gera embeddings para textos | `list[list[float]]` |
+| `enrich_column(df, column, task=)` | Aplica tarefa de IA em coluna de DataFrame | `pd.DataFrame` |
+| `summarize_plans(df, group_by=)` | Gera resumos analiticos por grupo | `pd.DataFrame` |
+| `submit_job(prompt, ...)` | Job assincrono (batch processing) | `dict` |
+| `health()` | Verifica se o LocalAI esta respondendo | `dict` |
+
+O metodo `_post()` implementa retry com backoff exponencial (`LOCALAI_MAX_RETRIES`) e cache HTTP de 7 dias via `http_cache.py`.
+
+### 6.3. Selecao de Modelos (`config/settings.py`)
+
+Todos os modelos estao centralizados no dicionario `LOCALAI_MODELS`. **Nunca** hardcode o nome de um modelo -- sempre importe de `config.settings`:
+
+```python
+from config.settings import LOCALAI_MODELS, LOCALAI_DEFAULT_MODEL
+
+# Usar alias para selecionar modelo
+model_id = LOCALAI_MODELS["gemma"]       # "gemma-4-e2b-it"
+model_id = LOCALAI_MODELS["fast"]        # "qwen2.5-1.5b-instruct-q4-k-m"
+model_id = LOCALAI_MODELS["analysis"]    # "llama-3.1-8b-q4-k-m"
+model_id = LOCALAI_MODELS["embedding"]   # "nomic-embed-text-v1.5"
+```
+
+| Alias | Modelo | Uso Recomendado | Velocidade |
+|-------|--------|-----------------|------------|
+| `gemma` | `gemma-4-e2b-it` | Padrao RAG, redacao PT-BR | 36.8 tok/s |
+| `fast` | `qwen2.5-1.5b-instruct-q4-k-m` | Triagem diaria, NER | 88.9 tok/s |
+| `analysis` | `llama-3.1-8b-q4-k-m` | Analise investigativa profunda | 7.7 tok/s |
+| `code` | `Qwen2.5-Coder-7B-Instruct-GGUF` | Codigo | -- |
+| `general` | `gemma-4-e2b-it` | Uso geral | 36.8 tok/s |
+| `embedding` | `nomic-embed-text-v1.5` | Embeddings Qdrant (768d) | -- |
+| `router` | `intelligent-router` | Roteamento inteligente | -- |
+
+### 6.4. Padrão de Uso Completo
+
+```python
+from src.localai_manager import manager as localai_manager
+from src.localai_client import get_localai_client
+from config.settings import LOCALAI_MODELS
+
+# 1. Garantir VRAM exclusiva
+localai_manager.ensure_model_loaded(LOCALAI_MODELS["gemma"])
+
+# 2. Obter cliente singleton
+client = get_localai_client()
+
+# 3. Usar metodo apropriado
+resumo = client.chat(
+    "Gere um resumo do deputado AFONSO FLORENCE",
+    system="Voce e um analista politico.",
+    model=LOCALAI_MODELS["gemma"],
+)
+
+# Para classificacao em lote
+categorias = client.classify_batch(
+    ["motivo A", "motivo B"],
+    labels=["FALTA_DOCUMENTACAO", "IRREGULARIDADE", "OUTROS"],
+    model=LOCALAI_MODELS["fast"],
+)
+```
+
+### 6.5. Pitfalls
+
+1. **VRAM**: Sempre chamar `ensure_model_loaded()` antes de operacoes pesadas -- modelos concorrentes causam OOM.
+2. **Singleton**: Usar `get_localai_client()` ao inves de instanciar `LocalAIClient()` diretamente.
+3. **Modelos**: Nunca hardcode nomes de modelos -- use `LOCALAI_MODELS["alias"]`.
+4. **Embeddings**: O modelo `nomic-embed-text-v1.5` gera vetores de 768d -- nao misturar dimensoes no Qdrant.
+5. **Cache**: Respostas do LLM sao cacheadas por 7 dias -- limpar `output/.http_cache/` se necessario.
+
+---
+
+## 7. Padrões MCP Bridge
+
+O `MCPToolBridge` (`src/mcp_tool_bridge.py`) converte ferramentas MCP (FastMCP) para o formato OpenAI function calling, permitindo que modelos locais invoquem tools governamentais e do dashboard.
+
+### 7.1. Arquitetura
+
+```
+LLM LocalAI  <--function calling-->  MCPToolBridge  <--MCP protocol-->  mcp-brasil server (435+ tools)
+                                         |
+                                   handler_map
+                                   (bypass MCP session)
+```
+
+### 7.2. Instancia Singleton
+
+```python
+from src.mcp_tool_bridge import get_mcp_bridge
+
+bridge = get_mcp_bridge()
+```
+
+### 7.3. Descoberta de Tools
+
+O bridge usa **meta-tools** (`search_tools`, `call_tool`) do mcp-brasil para descoberta dinamica, combinadas com um conjunto curado de tools relevantes para o dominio TransfereGov. As tools sao categorizadas em `TOOL_CATEGORIES`:
+
+| Categoria | Prefixos |
+|-----------|----------|
+| `camara` | `camara` |
+| `senado` | `senado` |
+| `tse` | `tse` |
+| `ibge` | `ibge` |
+| `siconfi` | `siconfi` |
+| `compras` | `compras`, `pncp`, `contratosgovbr`, `dadosabertos` |
+| `dashboard` | `list_registered_charts`, `inspect_chart_health`, `get_chart_data_summary` |
+| `meta` | `listar_features`, `recomendar_tools`, `planejar_consulta`, `executar_lote` |
+
+```python
+# Listar tools por categoria
+camara_tools = bridge.list_tools(category="camara")
+
+# Busca por texto
+tools = bridge.list_tools(search="deputado")
+```
+
+### 7.4. Conversao para OpenAI Function Calling
+
+```python
+# Converter para formato OpenAI (inclui meta-tools por padrao)
+tools_schema = bridge.to_openai_tools(
+    categories=["camara", "ibge"],
+    max_tools=30,
+    include_meta=True,
+)
+
+# Usar com o LocalAI client diretamente
+client = get_localai_client()
+resp = client.chat("...", tools=tools_schema)
+```
+
+### 7.5. Agentic Loop
+
+O metodo `agent_chat()` implementa o loop completo chat -> tool_calls -> execute -> repeat:
+
+```python
+result = bridge.agent_chat(
+    "Quais municipios de Alagoas receberam emendas Pix?",
+    categories=["camara", "transferegov"],
+    max_turns=5,
+    temperature=0.3,
+)
+
+# Retorno: {"response": "...", "tool_calls": [...], "turns": 3, "tools_available": 15}
+```
+
+### 7.6. Execucao de Tools
+
+O bridge resolve handlers em tres camadas:
+1. **Handlers customizados** registrados via `register_tool()`.
+2. **Handler map** (`_build_handler_map()`): mapeamento direto de nomes de tools para funcoes Python do mcp-brasil, bypassando a session MCP.
+3. **Fallback MCP**: `call_tool()` via session MCP (pode falhar sem session ativa).
+
+O `_wrap_no_ctx()` envolve funcoes MCP async que exigem parametro `ctx` (FastMCP Context) para serem chamadas sem esse parametro -- injeta um mock minimo.
+
+### 7.7. Pitfalls
+
+1. **Handler map**: Construido sob demanda na primeira chamada -- importa modulos do mcp-brasil.
+2. **Max tools**: LocalAI pode ter limites de tools -- usar `max_tools=30` como padrao.
+3. **Tamanho de resultado**: Tool results sao truncados em 8000 chars antes de enviar ao LLM.
+4. **Async/Sync**: Usar versoes async (`aagent_chat`, `execute_tool`) quando em contexto asyncio.
+
+---
+
+## 8. Padrões RAG
+
+O pipeline RAG v3 combina indexacao vetorial no Qdrant com geracao de personas via LLM local. Dois modulos formam o nucleo: o indexador e o gerador de personas.
+
+### 8.1. Indexador Vetorial (`src/enrichers/rag_qdrant_indexer.py`)
+
+Indexa dados de deputados no Qdrant com embeddings `nomic-embed-text-v1.5` (768d, metrica Cosine).
+
+**6 tipos de chunks indexados**:
+
+| Tipo | Conteudo | Fonte DB |
+|------|----------|----------|
+| `perfil` | Nome, partido, UF do deputado | `parlamentares_dados` |
+| `proposicao` | PLs e proposicoes legislativas | `parlamentar_proposicoes` |
+| `emenda` | Emendas Pix com dados financeiros do municipio | `planos_acao` + `municipios_financeiro` |
+| `voto` | Padrao de voto em votacoes nominais | `votacoes_camara` + `votos_camara` |
+| `diario_oficial` | Atos do Diario Oficial da Uniao | `diario_oficial_atos` |
+| `conexao_politica` | Partido do prefeito x partido do deputado | `prefeitos_dados` + `parlamentares_dados` |
+
+```python
+# Indexacao por deputado
+python3 -m src.enrichers.rag_qdrant_indexer --nome "AFONSO FLORENCE"
+
+# Rebuild completo (limpa e reindexa)
+python3 -m src.enrichers.rag_qdrant_indexer --rebuild
+
+# Via run.sh
+./run.sh cron-qdrant --limit 10
+```
+
+**Requisitos**: Qdrant ativo em `QDRANT_URL` + modelo `nomic-embed-text-v1.5` carregado no LocalAI. A funcao `embed_text()` delega ao `LocalAIClient.embed()`.
+
+### 8.2. Gerador de Personas (`src/enrichers/rag_persona.py`)
+
+Gera dossies analiticos via Multi-Query RAG com 5 queries tematicas:
+
+1. Padrao de voto e alinhamento politico em votacoes nominais.
+2. Emendas parlamentares Pix, municipios beneficiarios e valores transferidos.
+3. Proposicoes legislativas apresentadas e areas tematicas de foco.
+4. Atos no diario oficial, fiscalizacao, decretos e movimentacoes relevantes.
+5. Conexao politica local, partido dos prefeitos beneficiados e alinhamento eleitoral municipal (TSE x Emendas).
+
+**Fluxo**:
+```
+search_context_multiquery()      5 queries x top-k chunks do Qdrant
+         |
+build_analysis_prompt()          prompt adaptativo baseado nos tipos de dados
+         |
+generate_persona_analysis()      LLM gera dossier (gemma-4-e2b-it)
+         |
+_save_persona()                  salva no DB com contexto_rag + fontes_usadas
+```
+
+```python
+# Gerar persona de um deputado
+python3 -m src.enrichers.rag_persona --nome "AFONSO FLORENCE"
+
+# Regenerar (sobrescrever existente)
+python3 -m src.enrichers.rag_persona --nome "AFONSO FLORENCE" --regerar
+
+# Lote (50 deputados)
+./run.sh cron-dossie --lote 50
+```
+
+**Configuracoes relevantes** (`config/settings.py`):
+
+| Config | Valor Padrao | Descricao |
+|--------|-------------|-----------|
+| `RAG_LLM_MODEL` | `gemma-4-e2b-it` | Modelo para geracao de personas |
+| `RAG_PERSONA_VERSION` | `3` | Versao do prompt (incrementar para nova versao) |
+| `RAG_MIN_CHUNKS` | `3` | Minimo de chunks para gerar persona |
+| `RAG_MAX_CHUNKS` | `30` | Maximo de chunks por deputado no contexto |
+| `RAG_BATCH_SIZE` | `50` | Tamanho do batch para embedding |
+
+### 8.3. Padrão de Uso nos Enrichers
+
+```python
+from src.localai_manager import manager as localai_manager
+from src.localai_client import get_localai_client
+from config.settings import LOCALAI_MODELS, RAG_LLM_MODEL
+
+# 1. Preparar ambiente
+localai_manager.ensure_model_loaded(LOCALAI_MODELS["embedding"])
+# ... indexar dados no Qdrant ...
+
+localai_manager.ensure_model_loaded(RAG_LLM_MODEL)
+# ... gerar personas ...
+
+client = get_localai_client()
+embeddings = client.embed(["texto 1", "texto 2"], model=LOCALAI_MODELS["embedding"])
+```
+
+### 8.4. Pitfalls
+
+1. **Dimensao do embedding**: `nomic-embed-text-v1.5` gera 768d -- nao misturar com outros modelos de dimensao diferente.
+2. **Min chunks**: Se o Qdrant retornar menos de `RAG_MIN_CHUNKS` (3), a persona sera gerada com dados insuficientes.
+3. **VRAM**: O pipeline RAG alterna entre modelo de embedding e modelo de geracao -- chamar `ensure_model_loaded()` entre as fases.
+4. **Rebuild**: `--rebuild` apaga toda a colecao Qdrant e reindexa do zero -- usar com cuidado em producao.
+5. **Versionamento**: Incrementar `RAG_PERSONA_VERSION` quando o prompt mudar para forcar regeneracao.
+
+---
+
+## 9. Fluxo de Trabalho de Contribuição e Pull Requests
 
 1. **Nomenclatura de Branches**:
-   - `feature/<nome>`: Novas funcionalidades ou novos gráficos.
-   - `fix/<descricao>`: Correções de bugs ou rotas.
-   - `docs/<topico>`: Atualizações de documentação.
-   - `refactor/<modulo>`: Refatoração de código sem alteração funcional.
-2. **Mensagens de Commit**: Mensagens em Português (PT-BR), concisas e sem emojis.
-3. **Checklist Pré-Submissão de PR**:
-   - [ ] Executou `pre-commit run --all-files` com 100% de aprovação.
+   - `feature/<nome>`: Novas funcionalidades ou novos graficos.
+   - `fix/<descricao>`: Correcoes de bugs ou rotas.
+   - `docs/<topico>`: Atualizacoes de documentacao.
+   - `refactor/<modulo>`: Refatoracao de codigo sem alteracao funcional.
+2. **Mensagens de Commit**: Mensagens em Portugues (PT-BR), concisas e sem emojis.
+3. **Checklist Pre-Submissao de PR**:
+   - [ ] Executou `pre-commit run --all-files` com 100% de aprovacao.
    - [ ] Executou `pytest` com sucesso.
    - [ ] Executou `python3 src/verify_graphs.py` com sucesso.
+   - [ ] Verificou que `ensure_model_loaded()` e chamado antes de operacoes com LocalAI.
+   - [ ] Usou `LOCALAI_MODELS["alias"]` ao inves de hardcode de nomes de modelos.
    - [ ] Garantia de que a pipeline do GitHub Actions passou em Python 3.11 e 3.12.

@@ -3,7 +3,7 @@
 Projeto Python para extração, validação, enriquecimento e análise de Planos de Ação do
 sistema Transferegov (Transferências Especiais / Emendas Pix) do Governo Federal.
 
-**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI) → Dashboard 38 gráficos + API
+**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI, TSE, Senado, FNDE, TCU) → RAG v3 (Qdrant + LocalAI) → Dashboard 68 gráficos + API 38 endpoints
 
 ---
 
@@ -40,7 +40,7 @@ python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 
 # Dashboard + MCP
 python3 src/dash_app.py                    # http://localhost:8050 + http://localhost:8050/_mcp
-python3 src/verify_graphs.py              # auditoria dos 38 gráficos
+python3 src/verify_graphs.py              # auditoria dos 68 gráficos
 
 # API
 uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
@@ -85,23 +85,28 @@ src/
 ├── formatters.py             fmt_brl(), fmt_num(), fmt_pct()
 ├── schemas.py                Pydantic schemas
 ├── dash_app.py               Dash 4.3+ Web + MCP Hub (porta 8050)
-├── graphs/                   Pacote gráficos (12 módulos, 38 gráficos)
+├── graphs/                   Pacote gráficos (17 módulos, 68 gráficos)
 │   ├── registry.py             @register_chart decorator + CHART_REGISTRY
 │   ├── theme.py                Theme tokens + TODAS_UFS + CORES_SITUACAO
-│   ├── parlamentar.py          2 charts | socioeconomico.py 3 charts
-│   ├── fiscal.py 2 | siconfi.py 10 | arrecadacao.py 3 | geoespacial.py 3
-│   ├── impacto_social.py 2 | analitico.py 2 | hierarquico.py 3
-│   ├── prefeitos.py 2 | economico.py 5
+│   ├── parlamentar.py 3 | socioeconomico.py 3 | analitico.py 2
+│   ├── fiscal.py 3 | siconfi.py 10 | arrecadacao.py 13 | geoespacial.py 3
+│   ├── impacto_social.py 2 | hierarquico.py 4 | economico.py 7
+│   ├── prefeitos.py 2 | financas.py 6 | economia_cruzada.py 2
+│   ├── intel_politica.py 5 | intel_proposicoes.py 1
+│   ├── radar_diario.py 1 | votacoes.py 1
 ├── graph_factory.py          Shim backward-compat → src.graphs
 ├── graph_tools.py            MCP Tools (@mcp_enabled)
 ├── verify_graphs.py          Suíte auditoria gráficos
 ├── deputado_followup.py      CLI followup deputado
 ├── prefeito_followup.py      CLI followup prefeito
 ├── redator_transferegov.py   Redator documentos oficiais
+├── localai_manager.py        Gerencia VRAM GPU e exclusividade de modelos
+├── localai_client.py         Cliente HTTP para chat completion LocalAI
+├── mcp_tool_bridge.py        Ponte MCP ↔ modelos locais
 ├── api/                      FastAPI (ver src/api/AGENTS.md)
 │   ├── app.py                  App principal
-│   ├── routes/                 /api/v1/deputados/*, analytics, auditoria
-│   ├── services/               db, camara, mcp, analytics
+│   ├── routes/                 8 routers (deputados, prefeitos, analytics, auditoria, diario, compras, vereadores, fnde)
+│   ├── services/               4 services (db, camara, mcp, analytics)
 │   └── static/                 Frontend SPA
 └── enrichers/                Pipeline enriquecimento (ver src/enrichers/AGENTS.md)
     ├── pipeline.py              Orquestrador fases 1-3
@@ -110,8 +115,12 @@ src/
     ├── mapear_municipios.py 1c | compras.py | saude_educacao.py
     ├── datajud.py | completar_deputados.py | discricionarias_sync.py
     ├── tse_prefeitos.py 7a | tse_vereadors.py 7b | tse_deputados.py
+    ├── senado.py 8 | fnde.py | tcu_compras.py
+    ├── rag_qdrant_indexer.py | rag_persona.py
+    ├── diario_oficial_worker.py | sync_proposicoes.py
+    ├── votacoes_camara.py | votacoes_temas.py
 config/settings.py            API, DB, paths, ENRICH_*
-data/                         schema.sql, migrations 002-012, swagger.yaml
+data/                         schema.sql, migrations 002-014, swagger.yaml
 scripts/                      db_inspect.sh, run_siconfi_batch.sh
 docs/                         MIGRATIONS.md, manual.txt, plans/
 output/                       Gitignored (xlsx, csv, json, logs)
@@ -177,6 +186,19 @@ output/                       Gitignored (xlsx, csv, json, logs)
 | `prefeitos_dados` | TSE (DuckDB) | Prefeitos eleitos (2020/2024) |
 | `vereadores_dados` | TSE (DuckDB) | Candidatos a vereador (2020/2024) |
 | `senadores_dados` | Senado API | Perfil completo senadores em exercício |
+| `emendas_discricionarias` | Portal Transp. | Emendas discricionárias sincronizadas |
+| `beneficiario_processos` | DataJud | Processos judiciais vinculados a beneficiários |
+| `compras_municipios` | Compras gov.br | Compras públicas por município |
+| `saude_municipios` | CNES/DATASUS | Indicadores de saúde municipal |
+| `educacao_municipios` | INEP/MEC | Indicadores de educação municipal |
+| `violencia_municipios` | ISP/青少年 | Indicadores de violência municipal |
+| `diario_oficial_atos` | DOU (web) | Atos publicados no Diário Oficial da União |
+| `parlamentar_alertas` | Pipeline | Alertas gerados automaticamente para deputados |
+| `parlamentar_proposicoes` | Câmara API | Proposições legislativas dos deputados |
+| `votacoes_camara` | Câmara API | Votações e votos nominais |
+| `votos_camara` | Câmara API | Votos individuais por deputado |
+| `parlamentares_personas_v2` | LocalAI + RAG | Personas analíticas geradas por IA |
+| `fnde_repasses` | FNDE/MEC | Repasses educacionais do FNDE |
 
 Schema completo: `data/schema.sql`, migrations: `data/migration_002-014*.sql` (ver `docs/MIGRATIONS.md`)
 
@@ -193,6 +215,9 @@ Schema completo: `data/schema.sql`, migrations: `data/migration_002-014*.sql` (v
 | 1e | `siconfi.py` | SICONFI (DCA + RREO A03) | `municipios_financeiro` |
 | 2 | `camara.py` | Câmara Deputados | `parlamentares_dados` |
 | 3 | `pipeline.py` | SQL JOIN | `parlamentar_beneficiario` |
+| 4 | `compras.py` | Compras gov.br | `compras_municipios` |
+| 5 | `saude_educacao.py` | CNES/DATASUS/INEP | `saude_municipios`, `educacao_municipios` |
+| 6 | `datajud.py` | DataJud CNJ | `beneficiario_processos` |
 | 7a | `tse_prefeitos.py` | TSE (DuckDB) | `prefeitos_dados` |
 | 7b | `tse_vereadors.py` | TSE (DuckDB) | `vereadores_dados` |
 | 8 | `senado.py` | Senado API REST | `senadores_dados` |
@@ -225,6 +250,28 @@ Detalhes completos: `src/enrichers/AGENTS.md`
 | GET | `/{id}/comissoes` | Comissões |
 | GET | `/{id}/votacoes` | Últimas votações |
 | GET | `/{id}/proposicoes` | Proposições legislativas |
+| GET | `/api/v1/prefeitos/search?q=` | Busca prefeitos |
+| GET | `/{id}/perfil` | Perfil prefeito |
+| GET | `/{id}/emendas` | Emendas por município |
+| GET | `/api/v1/analytics/resumo` | Resumo geral do banco |
+| GET | `/api/v1/analytics/por-estado` | Métricas por UF |
+| GET | `/api/v1/analytics/por-situacao` | Métricas por situação |
+| GET | `/api/v1/analytics/por-parlamentar` | Métricas por parlamentar |
+| GET | `/api/v1/auditoria/dados` | Auditoria dos dados |
+| GET | `/api/v1/auditoria/qualidade` | Indicadores qualidade |
+| GET | `/api/v1/auditoria/cobertura` | Cobertura de enriquecimento |
+| GET | `/api/v1/diario/buscar?q=` | Busca Diário Oficial |
+| GET | `/api/v1/diario/atos` | Atos publicados recentes |
+| GET | `/api/v1/compras/buscar?q=` | Busca compras públicas |
+| GET | `/api/v1/compras/por-municipio` | Compras agregadas |
+| GET | `/api/v1/vereadores/buscar?q=` | Busca vereadores |
+| GET | `/{id}/perfil` | Perfil vereador |
+| GET | `/{id}/votos` | Votos nominais |
+| GET | `/api/v1/fnde/repasses` | Repasses FNDE |
+| GET | `/api/v1/fnde/por-municipio` | Represses por município |
+| GET | `/api/v1/fnde/por-estado` | Represses por estado |
+| GET | `/api/v1/fnde/resumo` | Resumo FNDE |
+| GET | `/api/v1/fnde/historico` | Histórico de repasses |
 
 Fallback: busca local → enriquece API Câmara → degrada graceful. Docs: `/docs` (Swagger), `/redoc`.
 
@@ -243,18 +290,50 @@ Gera documentos seguindo Manual de Redação da Presidência 3ª edição. Tipos
 
 ## RAG v3 & Integração LocalAI
 
-- **LocalAIManager (`src/localai_manager.py`)**: Gerencia a exclusividade de VRAM na GPU. Antes de chamar qualquer modelo, faz a varredura (`is_model_loaded`) e descarrega os inativos (`unload_model` via `/backend/shutdown`), eliminando erros de estouro (OOM / RPC EOF).
-- **Modelos Validados e Categorizados (`config/settings.py`)**:
-  - `gemma-4-e2b-it` (Padrão RAG): **36.8 tok/s** (dossiê completo em ~30s). Redação em PT-BR perfeita e tabelas Markdown ricas.
-  - `qwen2.5-1.5b-instruct-q4-k-m` (Fast): **88.9 tok/s** (resposta em ~11s). Ideal para triagens diárias e NER.
-  - `llama-3.1-8b-q4-k-m` (Analysis): **7.7 tok/s** (respostas em ~120s). Análise investigativa profunda com 24 GPU layers.
-- **Multi-Query RAG v3 (`src/enrichers/rag_persona.py`)**: 5 queries temáticas no Qdrant:
-  1. Padrão de votos nominais
-  2. Emendas PIX e valores por município
-  3. Proposições legislativas
-  4. Atos do Diário Oficial
-  5. **Conexões políticas municipais (TSE x Emendas)**: cruza partido do deputado x prefeito eleito no município receptor para identificar apadrinhamento local / fisiologismo.
-- **Suíte de Benchmark (`scripts/benchmark_models.py`)**: Avalia automaticamente modelos com pontuação de qualidade (0-100), velocidade e preenchimento de seções analíticas.
+### Arquitetura LocalAI
+
+Três módulos para integração com modelos locais via API compatível OpenAI:
+
+- **LocalAIManager (`src/localai_manager.py`)**: Gerencia exclusividade de VRAM na GPU. Antes de chamar qualquer modelo, faz varredura (`is_model_loaded`) e descarrega inativos (`unload_model` via `/backend/shutdown`), eliminando erros de estouro (OOM / RPC EOF). Função principal: `ensure_model_loaded(model)`.
+- **LocalAIClient (`src/localai_client.py`)**: Cliente HTTP síncrono para chat completion. Trata retry, timeout e parsing de streaming.
+- **MCP Tool Bridge (`src/mcp_tool_bridge.py`)**: Ponte entre ferramentas MCP e modelos locais. Permite que agentes MCP invoquem LLMs locais para tarefas de análise e redação.
+
+### Modelos Validados e Categorizados (`config/settings.py`)
+
+| Alias | Modelo | Uso | Velocidade |
+|-------|--------|-----|------------|
+| `gemma` | `gemma-4-e2b-it` | Padrao RAG, redacao PT-BR | 36.8 tok/s |
+| `fast` | `qwen2.5-1.5b-instruct-q4-k-m` | Triagem diaria, NER | 88.9 tok/s |
+| `analysis` | `llama-3.1-8b-q4-k-m` | Analise investigativa profunda | 7.7 tok/s |
+| `code` | `Qwen2.5-Coder-7B-Instruct-GGUF` | Codigo | -- |
+| `general` | `gemma-4-e2b-it` | Uso geral | 36.8 tok/s |
+| `embedding` | `nomic-embed-text-v1.5` | Embeddings Qdrant | -- |
+| `router` | `intelligent-router` | Roteamento inteligente | -- |
+
+### Pipeline RAG v3
+
+- **Indexador (`src/enrichers/rag_qdrant_indexer.py`)**: Indexa dados de deputados no Qdrant com 6 tipos de chunks: perfil, emendas, despesas CEAP, proposicoes, votacoes e atas do Diario Oficial. Roda via `./run.sh cron-qdrant`.
+- **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v3 com 5 queries tematicas no Qdrant:
+  1. Padrao de votos nominais
+  2. Emendas PIX e valores por municipio
+  3. Proposicoes legislativas
+  4. Atos do Diario Oficial
+  5. Conexoes politicas municipais (TSE x Emendas): cruza partido do deputado x prefeito eleito no municipio receptor para identificar apadrinhamento local / fisiologismo.
+- Roda via `./run.sh cron-dossie`.
+
+### Benchmark
+
+- **Suite (`scripts/benchmark_models.py`)**: Avalia automaticamente modelos com pontuacao de qualidade (0-100), velocidade e preenchimento de secoes analiticas.
+
+---
+
+## Cron Jobs
+
+| Job | Comando | Frequencia | Descricao |
+|-----|---------|------------|-----------|
+| Diario Oficial | `./run.sh cron-diario` | Diaria | Baixa DOU e gera resumo de atos |
+| Qdrant Indexer | `./run.sh cron-qdrant` | Semanal | Indexa dados de deputados no Qdrant (6 chunk types) |
+| Dossie Persona | `./run.sh cron-dossie` | Sob demanda | Gera personas analiticas via Multi-Query RAG v3 |
 
 ---
 
@@ -275,6 +354,9 @@ Gera documentos seguindo Manual de Redação da Presidência 3ª edição. Tipos
 13. Connection pooling: `psycopg2.pool.ThreadedConnectionPool` (min=2, max=10)
 14. RREO A03 (`--rreo`): usa `nr_periodo=6` (consolidação anual), parser normaliza acentos
 15. VRAM LocalAI: sempre invocar `localai_manager.ensure_model_loaded(model)` antes de requisições pesadas para evitar crash de GPU
+16. Qdrant: collection `deputados_perfis` requer embedding `nomic-embed-text-v1.5` (768d) — não misturar dimensões
+17. MCP Tool Bridge: `mcp_tool_bridge.py` depende de `localai_manager` — verificar GPU antes de invocar
+18. Diario Oficial: worker (`diario_oficial_worker.py`) faz scraping web — quebra se layout do DOU mudar
 
 ---
 

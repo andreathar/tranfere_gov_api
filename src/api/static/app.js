@@ -11,7 +11,8 @@ let state = {
     despesas: {},
     comissoes: {},
     votacoes: {},
-    proposicoes: {}
+    proposicoes: {},
+    dossie: {}
   }
 };
 
@@ -150,7 +151,7 @@ async function selectDeputado(id) {
   if (activeNav) activeNav.classList.add('active');
 
   // Clear caches
-  state.cache = { perfil: {}, emendas: {}, emendasResumo: {}, despesas: {}, comissoes: {}, votacoes: {}, proposicoes: {} };
+  state.cache = { perfil: {}, emendas: {}, emendasResumo: {}, despesas: {}, comissoes: {}, votacoes: {}, proposicoes: {}, dossie: {} };
 
   try {
     const [perfil, resumo] = await Promise.all([
@@ -323,6 +324,12 @@ async function loadTabData(tab) {
       renderProposicoesTab(data);
     } else if(tab === 'proposicoes') {
       renderProposicoesTab(state.cache.proposicoes[id]);
+    }
+
+    if(tab === 'dossie' && !state.cache.dossie[id]) {
+      loadDossieTab(id);
+    } else if(tab === 'dossie') {
+      renderDossieTab(state.cache.dossie[id]);
     }
 
     if(tab === 'inteligencia') {
@@ -1327,3 +1334,89 @@ function renderVereadoresTable(rows) {
 
 // Reset cache when switching to vereadores tab
 const _origSwitchNavMode = typeof switchNavMode === 'function' ? switchNavMode : null;
+
+// ==========================================
+// Dossiê IA (RAG) Tab
+// ==========================================
+
+async function loadDossieTab(id) {
+  const container = document.getElementById('dossie-container');
+  if (!container) return;
+
+  container.innerHTML = '<div class="spinner" style="margin:2rem auto;"></div><p style="text-align:center; color:var(--text-muted);">Carregando dossiê comportamental (RAG + IA)...</p>';
+
+  try {
+    const res = await fetch(`${API_BASE}/deputados/${id}/dossie`);
+    if (!res.ok) {
+      container.innerHTML = `
+        <div style="text-align:center; padding:2rem;">
+          <div style="font-size:2rem; margin-bottom:1rem;">📋</div>
+          <h3 style="color:var(--text-main); margin-bottom:0.5rem;">Dossiê não encontrado</h3>
+          <p style="color:var(--text-muted); max-width:420px; margin:0 auto;">
+            É necessário rodar o pipeline RAG para gerar o dossiê comportamental deste deputado.
+          </p>
+          <code style="display:block; margin-top:1rem; background:#0f172a; padding:0.5rem 1rem; border-radius:6px; color:var(--accent-blue); font-size:0.8rem;">
+            ./run.sh cron-dossie --nome "Nome do Deputado"
+          </code>
+        </div>`;
+      state.cache.dossie[id] = null;
+      return;
+    }
+
+    const data = await res.json();
+    state.cache.dossie[id] = data;
+    renderDossieTab(data);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger); text-align:center;">Erro ao carregar dossiê: ${e.message}</p>`;
+  }
+}
+
+function renderDossieTab(data) {
+  const container = document.getElementById('dossie-container');
+  if (!container) return;
+
+  if (!data) {
+    container.innerHTML = '<p style="color:var(--text-muted); text-align:center;">Dossiê não disponível.</p>';
+    return;
+  }
+
+  const analise = data.analise_gerada || 'Análise não disponível.';
+  const dataFormatada = data.data_analise ? new Date(data.data_analise).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+  const duracao = data.duracao_segundos ? `${parseFloat(data.duracao_segundos).toFixed(1)}s` : '-';
+  const versao = data.versao_prompt || '-';
+  const fontesRaw = Array.isArray(data.fontes_usadas) ? data.fontes_usadas
+    : (typeof data.fontes_usadas === 'string' && data.fontes_usadas.startsWith('{'))
+      ? data.fontes_usadas.replace(/[{}]/g, '').split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+  const fontes = fontesRaw.length > 0 ? fontesRaw.join(', ') : 'Não informado';
+
+  // Simple markdown-ish → HTML: headings, bold, lists
+  const htmlAnalise = analise
+    .replace(/^### (.+)$/gm, '<h3 style="color:#93c5fd; margin:1.25rem 0 0.5rem; font-size:1.05rem;">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="color:#60a5fa; margin:1.5rem 0 0.75rem; font-size:1.2rem;">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="color:#f8fafc; margin:0 0 1rem; font-size:1.35rem;">$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#f1f5f9;">$1</strong>')
+    .replace(/^\- (.+)$/gm, '<li style="margin-left:1.25rem; margin-bottom:0.3rem; list-style:disc;">$1</li>')
+    .replace(/\n{2,}/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+
+  container.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.25rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color);">
+      <div>
+        <h2 style="color:#f8fafc; font-size:1.2rem; margin-bottom:0.25rem;">🧠 Dossiê Comportamental (RAG + IA)</h2>
+        <p style="color:var(--text-muted); font-size:0.85rem;">Análise gerada por Inteligência Artificial a partir de dados públicos (emendas, votações, proposições, atos oficiais).</p>
+      </div>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <span style="background:rgba(59,130,246,0.15); color:#93c5fd; padding:0.25rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600;">v${versao}</span>
+        <span style="background:rgba(16,185,129,0.15); color:#6ee7b7; padding:0.25rem 0.75rem; border-radius:20px; font-size:0.75rem; font-weight:600;">⏱ ${duracao}</span>
+      </div>
+    </div>
+    <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.5rem; font-size:0.8rem; color:var(--text-muted);">
+      <span>📅 Gerado em: <strong style="color:var(--text-main);">${dataFormatada}</strong></span>
+      <span>📚 Fontes: <strong style="color:var(--text-main);">${fontes}</strong></span>
+    </div>
+    <div style="background:#0f172a; padding:1.5rem; border-radius:8px; border:1px solid var(--border-color); font-size:0.9rem; line-height:1.7; color:#cbd5e1; white-space:pre-wrap;">
+      ${htmlAnalise}
+    </div>
+  `;
+}

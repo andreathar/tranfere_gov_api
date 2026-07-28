@@ -154,3 +154,15 @@ async def get_full_report(deputado_id: int, ano: int = datetime.date.today().yea
         return {"status": "success", "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao executar lote: {str(e)}") from e
+
+
+@router.get("/{deputado_id}/dossie")
+async def get_dossie(deputado_id: int):
+    """Retorna o dossiê comportamental RAG do deputado."""
+    dossie = db_service.get_dossie_deputado(deputado_id)
+    if not dossie:
+        raise HTTPException(
+            status_code=404,
+            detail="Dossiê não encontrado. É necessário rodar o pipeline RAG.",
+        )
+    return dossie

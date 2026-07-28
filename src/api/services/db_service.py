@@ -174,6 +174,41 @@ def get_municipios_deputado(parlamentar_nome: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Dossiê IA (RAG)
+# ---------------------------------------------------------------------------
+
+
+def get_dossie_deputado(deputado_id: int) -> dict | None:
+    """Retorna o dossiê comportamental (RAG) mais recente do deputado."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT analise_gerada, data_analise, duracao_segundos,
+                       versao_prompt, fontes_usadas
+                FROM parlamentares_personas
+                WHERE deputado_id = %s
+                ORDER BY data_analise DESC
+                LIMIT 1
+            """,
+            (deputado_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        r = _row_to_dict(row)
+        if not r:
+            return None
+        raw = r.get("fontes_usadas")
+        if isinstance(raw, str):
+            # PG array literal  {voto,perfil,...}  →  ["voto","perfil",...]
+            stripped = raw.strip('{}')
+            r["fontes_usadas"] = [s.strip() for s in stripped.split(',') if s.strip()] if stripped else []
+        else:
+            r["fontes_usadas"] = raw or []
+        return r
+
+
+# ---------------------------------------------------------------------------
 # Prefeitos & Inteligência Municipal
 # ---------------------------------------------------------------------------
 

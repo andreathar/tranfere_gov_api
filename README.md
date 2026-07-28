@@ -12,25 +12,36 @@ Projeto Python de engenharia de dados e inteligência parlamentar para extraçã
 
 ## 📌 Visão Geral & Arquitetura
 
-O sistema implementa uma pipeline completa em 5 etapas:
+O sistema implementa uma pipeline completa em 8 fases + RAG:
 
 1. **Extração**: Coleta resiliente de dados via API pública do Transferegov com paginação e backoff exponencial.
-2. **Validação**: Normalização e validação de schemas com `Pydantic v2`.
+2. **Validação Pydantic**: Normalização e validação de schemas com `Pydantic v2`.
 3. **Persistência PostgreSQL**: Carga idempotente via `upsert_plano_acao()` com schema relacional normalizado.
-4. **Enriquecimento Multi-Fonte**:
-   - **Fase 1**: Validação de CNPJ (BrasilAPI), Dados demográficos/econômicos (IBGE) e dados fiscais municipais (SICONFI/Tesouro Nacional).
-   - **Fase 2**: Perfil completo e acompanhamento legislativo de parlamentares (API Dados Abertos da Câmara).
-   - **Fase 3**: Vinculação agregada entre parlamentares, beneficiários e emendas.
-5. **Visualização & Servidor MCP**:
-   - **Painel REST & Web App (FastAPI)**: Inteligência parlamentar e municipal na porta `8080` (via `./run.sh web`) ou `8000` (via `uvicorn` direto).
-   - **Plotly Dash & Servidor MCP Hub**: 31 gráficos analíticos interativos e endpoint MCP nativo (`/_mcp`) na porta `8050`.
+4. **Enriquecimento Multi-Fonte** (25+ módulos):
+   - **Fase 1**: Validação CNPJ (BrasilAPI), Dados IBGE, Mapeamento de municípios, Dados IBGE Agregados, Dados Fiscais SICONFI.
+   - **Fase 2**: Perfis e Acompanhamento Legislativo de Deputados (Câmara dos Deputados).
+   - **Fase 3**: Vinculação agregada Parlamentar × Beneficiário × Emenda.
+   - **Fase 7a/7b**: Dados TSE de Prefeitos e Vereadores eleitos.
+   - **Fase 8**: Perfil de Senadores em exercício (API Senado).
+   - **Complementares**: Compras (FNDE/TCU), DataJud, Diário Oficial, Saúde/Educação, Proposições, Votações.
+5. **Pipeline RAG v3**: Indexação vetorial (Qdrant) e geração de personas com Multi-Query (5 perspectivas temáticas).
+6. **Integração LocalAI**: Gerenciamento de modelos locais (Gemma, Qwen, Llama) via API compatível OpenAI — com gerenciamento de VRAM.
+7. **Visualização & Servidor MCP**:
+   - **Plotly Dash**: 68 gráficos analíticos interativos (17 módulos) na porta `8050`.
+   - **Servidor MCP Hub**: Endpoint MCP nativo (`/_mcp`) para Agentes de IA autônomos.
+8. **Painel Web FastAPI**: 38 endpoints REST + SPA para inteligência parlamentar e municipal.
 
 ```
 [ API TransfereGov ] ──► [ Extração & Pydantic ] ──► [ PostgreSQL ]
                                                           │
-   ┌──────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┐
-   ▼                                                      ▼                                                      ▼
-[ Enriquecimento: IBGE/Câmara/SICONFI ]      [ FastAPI Web App (Porta 8080/8000) ]       [ Plotly Dash + MCP (Porta 8050) ]
+   ┌──────────────────────┬───────────────────────┬────────┴────────────────────────────────────────────────┐
+   ▼                      ▼                       ▼                                                        ▼
+[ Enriquecimento ]   [ RAG v3 (Qdrant) ]   [ LocalAI (GPU) ]              [ Dash 68 charts + MCP ]
+[ 25+ fontes ]       + Persona (LLM)       Gemma / Qwen / Llama            Porta 8050 /_mcp
+                                  │                │
+                                  └────────┬───────┘
+                                           ▼
+                              [ FastAPI Web App — Porta 8080/8000 ]
 ```
 
 ---
@@ -48,26 +59,75 @@ tranfere_gov_api/
 │   ├── schemas.py                # Schemas de validação Pydantic
 │   ├── dash_app.py               # Servidor Plotly Dash & MCP Server Hub (Porta 8050)
 │   ├── graph_tools.py            # Ferramentas MCP customizadas (@mcp_enabled)
+│   ├── graph_factory.py          # Shim backward-compat → src.graphs
 │   ├── verify_graphs.py          # Suíte de auditoria e verificação de gráficos
 │   ├── deputado_followup.py      # CLI interativo de inteligência parlamentar
 │   ├── prefeito_followup.py      # CLI interativo de inteligência municipal
+│   ├── redator_transferegov.py   # Redator oficial de documentos (nota-técnica, ofício, parecer)
+│   ├── localai_manager.py        # Gerenciamento de VRAM e modelos LocalAI
+│   ├── localai_client.py         # Cliente HTTP para API LocalAI
+│   ├── mcp_tool_bridge.py        # Bridge MCP ↔ ferramentas externas
 │   │
-│   ├── api/                      # Aplicação Web FastAPI (Porta 8080 via run.sh / 8000 via uvicorn)
+│   ├── api/                      # Aplicação Web FastAPI (38 endpoints)
 │   │   ├── app.py                # App FastAPI principal
-│   │   ├── routes/               # Endpoints REST (deputados, prefeitos, analytics, compras, diario)
-│   │   └── services/             # Regras de negócio e integração DB/Câmara
+│   │   ├── routes/               # Endpoints REST
+│   │   │   ├── deputados.py      # /api/v1/deputados/* (perfil, emendas, despesas, comissões, votações)
+│   │   │   ├── prefeitos.py      # /api/v1/prefeitos/*
+│   │   │   ├── vereadores.py     # /api/v1/vereadores/*
+│   │   │   ├── analytics.py      # /api/v1/analytics/*
+│   │   │   ├── compras.py        # /api/v1/compras/*
+│   │   │   ├── auditoria.py      # /api/v1/auditoria/*
+│   │   │   ├── diario.py         # /api/v1/diario/*
+│   │   │   └── fnde.py           # /api/v1/fnde/*
+│   │   └── services/             # Regras de negócio e integração
+│   │       ├── db_service.py     # Acesso centralizado ao banco
+│   │       ├── camara_service.py # Integração API Câmara dos Deputados
+│   │       ├── analytics_service.py # Lógica de agregações analíticas
+│   │       └── mcp_service.py    # Serviços MCP
 │   │
-│   ├── enrichers/                # Pipeline de Enriquecimento (Fases 1, 2, 3)
-│   │   ├── pipeline.py           # Orquestrador do enriquecimento
-│   │   ├── validacao.py          # Fase 1a: Validação CNPJ via BrasilAPI
+│   ├── enrichers/                # Pipeline de Enriquecimento (25+ módulos)
+│   │   ├── pipeline.py           # Orquestrador do enriquecimento (fases 1-3)
+│   │   ├── validacao.py          # Fase 1a: CNPJ via BrasilAPI
 │   │   ├── ibge.py               # Fase 1b: Dados locais IBGE
-│   │   ├── camara.py             # Fase 2: Perfis de Deputados (Câmara)
-│   │   └── siconfi.py            # Fase 1e: Indicadores Fiscais Municipais
+│   │   ├── ibge_agregados.py     # Fase 1d: População, PIB, área
+│   │   ├── mapear_municipios.py  # Fase 1c: Fuzzy match → código IBGE
+│   │   ├── siconfi.py            # Fase 1e: SICONFI (DCA + RREO)
+│   │   ├── camara.py             # Fase 2: Perfis de Deputados
+│   │   ├── tse_prefeitos.py      # Fase 7a: Prefeitos eleitos (TSE)
+│   │   ├── tse_vereadors.py      # Fase 7b: Candidatos a vereador (TSE)
+│   │   ├── tse_deputados.py      # Dados TSE de deputados
+│   │   ├── senado.py             # Fase 8: Senadores (API Senado)
+│   │   ├── completar_deputados.py # Enriquecimento complementar
+│   │   ├── compras.py            # Compras públicas
+│   │   ├── datajud.py            # Dados judiciais (DataJud/CNJ)
+│   │   ├── discricionarias_sync.py # Emendas discricionárias
+│   │   ├── fnde.py               # Dados FNDE (educação)
+│   │   ├── saude_educacao.py     # Saúde e educação
+│   │   ├── sync_proposicoes.py   # Proposições legislativas
+│   │   ├── tcu_compras.py        # Compras TCU
+│   │   ├── votacoes_camara.py    # Votações da Câmara
+│   │   ├── votacoes_temas.py     # Temas das votações
+│   │   ├── diario_oficial_worker.py # Worker DOU
+│   │   ├── rag_persona.py        # Multi-Query RAG (5 perspectivas)
+│   │   └── rag_qdrant_indexer.py # Indexador vetorial Qdrant
 │   │
-│   └── graphs/                   # Módulos Plotly (12 domínios, 31 gráficos)
+│   ├── graphs/                   # Módulos Plotly (17 domínios, 68 gráficos)
+│   │   ├── registry.py           # @register_chart decorator + CHART_REGISTRY
+│   │   ├── theme.py              # Theme tokens, TODAS_UFS, CORES_SITUACAO
+│   │   ├── analitico.py (2)      ├── arrecadacao.py (13)
+│   │   ├── economia_cruzada.py (2) ├── economico.py (7)
+│   │   ├── financas.py (6)       ├── fiscal.py (3)
+│   │   ├── geoespacial.py (3)    ├── hierarquico.py (4)
+│   │   ├── impacto_social.py (2) ├── intel_politica.py (5)
+│   │   ├── intel_proposicoes.py (1) ├── parlamentar.py (3)
+│   │   ├── prefeitos.py (2)      ├── radar_diario.py (1)
+│   │   ├── siconfi.py (10)       ├── socioeconomico.py (3)
+│   │   └── votacoes.py (1)
+│   │
+│   └── redator/                  # (legado → src/redator_transferegov.py)
 │
 ├── config/                       # Configuração centralizada
-│   └── settings.py               # Configurações de API, DB, paths e env vars
+│   └── settings.py               # API, DB, paths, LocalAI, RAG, ENRICH_*
 │
 ├── data/                         # Schemas SQL e Migrations
 │   ├── schema.sql                # Schema PostgreSQL core
@@ -76,7 +136,12 @@ tranfere_gov_api/
 ├── docs/                         # Documentação do desenvolvedor
 │   ├── ONBOARDING.md             # Guia passo a passo de onboarding
 │   ├── DEVELOPMENT.md            # Padrões de desenvolvimento e pre-commit
-│   └── MIGRATIONS.md             # Instruções e histórico de migrations
+│   ├── MIGRATIONS.md             # Instruções e histórico de migrations
+│   ├── LOCALAI.md                # Configuração e modelos LocalAI
+│   ├── RAG.md                    # Pipeline RAG v3 com Qdrant
+│   ├── REDATOR.md                # Redator oficial de documentos
+│   ├── MCP_BRIDGE.md             # Bridge MCP para ferramentas externas
+│   └── CRON_JOBS.md              # Jobs agendados (Diário Oficial, Qdrant, Dossiê)
 │
 ├── .github/workflows/ci.yml      # CI/CD Pipeline (GitHub Actions)
 ├── .pre-commit-config.yaml       # Configuração de ganchos de código (Ruff, MyPy)
@@ -136,114 +201,147 @@ O projeto fornece o script `./run.sh` como atalho para todas as operações comu
 
 ### Extração de Dados
 ```bash
-# Descobrir objetos disponíveis para o exercício 2026
-./run.sh discover
-
-# Extrair planos de ação de cemitérios (objeto 301) e salvar no PostgreSQL
-./run.sh cemiterios --db --csv
-
-# Extrair planos negados/impedidos
-./run.sh negados --db
-
-# Extrair TODOS os objetos de 2026 e salvar no banco
-./run.sh all --db
+./run.sh discover                          # Listar objetos disponíveis
+./run.sh cemiterios --db --csv             # Extrair objeto 301 + banco + CSV
+./run.sh negados --db                      # Planos negados/impedidos
+./run.sh all --db                          # Todos os objetos 2026 no banco
 ```
 
-### Importação Manual e Relatórios SQL
+### Importação e Relatórios
 ```bash
-# Importar arquivos JSON pendentes para o banco de dados
-./run.sh import
-
-# Gerar relatórios formatados no terminal
-./run.sh report resumo
-./run.sh report estado
-./run.sh report negados
-./run.sh report sql "SELECT parlamentar_nome, COUNT(*) FROM v_planos_completo GROUP BY 1 LIMIT 10"
+./run.sh import                            # Importar JSONs para o banco
+./run.sh report resumo                     # Relatório geral
+./run.sh report estado                     # Relatório por estado
+./run.sh report negados                    # Planos negados
+./run.sh report sql "SELECT ..."           # Query SQL customizada
 ```
 
-### Enriquecimento de Dados Multi-Fonte
+### Enriquecimento Multi-Fonte
 ```bash
-# Pipeline completo de enriquecimento (Fases 1, 2 e 3)
+# Pipeline completo (todas as fases)
 python3 -m src.enrichers.pipeline --fase all
 
-# Execução individual de fases de enriquecimento
-./run.sh validate     # Validação de CNPJs via BrasilAPI
-./run.sh ibge         # Mapeamento e dados demográficos IBGE
-./run.sh camara       # Perfil parlamentar da Câmara dos Deputados
+# Fases individuais
+python3 -m src.enrichers.validacao         # Fase 1a: CNPJ BrasilAPI
+python3 -m src.enrichers.ibge              # Fase 1b: Dados IBGE
+python3 -m src.enrichers.mapear_municipios # Fase 1c: Fuzzy match IBGE
+python3 -m src.enrichers.ibge_agregados    # Fase 1d: Pop/PIB/área
+python3 -m src.enrichers.siconfi           # Fase 1e: SICONFI (DCA + RREO)
+python3 -m src.enrichers.camara            # Fase 2: Perfis Deputados
+python3 -m src.enrichers.tse_prefeitos     # Fase 7a: Prefeitos (TSE)
+python3 -m src.enrichers.tse_vereadors     # Fase 7b: Vereadores (TSE)
+python3 -m src.enrichers.senado            # Fase 8: Senadores (API Senado)
+```
+
+### Redator Oficial
+```bash
+./run.sh redator nota-tecnica --parlamentar "AFONSO FLORENCE" --ano 2026
+./run.sh redator oficio --dest "Governador" --cargo "Governador" --assunto "Relatório" --corpo "..."
+./run.sh redator parecer --processo "001/2026" --consulta "Análise"
+./run.sh redator despacho --assunto "Encaminhamento" --texto "..."
+./run.sh redator validar --arquivo "docs/nota.txt" --tipo nota_tecnica
+./run.sh redator listar-tipos
+```
+
+### Jobs Agendados
+```bash
+./run.sh cron-diario       # Worker do Diário Oficial (baixa DOU e gera resumo)
+./run.sh cron-qdrant       # Indexador Qdrant para alimentar RAG
+./run.sh cron-dossie       # Geração de dossiês via LLM
 ```
 
 ---
 
 ## 🌐 Aplicações Web & Servidor MCP
 
-O projeto conta com duas aplicações web complementares:
-
 ### 1. Painel Web de Inteligência Parlamentar (FastAPI)
-Interface RESTful e SPA para consulta de deputados, emendas, despesas CEAP e proposições.
+Interface RESTful e SPA com 38 endpoints para consulta de deputados, emendas, despesas CEAP, proposições, prefeitos, vereadores, compras e Diário Oficial.
 ```bash
-./run.sh web                          # Executa na porta 8080 (http://localhost:8080)
+./run.sh web                          # Porta 8080 (http://localhost:8080)
 # Ou diretamente via uvicorn na porta 8000:
 # uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
 ```
-- **Interface Web (via `./run.sh web`)**: [http://localhost:8080](http://localhost:8080)
-- **Interface Web (via uvicorn direto)**: [http://localhost:8000](http://localhost:8000)
-- **Documentação Swagger/ReDoc**: [http://localhost:8080/docs](http://localhost:8080/docs) (ou `http://localhost:8000/docs`)
+- **Interface Web**: [http://localhost:8080](http://localhost:8080) ou [http://localhost:8000](http://localhost:8000)
+- **Documentação Swagger/ReDoc**: [http://localhost:8080/docs](http://localhost:8080/docs)
 
 ### 2. Plotly Dash & Servidor MCP Hub (Dash 4.3+)
-Dashboard analítico interativo com 31 gráficos e Servidor MCP nativo integrado para suporte a Agentes de IA autônomos.
+Dashboard analítico interativo com 68 gráficos (17 módulos) e Servidor MCP nativo integrado.
 ```bash
 python3 src/dash_app.py
 ```
 - **Dashboard Web**: [http://localhost:8050](http://localhost:8050)
 - **Endpoint MCP Server**: [http://localhost:8050/_mcp](http://localhost:8050/_mcp)
 
-Para verificar a integridade e renderização dos gráficos:
+Verificação de integridade dos gráficos:
 ```bash
 python3 src/verify_graphs.py
 ```
 
 ---
 
+## 🤖 Integração LocalAI
+
+Gerenciamento de modelos de linguagem locais via API compatível OpenAI com controle de VRAM. O `LocalAIManager` descarrega modelos inativos antes de invocar novos, evitando OOM/RPC EOF em GPU.
+
+**Modelos validados** (ver `config/settings.py`):
+| Modelo | Uso | Velocidade |
+|--------|-----|-----------|
+| `gemma-4-e2b-it` | Padrão RAG / Redação PT-BR | 36.8 tok/s |
+| `qwen2.5-1.5b-instruct-q4-k-m` | Triagem / NER | 88.9 tok/s |
+| `llama-3.1-8b-q4-k-m` | Análise investigativa profunda | 7.7 tok/s |
+
+Documentação: [docs/LOCALAI.md](docs/LOCALAI.md)
+
+---
+
+## 📚 Pipeline RAG v3
+
+Sistema de Retrieval-Augmented Generation com Qdrant + LocalAI:
+
+- **Indexação vetorial** via `rag_qdrant_indexer.py` — embeddings `nomic-embed-text-v1.5` (768d).
+- **Multi-Query Persona** (`rag_persona.py`) — 5 consultas temáticas por deputado: votos, emendas PIX, proposições, Diário Oficial e conexões políticas municipais (TSE × Emendas).
+- **Benchmark de modelos** em `scripts/benchmark_models.py`.
+
+Documentação: [docs/RAG.md](docs/RAG.md)
+
+---
+
+## 📝 Redator Oficial
+
+Geração de documentos oficiais seguindo o Manual de Redação da Presidência (3ª edição). Tipos suportados: ofício, nota técnica, parecer, despacho, portaria, ata.
+
+Documentação: [docs/REDATOR.md](docs/REDATOR.md)
+
+---
+
 ## 🛠️ Qualidade de Código, Linting & CI/CD
 
-O projeto adota padrões rigorosos de qualidade de código automatizados via `pre-commit` hooks, `ruff`, `mypy` e `GitHub Actions`.
-
-### Configuração dos Ganchos Locais (Pre-commit)
-Instale os ganchos do git para validar automaticamente todo commit:
 ```bash
-pre-commit install
+pre-commit install                        # Instalar ganchos locais
+pre-commit run --all-files                # Verificações completas
+
+# Ou individualmente:
+ruff check . --fix                        # Linter
+ruff format .                             # Formatação
+mypy src config tests                     # Tipos
+pytest                                    # Testes
 ```
 
-### Execução Manual de Verificações de Qualidade
-Execute a suíte de linters e validadores de tipo em todo o repositório:
-```bash
-pre-commit run --all-files
-```
-
-Você também pode executar as ferramentas individualmente:
-```bash
-# Linter e Formatação com Ruff
-ruff check . --fix
-ruff format .
-
-# Checagem de Tipos Estrita com MyPy
-mypy src config tests
-
-# Execução de Testes Automatizados
-pytest
-```
-
-### Integração Contínua (CI/CD)
-Toda alteração enviada para as branches `main` ou `master` via Push ou Pull Request dispara automaticamente o workflow do GitHub Actions (`.github/workflows/ci.yml`), testando o projeto em ambientes Python 3.11 e 3.12.
+Push ou PR para `main`/`master` dispara o workflow GitHub Actions (`.github/workflows/ci.yml`), testando em Python 3.11 e 3.12.
 
 ---
 
 ## 📖 Documentação Adicional
 
-- [**Guia de Onboarding (`docs/ONBOARDING.md`)**](docs/ONBOARDING.md): Manual detalhado de primeiros passos e configuração de ambiente.
-- [**Guia de Desenvolvimento (`docs/DEVELOPMENT.md`)**](docs/DEVELOPMENT.md): Padrões de código, regras do Ruff/MyPy e fluxo de Pull Requests.
+- [**Guia de Onboarding (`docs/ONBOARDING.md`)**](docs/ONBOARDING.md): Primeiros passos e configuração de ambiente.
+- [**Guia de Desenvolvimento (`docs/DEVELOPMENT.md`)**](docs/DEVELOPMENT.md): Padrões de código, Ruff/MyPy e fluxo de PRs.
 - [**Guia de Migrações SQL (`docs/MIGRATIONS.md`)**](docs/MIGRATIONS.md): Instruções para aplicação de scripts SQL.
 - [**Guia de Agentes (`AGENTS.md`)**](AGENTS.md): Especificações técnicas para agentes autônomos de IA.
+- [**Integração LocalAI (`docs/LOCALAI.md`)**](docs/LOCALAI.md): Configuração e modelos LocAI.
+- [**Pipeline RAG v3 (`docs/RAG.md`)**](docs/RAG.md): Indexação vetorial e geração de personas.
+- [**Redator Oficial (`docs/REDATOR.md`)**](docs/REDATOR.md): Documentos oficiais automatizados.
+- [**Bridge MCP (`docs/MCP_BRIDGE.md`)**](docs/MCP_BRIDGE.md): Bridge MCP para ferramentas externas.
+- [**Jobs Agendados (`docs/CRON_JOBS.md`)**](docs/CRON_JOBS.md): Configuração de cron-diario, cron-qdrant, cron-dossie.
 
 ---
 

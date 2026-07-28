@@ -162,6 +162,17 @@ LOCALAI_MODELS = {
 # Modelo padrão para jobs de pipeline
 LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["gemma"]
 
+# Timeouts por modelo (em segundos) — sobrescrevem LOCALAI_TIMEOUT geral
+# Modelos menores são mais rápidos; 8B pode demorar muito em prompts grandes
+LOCALAI_MODEL_TIMEOUTS: dict[str, int] = {
+    "gemma-4-e2b-it": 120,                 # 2B params, rápido
+    "qwen2.5-1.5b-instruct-q4-k-m": 60,  # 1.5B, ultra-rápido
+    "llama-3.1-8b-q4-k-m": 300,           # 8B, lento mas robusto
+    "Qwen2.5-Coder-7B-Instruct-GGUF": 180,  # 7B, código
+    "nomic-embed-text-v1.5": 30,           # embeddings, rápido
+    "intelligent-router": 15,              # roteamento, simples
+}
+
 # ---------------------------------------------------------------------------
 # RAG — Qdrant + Embeddings + Persona
 # ---------------------------------------------------------------------------
@@ -170,9 +181,30 @@ QDRANT_COLLECTION = "deputados_perfis"
 EMBEDDER_MODEL = "nomic-embed-text-v1.5"
 EMBEDDING_DIM = 768
 RAG_LLM_MODEL = os.getenv(
-    "RAG_LLM_MODEL", "gemma-4-e2b-it"
-)  # gemma-4-e2b-it (qualidade/velocidade ideal)
+    "RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m"
+)
 RAG_PERSONA_VERSION = 3  # Incrementar para a nova versão enriquecida
 RAG_MIN_CHUNKS = 3  # Mínimo de chunks para gerar persona (evitar análises vazias)
 RAG_MAX_CHUNKS = 30  # Máximo de chunks por deputado no contexto final
 RAG_BATCH_SIZE = 50  # Tamanho do batch para embedding em lote
+
+# --- RAG v3: Parâmetros de Qualidade ---
+RAG_RRF_K: int = 60                    # Constante para Reciprocal Rank Fusion
+RAG_PROMPT_TOKEN_LIMIT: int = 7000     # Limite de tokens antes de truncar
+RAG_CHARS_PER_TOKEN: int = 4           # Estimativa de caracteres por token
+RAG_DEDUP_ALGO: str = "md5"            # Algoritmo de deduplicação ("prefix" ou "md5")
+
+# --- RAG v3: Tipos de Chunk ---
+RAG_CHUNK_TYPES: dict[str, str] = {
+    "perfil": "Dados pessoais do deputado",
+    "proposicao": "Proposições legislativas",
+    "emenda": "Emendas PIX com dados financeiros",
+    "emenda_discricionaria": "Emendas discricionárias",
+    "voto": "Padrão de votação nominal",
+    "diario_oficial": "Atos do Diário Oficial",
+    "conexao_politica": "Conexões Deputado→Prefeito→Vereador",
+    "compras_municipio": "Compras públicas do município",
+    "indicadores_sociais": "Saúde e educação do município",
+    "risco_judicial": "Processos judiciais vinculados",
+    "demografia_municipio": "Dados demográficos IBGE",
+}

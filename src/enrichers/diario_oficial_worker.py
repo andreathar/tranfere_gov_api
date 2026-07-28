@@ -262,7 +262,7 @@ async def main():
 
     from datetime import datetime, timedelta
 
-    trinta_dias_atras = (datetime.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+    noventa_dias_atras = (datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
     hoje = datetime.today().strftime("%Y-%m-%d")
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -282,12 +282,12 @@ async def main():
     for dep_id, nome in deputados:
         log.info(f"=== Processando {nome} ===")
         try:
-            # 1. Busca Diários Oficiais (restrito aos últimos 30 dias)
+            # 1. Busca Diários Oficiais (restrito aos últimos 90 dias)
             await process_diario_oficial(
                 query=nome,
                 escopo="ambos",
                 parlamentar_nome=nome,
-                data_inicio=trinta_dias_atras,
+                data_inicio=noventa_dias_atras,
                 data_fim=hoje,
             )
 

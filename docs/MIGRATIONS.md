@@ -17,8 +17,13 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 012 | migration_012_arrecadacao_impostos.sql | View v_arrecadacao_impostos | 003, 004, 007 |
 | 013 | migration_013_diario_oficial.sql | Cache diário oficial | 002 |
 | 014 | migration_014_vereadores.sql | Tabela vereadores_dados + views de vereadores | 003, 004 |
+| 014 | migration_014_proposicoes.sql | Tabela parlamentar_proposicoes (proposições legislativas da Câmara) | 003 |
 | 015 | migration_015_senadores.sql | Tabela senadores_dados + views de senadores | 002 |
+| 015 | migration_015_triangulo_politico.sql | Views de inteligência política: v_triangulo_politico (Deputado→Prefeito→Vereadores por partido) | 003, 010, 014 |
+| 016 | migration_016_votacoes_camara.sql | Tabelas votacoes_camara (sessões de plenário/comissões) e votos_camara (votos nominais por deputado) | 003 |
+| 017 | migration_017_rag_personas.sql | Tabela parlamentares_personas_v2 (personas analíticas com contexto_rag, versao_prompt, fontes_usadas) | 003 |
 | 018 | migration_018_vereadores_em_exercicio.sql | Views de vereadores em exercício (frontend): v_vereadores_em_exercicio, v_vereadores_por_partido_resumo, v_vereadores_por_municipio | 014, 004 |
+| 019 | migration_019_fnde_repasses.sql | Tabela fnde_repasses (repasses educacionais FNDE: FUNDEB, PNAE, PNLD, PNATE por município) | 003 |
 
 ## Execução
 
@@ -27,7 +32,7 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 psql -U cognee -h 127.0.0.1 -d transferegov_db -f data/schema.sql
 
 # Migrations na ordem
-for f in data/migration_00*.sql; do
+for f in $(ls data/migration_*.sql | sort); do
     echo "Aplicando $f..."
     psql -U cognee -h 127.0.0.1 -d transferegov_db -f "$f"
 done

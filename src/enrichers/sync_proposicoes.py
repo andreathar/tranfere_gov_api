@@ -1,15 +1,17 @@
 """
 Script para sincronizar proposições (PLs, etc.) dos deputados federais da API da Câmara.
-Popula a tabela parlamentar_proposicoes para enriquecer o contexto do LLaMA (RAG).
+Popula a tabela parlamentar_proposicoes para enriquecer o contexto do RAG.
 
-Uso: python3 -m src.enrichers.sync_proposicoes [--limit N]
+Diferença vs versão anterior: agora faz PAGINAÇÃO completa (antes limitava a 50 por deputado).
+
+Uso: python3 -m src.enrichers.sync_proposicoes [--limit N] [--itens 200]
 """
 
 import argparse
 import logging
 import time
 
-import requests
+import httpx
 
 from config.settings import CAMARA_API_BASE, ENRICH_RATE_LIMIT
 from src.db_utils import get_connection
@@ -18,30 +20,49 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 
-def sync_proposicoes_deputado(deputado_id: int, nome: str, limit_props: int = 50) -> int:
-    """Busca proposições de um deputado e salva no banco de dados."""
+def sync_proposicoes_deputado(
+    dep_id: int, nome: str, *, max_items: int = 200,
+    ano_inicio: int = 2023, ano_fim: int = 2026,
+) -> int:
+    """Busca TODAS as proposições de um deputado (paginado) e salva no banco."""
     url = f"{CAMARA_API_BASE}/proposicoes"
-    params: dict[str, str | int] = {
-        "idDeputadoAutor": deputado_id,
-        "ordem": "DESC",
-        "ordenarPor": "id",
-        "itens": limit_props,
-    }
-
     inseridos = 0
-    try:
-        resp = requests.get(url, params=params, timeout=15)
-        if resp.status_code == 200:
+    page = 1
+
+    # Filtro por data — API limita range a 3 meses, usamos só Inicio
+    data_inicio = f"{ano_inicio}-01-01"
+
+    while inseridos < max_items:
+        params = {
+            "idDeputadoAutor": dep_id,
+            "ordem": "DESC",
+            "ordenarPor": "id",
+            "itens": 100,
+            "pagina": page,
+            "dataApresentacaoInicio": data_inicio,
+        }
+        try:
+            resp = httpx.get(url, params=params, timeout=15)
+            if resp.status_code != 200:
+                log.warning("HTTP %d para %s (pag %d)", resp.status_code, nome, page)
+                break
+
             dados = resp.json().get("dados", [])
             if not dados:
-                return 0
+                break
 
             with get_connection() as conn, conn.cursor() as cur:
                 for prop in dados:
-                    proposicao_id = prop.get("id")
+                    if inseridos >= max_items:
+                        break
 
+                    proposicao_id = prop.get("id")
+                    if not proposicao_id:
+                        continue
+
+                    # Verificar duplicata
                     cur.execute(
-                        "SELECT proposicao_id FROM parlamentar_proposicoes WHERE proposicao_id = %s",
+                        "SELECT 1 FROM parlamentar_proposicoes WHERE proposicao_id = %s",
                         (proposicao_id,),
                     )
                     if cur.fetchone():
@@ -54,7 +75,8 @@ def sync_proposicoes_deputado(deputado_id: int, nome: str, limit_props: int = 50
                     cur.execute(
                         """
                         INSERT INTO parlamentar_proposicoes
-                        (proposicao_id, deputado_id, parlamentar_nome, sigla_tipo, numero, ano, ementa, data_apresentacao)
+                        (proposicao_id, deputado_id, parlamentar_nome, sigla_tipo,
+                         numero, ano, ementa, data_apresentacao)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (proposicao_id) DO UPDATE SET
                             ementa = EXCLUDED.ementa,
@@ -62,7 +84,7 @@ def sync_proposicoes_deputado(deputado_id: int, nome: str, limit_props: int = 50
                     """,
                         (
                             proposicao_id,
-                            deputado_id,
+                            dep_id,
                             nome,
                             prop.get("siglaTipo"),
                             prop.get("numero"),
@@ -72,21 +94,29 @@ def sync_proposicoes_deputado(deputado_id: int, nome: str, limit_props: int = 50
                         ),
                     )
                     inseridos += 1
+
                 conn.commit()
-    except Exception as e:
-        log.error(f"Erro ao buscar proposições para {nome}: {e}")
+
+            # Se retornou menos de 100, é a última página
+            if len(dados) < 100:
+                break
+
+            page += 1
+            time.sleep(0.3)
+
+        except Exception as e:
+            log.error("Erro ao buscar proposições para %s (pag %d): %s", nome, page, e)
+            break
 
     return inseridos
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Sincronizar proposições dos deputados.")
-    parser.add_argument(
-        "--limit", type=int, default=0, help="Limitar N deputados para buscar (0=todos)"
-    )
-    parser.add_argument(
-        "--itens", type=int, default=50, help="Quantidade de proposições por deputado (padrão=50)"
-    )
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Sincronizar proposições dos deputados (paginado).")
+    parser.add_argument("--limit", type=int, default=0, help="Limitar N deputados (0=todos)")
+    parser.add_argument("--itens", type=int, default=200, help="Máximo de proposições por deputado (padrão=200)")
+    parser.add_argument("--ano-inicio", type=int, default=2023, help="Ano início legislatura (padrão=2023)")
+    parser.add_argument("--ano-fim", type=int, default=2026, help="Ano fim legislatura (padrão=2026)")
     args = parser.parse_args()
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -94,21 +124,25 @@ def main():
         deputados = cur.fetchall()
 
     if args.limit > 0:
-        deputados = deputados[: args.limit]
+        deputados = deputados[:args.limit]
 
-    log.info(f"Iniciando sincronização para {len(deputados)} deputados...")
+    log.info("Iniciando sincronização para %d deputados (max %d proposições, %d-%d)...",
+             len(deputados), args.itens, args.ano_inicio, args.ano_fim)
 
     total_inseridos = 0
     for i, (dep_id, nome) in enumerate(deputados, 1):
-        if i % 10 == 0:
-            log.info(f"[{i}/{len(deputados)}] Processando {nome}...")
-
-        inseridos = sync_proposicoes_deputado(dep_id, nome, args.itens)
+        inseridos = sync_proposicoes_deputado(
+            dep_id, nome, max_items=args.itens,
+            ano_inicio=args.ano_inicio, ano_fim=args.ano_fim,
+        )
         total_inseridos += inseridos
+
+        if i % 10 == 0:
+            log.info("[%d/%d] %s: +%d (total: %d)", i, len(deputados), nome, inseridos, total_inseridos)
 
         time.sleep(ENRICH_RATE_LIMIT)
 
-    log.info(f"Sincronização concluída! {total_inseridos} novas proposições inseridas no total.")
+    log.info("Sincronização concluída! %d novas proposições inseridas no total.", total_inseridos)
 
 
 if __name__ == "__main__":
