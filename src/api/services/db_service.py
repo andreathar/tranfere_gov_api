@@ -95,7 +95,8 @@ def get_parlamentar_id(deputado_id: int) -> int | None:
             (deputado_id,),
         )
         row = cur.fetchone()
-        return int(row[0]) if row else None
+        # RealDictCursor: acessar por nome de coluna (row[0] não existe)
+        return int(row["parlamentar_id"]) if row else None
 
 
 # ---------------------------------------------------------------------------

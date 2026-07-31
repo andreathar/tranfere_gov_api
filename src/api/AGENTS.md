@@ -21,33 +21,38 @@ uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
 
 ```
 src/api/
-├── app.py                  App FastAPI principal (CORS, 8 routers, static files)
+├── app.py                  App FastAPI principal (CORS, GZip, 12 routers, static files)
 ├── routes/
-│   ├── deputados.py        /api/v1/deputados/*     (10 endpoints)
+│   ├── deputados.py        /api/v1/deputados/*     (13 endpoints: +discursos, +alertas, +emendas-discricionarias)
 │   ├── prefeitos.py        /api/v1/prefeitos/*     (6 endpoints)
 │   ├── vereadores.py       /api/v1/vereadores/*    (6 endpoints)
-│   ├── analytics.py        /api/v1/analytics/*     (4 endpoints)
+│   ├── analytics.py        /api/v1/analytics/*     (5 endpoints: +votacoes-recentes)
 │   ├── auditoria.py        /api/v1/auditoria/*     (3 endpoints)
 │   ├── compras.py          /api/v1/compras/*       (2 endpoints)
 │   ├── diario.py           /api/v1/diario/*        (2 endpoints)
 │   ├── fnde.py             /api/v1/fnde/*          (5 endpoints)
-│   └── governadores.py     /api/v1/governadores/*  (5 endpoints)
+│   ├── governadores.py     /api/v1/governadores/*  (5 endpoints)
+│   ├── senadores.py        /api/v1/senadores/*     (4 endpoints)
+│   ├── financeiro.py       /api/v1/financeiro/*    (4 endpoints)
+│   └── municipios.py       /api/v1/municipios/*    (2 endpoints)
 ├── services/
-│   ├── db_service.py       Consultas PostgreSQL (psycopg2, 30+ funcoes)
+│   ├── db_service.py       Consultas PostgreSQL (psycopg2, 45+ funcoes, TTLCache 300s em agregados)
+│   ├── cache_utils.py      ANALYTICS_CACHE (TTLCache 300s) + invalidação
 │   ├── camara_service.py   HTTP client assincrono para API Camara dos Deputados
 │   ├── analytics_service.py Agregacoes analiticas (party-efficiency, deputy-roi, etc.)
 │   └── mcp_service.py      Cliente MCPBrasilClient singleton (mcp-brasil)
 └── static/
-    ├── index.html          Frontend SPA (vanilla JS, Plotly.js)
-    ├── app.js              Logica JS (1400+ linhas)
+    ├── index.html          Frontend SPA (vanilla JS, Plotly lazy-load)
+    ├── app.js              Logica JS core + loader de modulos (carregarAbasNovas)
+    ├── js/tabs-novas.js    Abas novas (Senadores, Governadores, Financeiro, FNDE, sub-tabs deputado)
     └── style.css           Estilos (dark theme)
 ```
 
 ---
 
-## Endpoints — 43 totais
+## Endpoints — 68 totais
 
-### Deputados (10)
+### Deputados (13)
 
 | Metodo | Rota | Descricao | Fonte |
 |--------|------|-----------|-------|
@@ -61,6 +66,9 @@ src/api/
 | GET | `/{deputado_id}/proposicoes` | Proposicoes legislativas | API Camara |
 | GET | `/{deputado_id}/full_report?ano=` | Relatorio completo via executar_lote | MCP-Brasil (lote paralelo) |
 | GET | `/{deputado_id}/dossie` | Dossie comportamental RAG | DB (parlamentares_personas_v2) |
+| GET | `/{deputado_id}/discursos?limit=&tipo=` | Discursos em plenario/comissoes | DB (parlamentar_discursos, idx novo) |
+| GET | `/{deputado_id}/alertas` | Alertas automaticos do pipeline | DB (parlamentar_alertas) |
+| GET | `/{deputado_id}/emendas-discricionarias?limit=` | Emendas discricionarias sincronizadas | DB (emendas_discricionarias, idx novo) |
 
 ### Prefeitos (6)
 
@@ -84,7 +92,7 @@ src/api/
 | GET | `/api/v1/vereadores/municipio/{municipio_id}` | Vereadores de um municipio | DB |
 | GET | `/api/v1/vereadores/uf/{uf}` | Vereadores de uma UF | DB |
 
-### Analytics (4)
+### Analytics (5)
 
 | Metodo | Rota | Descricao | Fonte |
 |--------|------|-----------|-------|
@@ -92,6 +100,7 @@ src/api/
 | GET | `/api/v1/analytics/socioeconomic` | Emendas vs IDHM e PIB per capita | DB (JOIN com municipios_ibge) |
 | GET | `/api/v1/analytics/deputy-roi` | Comparativo CEAP vs Emendas | DB + API Camara (despesas) |
 | GET | `/api/v1/analytics/top-municipios` | Top municipios por valor total | DB (JOIN com municipios_ibge) |
+| GET | `/api/v1/analytics/votacoes-recentes?ano=&limit=` | Ultimas votacoes registradas | DB (votacoes_camara, TTLCache) |
 
 ### Auditoria (3)
 
@@ -134,6 +143,31 @@ src/api/
 | GET | `/api/v1/governadores/ranking/alinhamento?limit=` | Alinhamento partidario com bancada federal | DB |
 | GET | `/api/v1/governadores/triangulo-politico?uf=&limit=` | Triangulo politico deputado x prefeito x governador | DB (v_triangulo_politico) |
 | GET | `/api/v1/governadores/{uf}/perfil` | Perfil: dados eleitorais + SICONFI + bancada aliada | DB |
+
+### Senadores (4)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/senadores/ranking?limit=&partido=&uf=` | Ranking por atividade legislativa | DB (senadores_dados) |
+| GET | `/api/v1/senadores/search?q=` | Busca por nome | DB |
+| GET | `/api/v1/senadores/por-partido` | Contagem por partido + UFs cobertas | DB |
+| GET | `/api/v1/senadores/{senador_codigo}/perfil` | Perfil completo do senador | DB |
+
+### Financeiro SICONFI (4)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/financeiro/estados?ano=&limit=` | Ranking financeiro dos 27 estados | DB (estados_financeiro) |
+| GET | `/api/v1/financeiro/municipios?uf=&order_by=&limit=` | Ranking financeiro municipal | DB (municipios_financeiro JOIN IBGE) |
+| GET | `/api/v1/financeiro/comparativo?uf=` | Emendas Pix x arrecadacao propria por UF | DB (JOIN planos_acao + SICONFI) |
+| GET | `/api/v1/financeiro/municipio/{municipio_id}` | Financeiro detalhado de um municipio | DB |
+
+### Municipios (2)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/municipios/{municipio_id}/indicadores` | Indicadores consolidados (IBGE + saude + educacao + violencia) | DB (JOIN multiplo) |
+| GET | `/api/v1/municipios/{municipio_id}/financeiro` | Financeiro SICONFI do municipio | DB |
 
 ---
 

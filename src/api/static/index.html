@@ -6,7 +6,7 @@
     <title>Deputy Intelligence Dashboard</title>
     <meta name="description" content="Dashboard interativo para visualização de emendas, despesas e dados de deputados.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <link rel="preconnect" href="https://cdn.plot.ly" crossorigin>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -15,8 +15,12 @@
             <div class="logo">TransfereGov Intel</div>
             <nav class="main-nav">
                 <button class="nav-btn active" data-nav="deputados" onclick="switchNavMode('deputados')">👥 Deputados</button>
-                <button class="nav-btn" data-nav="prefeitos" onclick="switchNavMode('prefeitos')">🏛️ Prefeitos</button>
+                <button class="nav-btn" data-nav="senadores" onclick="switchNavMode('senadores')">🏛️ Senadores</button>
+                <button class="nav-btn" data-nav="prefeitos" onclick="switchNavMode('prefeitos')">🏙️ Prefeitos</button>
                 <button class="nav-btn" data-nav="vereadores" onclick="switchNavMode('vereadores')">🗣️ Vereadores</button>
+                <button class="nav-btn" data-nav="governadores" onclick="switchNavMode('governadores')">🌎 Governadores</button>
+                <button class="nav-btn" data-nav="financeiro" onclick="switchNavMode('financeiro')">💰 Financeiro</button>
+                <button class="nav-btn" data-nav="fnde" onclick="switchNavMode('fnde')">🎓 FNDE</button>
                 <button class="nav-btn" data-nav="inteligencia" onclick="switchNavMode('inteligencia')">🚀 Inteligência</button>
                 <button class="nav-btn" data-nav="saude-explorer" onclick="switchNavMode('saude-explorer')">🏥 Saúde</button>
                 <button class="nav-btn" data-nav="diario" onclick="switchNavMode('diario')">📰 Diário Oficial</button>
@@ -74,6 +78,9 @@
                 <button class="tab-btn" data-tab="comissoes">Comissões</button>
                 <button class="tab-btn" data-tab="votacoes">Votações</button>
                 <button class="tab-btn" data-tab="proposicoes">Proposições</button>
+                <button class="tab-btn" data-tab="discursos">🎤 Discursos</button>
+                <button class="tab-btn" data-tab="discricionarias">📋 Discricionárias</button>
+                <button class="tab-btn" data-tab="alertas">⚠️ Alertas</button>
                 <button class="tab-btn" data-tab="dossie">🧠 Dossiê IA</button>
             </div>
 
@@ -173,6 +180,38 @@
                 <div id="tab-proposicoes" class="tab-pane">
                     <h2 style="margin-bottom:1.5rem;">Proposições de Autoria</h2>
                     <div id="list-proposicoes" class="card-list"></div>
+                </div>
+
+                <!-- Discursos Tab -->
+                <div id="tab-discursos" class="tab-pane">
+                    <div class="section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Discursos em Plenário 🎤</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Discursos e pronunciamentos na Câmara dos Deputados (24.000+ registros).</p>
+                        </div>
+                        <select id="discursos-tipo-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none;">
+                            <option value="">Todos os tipos</option>
+                            <option value="COMO LÍDER">Como Líder</option>
+                            <option value="PEQUENO EXPEDIENTE">Pequeno Expediente</option>
+                            <option value="GRANDE EXPEDIENTE">Grande Expediente</option>
+                            <option value="BREVES COMUNICAÇÕES">Breves Comunicações</option>
+                        </select>
+                    </div>
+                    <div id="list-discursos" class="timeline-list"></div>
+                </div>
+
+                <!-- Discricionárias Tab -->
+                <div id="tab-discricionarias" class="tab-pane">
+                    <h2 style="margin-bottom:1.5rem;">Emendas Discricionárias 📋</h2>
+                    <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Emendas de transferência com finalidade definida sincronizadas do Portal da Transparência.</p>
+                    <div id="list-discricionarias" class="card-list"></div>
+                </div>
+
+                <!-- Alertas Tab -->
+                <div id="tab-alertas" class="tab-pane">
+                    <h2 style="margin-bottom:1.5rem;">Alertas Automáticos ⚠️</h2>
+                    <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">Alertas gerados pelo pipeline de monitoramento (DOU, votações, anomalias).</p>
+                    <div id="list-alertas" class="card-list"></div>
                 </div>
 
                 <!-- Dossiê IA Tab -->
@@ -338,6 +377,186 @@
                     </div>
                 </div>
 
+                <!-- Senadores Tab -->
+                <div id="tab-senadores" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Senadores em Exercício 🏛️</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Perfil dos 81 senadores, partidos, UFs e atividade legislativa.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <input type="text" id="senador-search-input" placeholder="Buscar senador por nome..." style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none; min-width:240px;">
+                            <button id="btn-search-senadores" style="background:var(--accent-blue); color:#fff; border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Buscar</button>
+                            <select id="senador-partido-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none;">
+                                <option value="">Todos os partidos</option>
+                            </select>
+                        </div>
+                    </header>
+
+                    <div class="kpi-grid" style="margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Senadores em Exercício</span>
+                            <span id="kpi-senadores-total" class="kpi-value">81</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Partidos Representados</span>
+                            <span id="kpi-senadores-partidos" class="kpi-value">—</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">UFs Cobertas</span>
+                            <span id="kpi-senadores-ufs" class="kpi-value">27</span>
+                        </div>
+                    </div>
+
+                    <div class="table-card">
+                        <h3>Lista de Senadores</h3>
+                        <div class="table-responsive">
+                            <table id="table-senadores">
+                                <thead>
+                                    <tr>
+                                        <th>Senador</th>
+                                        <th>Partido</th>
+                                        <th>UF</th>
+                                        <th>Situação</th>
+                                        <th>Atividade</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Governadores Tab -->
+                <div id="tab-governadores" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Governadores e Emendas por UF 🌎</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Governadores eleitos (TSE 2022), alinhamento partidário com a bancada federal e emendas Pix recebidas.</p>
+                        </div>
+                        <select id="governador-partido-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none;">
+                            <option value="">Todos os partidos</option>
+                        </select>
+                    </header>
+                    <div id="triangulo-container" style="margin-bottom: 1.5rem;"></div>
+                    <div class="table-card">
+                        <h3>Governadores × Emendas × Alinhamento</h3>
+                        <div class="table-responsive">
+                            <table id="table-governadores">
+                                <thead>
+                                    <tr>
+                                        <th>UF</th>
+                                        <th>Governador</th>
+                                        <th>Partido</th>
+                                        <th>Emendas Pix na UF</th>
+                                        <th>Alinhamento Bancada</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Financeiro Tab -->
+                <div id="tab-financeiro" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Financeiro SICONFI 💰</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Receitas, despesas e arrecadação própria (DCA + RREO) de estados e municípios — Tesouro Nacional.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            <div class="tabs" style="background:transparent; padding:0;">
+                                <button class="tab-btn active" data-fin-esfera="estados" onclick="TabsFinanceiro.carregar('estados')">Estados</button>
+                                <button class="tab-btn" data-fin-esfera="municipios" onclick="TabsFinanceiro.carregar('municipios')">Municípios</button>
+                            </div>
+                            <select id="financeiro-uf-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none;">
+                                <option value="">Todas as UFs</option>
+                            </select>
+                            <select id="financeiro-order-filter" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color); padding:0.5rem 1rem; border-radius:8px; outline:none;">
+                                <option value="despesas_totais">Despesas Totais</option>
+                                <option value="receitas_orcamentarias">Receitas Orçamentárias</option>
+                                <option value="arrec_impostos_geral">Arrecadação Geral</option>
+                                <option value="arrec_iss">Arrecadação ISS</option>
+                                <option value="arrec_iptu">Arrecadação IPTU</option>
+                                <option value="populacao">População</option>
+                            </select>
+                        </div>
+                    </header>
+                    <div id="fin-comparativo" class="table-card" style="margin-bottom: 1.5rem;">
+                        <h3>Emendas Pix × Arrecadação Própria por UF</h3>
+                        <div class="table-responsive">
+                            <table id="table-fin-comparativo">
+                                <thead>
+                                    <tr>
+                                        <th>UF</th>
+                                        <th>Planos</th>
+                                        <th>Emendas Recebidas</th>
+                                        <th>Arrecadação Própria</th>
+                                        <th>ICMS</th>
+                                        <th>FPM</th>
+                                        <th>Emenda / Arrec.</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="table-card">
+                        <h3>Ranking Financeiro</h3>
+                        <div class="table-responsive">
+                            <table id="table-financeiro">
+                                <thead>
+                                    <tr>
+                                        <th>Ente</th>
+                                        <th>UF</th>
+                                        <th>População</th>
+                                        <th>Receitas</th>
+                                        <th>Despesas</th>
+                                        <th>Resultado</th>
+                                        <th>Arrecadação Própria</th>
+                                        <th>Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FNDE Tab -->
+                <div id="tab-fnde" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem;">
+                        <h2 style="font-size:1.5rem;">Repasses FNDE 🎓</h2>
+                        <p style="color:var(--text-muted); font-size:0.9rem;">Repasses educacionais do Fundo Nacional de Desenvolvimento da Educação por município e estado.</p>
+                    </header>
+                    <div class="kpi-grid" style="margin-bottom: 1.5rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem;">
+                        <div class="kpi-card"><span class="kpi-label">Total Repassado</span><span id="kpi-fnde-total" class="kpi-value">—</span></div>
+                        <div class="kpi-card"><span class="kpi-label">Repasses Registrados</span><span id="kpi-fnde-count" class="kpi-value">—</span></div>
+                        <div class="kpi-card"><span class="kpi-label">Municípios Atendidos</span><span id="kpi-fnde-municipios" class="kpi-value">—</span></div>
+                        <div class="kpi-card"><span class="kpi-label">Exercício</span><span id="kpi-fnde-exercicio" class="kpi-value">—</span></div>
+                    </div>
+                    <div class="table-card">
+                        <h3>Repasses por Município</h3>
+                        <div class="table-responsive">
+                            <table id="table-fnde">
+                                <thead>
+                                    <tr>
+                                        <th>Município</th>
+                                        <th>UF</th>
+                                        <th>Programa</th>
+                                        <th>Valor</th>
+                                        <th>Data</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Saude Explorer Tab -->
                 <div id="tab-saude-explorer" class="tab-pane">
                     <header class="section-header" style="margin-bottom: 1.5rem;">
@@ -370,9 +589,20 @@
         </section>
     </main>
 
-    <script src="/static/app.js?v=20260727c"></script>
+    <script src="/static/app.js?v=20260801a"></script>
 
     <!-- Modals for Auditoria -->
+    <!-- Modal Genérico (Senadores, Governadores, Municípios) -->
+    <div id="modal-generico" class="modal hidden">
+        <div class="modal-content" style="max-width: 750px; max-height: 85vh; overflow-y: auto;">
+            <span class="close-modal" onclick="closeModal('modal-generico')">&times;</span>
+            <h2 id="modal-generico-title" style="margin-bottom: 0.25rem;">Detalhes</h2>
+            <div id="modal-generico-body" class="modal-body">
+                Carregando...
+            </div>
+        </div>
+    </div>
+
     <div id="modal-saude" class="modal hidden">
         <div class="modal-content">
             <span class="close-modal" onclick="closeModal('modal-saude')">&times;</span>

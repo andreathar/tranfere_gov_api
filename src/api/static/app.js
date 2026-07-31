@@ -285,7 +285,8 @@ function switchTab(tabName) {
 
 async function loadTabData(tab) {
   const id = state.currentDeputadoId;
-  if(!id && tab !== 'inteligencia' && tab !== 'saude-explorer' && tab !== 'diario' && tab !== 'prefeitos' && tab !== 'vereadores') return;
+  const modosGlobais = ['inteligencia', 'saude-explorer', 'diario', 'prefeitos', 'vereadores', 'senadores', 'governadores', 'financeiro', 'fnde'];
+  if(!id && !modosGlobais.includes(tab)) return;
 
 
   try {
@@ -346,6 +347,26 @@ async function loadTabData(tab) {
     }
     if(tab === 'vereadores') {
       loadVereadoresTab('');
+    }
+
+    // --- Abas novas (módulo carregado sob demanda) ---
+    if(tab === 'senadores' || tab === 'governadores' || tab === 'financeiro' || tab === 'fnde') {
+      carregarAbasNovas().then(() => {
+        const T = window.TabsNovos;
+        if (tab === 'senadores') T.Senadores.init();
+        if (tab === 'governadores') T.Governadores.init();
+        if (tab === 'financeiro') T.Financeiro.carregar('estados');
+        if (tab === 'fnde') T.Fnde.init();
+      });
+    }
+    if(tab === 'discursos') {
+      carregarAbasNovas().then(() => window.TabsNovos.DeputadoExtra.discursos(id));
+    }
+    if(tab === 'discricionarias') {
+      carregarAbasNovas().then(() => window.TabsNovos.DeputadoExtra.discricionarias(id));
+    }
+    if(tab === 'alertas') {
+      carregarAbasNovas().then(() => window.TabsNovos.DeputadoExtra.alertas(id));
     }
 
   } catch(e) {
@@ -968,6 +989,44 @@ document.addEventListener('DOMContentLoaded', () => {
       loadVereadoresTab(inputVereador?.value || '', ufFilter?.value, partidoFilter.value);
     });
   }
+
+  // Senadores Listeners
+  const btnSearchSenadores = document.getElementById('btn-search-senadores');
+  const inputSenador = document.getElementById('senador-search-input');
+  const senadorPartidoFilter = document.getElementById('senador-partido-filter');
+  if (btnSearchSenadores && inputSenador) {
+    btnSearchSenadores.addEventListener('click', () => window.TabsNovos?.Senadores.buscar());
+    inputSenador.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') window.TabsNovos?.Senadores.buscar();
+    });
+  }
+  if (senadorPartidoFilter) {
+    senadorPartidoFilter.addEventListener('change', () => window.TabsNovos?.Senadores.carregarRanking());
+  }
+
+  // Governadores Listeners
+  const govPartidoFilter = document.getElementById('governador-partido-filter');
+  if (govPartidoFilter) {
+    govPartidoFilter.addEventListener('change', () => window.TabsNovos?.Governadores.carregarRanking());
+  }
+
+  // Financeiro Listeners
+  const finUfFilter = document.getElementById('financeiro-uf-filter');
+  const finOrderFilter = document.getElementById('financeiro-order-filter');
+  if (finUfFilter) {
+    finUfFilter.addEventListener('change', () => window.TabsNovos?.Financeiro.carregar());
+  }
+  if (finOrderFilter) {
+    finOrderFilter.addEventListener('change', () => window.TabsNovos?.Financeiro.carregar());
+  }
+
+  // Discursos tipo filter
+  const discursosTipo = document.getElementById('discursos-tipo-filter');
+  if (discursosTipo) {
+    discursosTipo.addEventListener('change', () => {
+      if (state.currentDeputadoId) window.TabsNovos?.DeputadoExtra.discursos(state.currentDeputadoId);
+    });
+  }
 });
 
 // Prefeitos Explorer Tab
@@ -1419,4 +1478,48 @@ function renderDossieTab(data) {
       ${htmlAnalise}
     </div>
   `;
+}
+
+// ==========================================
+// Performance: Plotly sob demanda (lazy load)
+// ==========================================
+// O script do Plotly (4.5 MB) foi removido do <head>. Chamadas a Plotly.*
+// antes do carregamento são enfileiradas via Proxy e executadas após o
+// script chegar (em background). Gráficos renderizam ~1s após o clique.
+function carregarPlotly() {
+  if (window.Plotly && !window.__plotlyShimAtivo) return Promise.resolve(window.Plotly);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+    s.async = true;
+    s.onload = () => { window.__plotlyShimAtivo = false; resolve(window.Plotly); };
+    s.onerror = () => reject(new Error('Falha ao carregar Plotly CDN'));
+    document.head.appendChild(s);
+  });
+}
+if (!window.Plotly) {
+  window.__plotlyShimAtivo = true;
+  window.Plotly = new Proxy({}, {
+    get(_, prop) {
+      return (...args) => carregarPlotly().then(P => P[prop](...args));
+    },
+  });
+}
+
+// ==========================================
+// Abas novas: loader do módulo js/tabs-novas.js
+// ==========================================
+let _tabsNovasPromise = null;
+function carregarAbasNovas() {
+  if (window.TabsNovos) return Promise.resolve(window.TabsNovos);
+  if (_tabsNovasPromise) return _tabsNovasPromise;
+  _tabsNovasPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/static/js/tabs-novas.js?v=2';
+    s.async = true;
+    s.onload = () => resolve(window.TabsNovos);
+    s.onerror = () => { _tabsNovasPromise = null; reject(new Error('Falha ao carregar módulo de abas')); };
+    document.head.appendChild(s);
+  });
+  return _tabsNovasPromise;
 }
