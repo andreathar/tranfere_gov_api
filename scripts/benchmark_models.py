@@ -39,40 +39,46 @@ from src.localai_manager import manager as localai_manager
 # ---------------------------------------------------------------------------
 MODELOS_BENCHMARK = [
     {
-        "id": "llama-3.1-8b-q4-k-m",
-        "label": "Llama 3.1 8B (baseline)",
-        "backend": "cuda13-llama-cpp",
-        "gpu_layers": 24,
+        "id": "agente-dossie-investigativo",
+        "label": "Agente Dossiê Investigativo (Custom Prompt)",
+        "backend": "llama-cpp",
+        "gpu_layers": 999,
     },
     {
-        "id": "llama-3.1-8b-dossie",
-        "label": "Llama 3.1 8B (otimizado dossiê)",
-        "backend": "cuda13-llama-cpp",
-        "gpu_layers": 33,
+        "id": "agente-dossie-rapido",
+        "label": "Agente Dossiê Rápido (Triagem)",
+        "backend": "llama-cpp",
+        "gpu_layers": 999,
+    },
+    {
+        "id": "gemma-4-e2b-it",
+        "label": "Gemma 4 2B IT (Redação PT-BR)",
+        "backend": "llama-cpp",
+        "gpu_layers": 999,
     },
     {
         "id": "llama-3.2-3b-instruct:q4_k_m",
-        "label": "Llama 3.2 3B Q4 (rápido)",
+        "label": "Llama 3.2 3B Q4 (Rápido & Estável)",
         "backend": "cuda13-llama-cpp",
         "gpu_layers": 999,
     },
     {
+        "id": "llama-3.1-8b-dossie",
+        "label": "Llama 3.1 8B (Otimizado Dossiê)",
+        "backend": "cuda13-llama-cpp",
+        "gpu_layers": 33,
+    },
+    {
         "id": "qwen2.5-1.5b-instruct-q4-k-m",
-        "label": "Qwen2.5 1.5B (ultra-rápido)",
+        "label": "Qwen2.5 1.5B (Ultra-Rápido)",
         "backend": "cuda13-llama-cpp",
         "gpu_layers": 32,
     },
     {
         "id": "qwen3.5-9b-dossie",
-        "label": "Qwen3.5 9B (alta qualidade)",
+        "label": "Qwen3.5 9B (Alta Qualidade)",
         "backend": "llama-cpp",
         "gpu_layers": 30,
-    },
-    {
-        "id": "minicpm5-1b-claude-opus-fable5-v2-thinking",
-        "label": "MiniCPM5 1B (thinking)",
-        "backend": "llama-cpp",
-        "gpu_layers": None,
     },
 ]
 
@@ -168,7 +174,7 @@ def score_qualidade(texto: str) -> dict[str, Any]:
 
 def call_model(model_id: str, prompt: str, timeout: int = 300) -> dict[str, Any]:
     """Chama o modelo via API OpenAI-compatible do LocalAI."""
-    url = f"{LOCALAI_BASE_URL}/chat/completions"
+    url = f"{LOCALAI_BASE_URL}/v1/chat/completions"
     payload = {
         "model": model_id,
         "messages": [

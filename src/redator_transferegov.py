@@ -308,18 +308,29 @@ def buscar_parlamentar(nome: str) -> dict[str, Any] | None:
 
 
 def buscar_planos_parlamentar(
-    parlamentar_nome: str,
+    parlamentar_nome: str | None = None,
     ano: int | None = None,
+    parlamentar_id: int | None = None,
 ) -> pd.DataFrame:
-    """Busca planos de ação de um parlamentar, com opção de filtrar por ano."""
+    """Busca planos de ação de um parlamentar, com opção de filtrar por ano.
+
+    Aceita parlamentar_nome (ILIKE) ou parlamentar_id (exato).
+    Se ambos forem fornecidos, parlamentar_id tem precedência.
+    """
     sql = """
         SELECT plano_acao_codigo, objeto_descricao, beneficiario_nome,
                beneficiario_uf AS uf, plano_acao_situacao, valor_total,
                emenda_codigo, motivo_impedimento
         FROM v_planos_completo
-        WHERE UPPER(parlamentar_nome) LIKE UPPER(%s)
+        WHERE 1=1
     """
-    params: list[Any] = [f"%{parlamentar_nome}%"]
+    params: list[Any] = []
+    if parlamentar_id is not None:
+        sql += " AND parlamentar_id = %s"
+        params.append(parlamentar_id)
+    elif parlamentar_nome:
+        sql += " AND UPPER(parlamentar_nome) LIKE UPPER(%s)"
+        params.append(f"%{parlamentar_nome}%")
     if ano:
         sql += " AND emenda_ano = %s"
         params.append(ano)
@@ -384,7 +395,8 @@ def listar_parlamentares_impedidos(ano: int | None = None, limite: int = 20) -> 
                COUNT(*) AS total_impedidos,
                SUM(valor_total) AS valor_total
         FROM v_planos_completo pa
-        LEFT JOIN parlamentares_dados pd ON UPPER(pa.parlamentar_nome) = UPPER(pd.nome)
+        LEFT JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
+        LEFT JOIN parlamentares_dados pd ON p.nome = pd.nome OR p.nome = pd.nome_urna
         WHERE plano_acao_situacao IN
             ('IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO')
     """
@@ -409,6 +421,7 @@ def listar_parlamentares_impedidos(ano: int | None = None, limite: int = 20) -> 
 def gerar_nota_tecnica(
     parlamentar: str | None = None,
     ano: int | None = None,
+    parlamentar_id: int | None = None,
     cidade: str = "Brasília",
     orgao: str = "Secretaria de Planejamento",
     autoridade: str = "Secretário de Planejamento",
@@ -468,7 +481,11 @@ def gerar_nota_tecnica(
 
     # 2.2 Detalhamento por parlamentar (se especificado)
     if parlamentar:
-        planos = buscar_planos_parlamentar(parlamentar, ano)
+        planos = buscar_planos_parlamentar(
+            parlamentar_nome=parlamentar,
+            ano=ano,
+            parlamentar_id=parlamentar_id,
+        )
         if not planos.empty:
             doc.append(f"2.2 Planos de {parlamentar.upper()}")
             doc.append("")
@@ -708,6 +725,7 @@ Exemplos:
     # --- nota-tecnica ---
     nt = sub.add_parser("nota-tecnica", help="Gerar nota técnica sobre impedimentos")
     nt.add_argument("--parlamentar", type=str, default=None, help="Nome do parlamentar (filtro)")
+    nt.add_argument("--parlamentar-id", type=int, default=None, help="ID do parlamentar (filtro exato)")
     nt.add_argument("--ano", type=int, default=None, help="Ano de exercício (filtro)")
     nt.add_argument(
         "--cidade", type=str, default="Brasília", help="Cidade para data (default: Brasília)"
@@ -838,6 +856,7 @@ def main() -> int:
         texto = gerar_nota_tecnica(
             parlamentar=args.parlamentar,
             ano=args.ano,
+            parlamentar_id=args.parlamentar_id,
             cidade=args.cidade,
             orgao=args.orgao,
             autoridade=args.autoridade,

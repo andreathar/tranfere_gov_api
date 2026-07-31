@@ -4,6 +4,7 @@ Version: 2.0.0
 Summary: Extração, validação e análise de Planos de Ação do Transferegov (Governo Federal)
 License: MIT
 Requires-Python: >=3.11
+License-File: LICENSE
 Requires-Dist: requests>=2.31.0
 Requires-Dist: pandas>=2.1.0
 Requires-Dist: openpyxl>=3.1.0
@@ -18,6 +19,12 @@ Requires-Dist: plotly>=5.18
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.24; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
 Requires-Dist: respx>=0.22; extra == "dev"
 Requires-Dist: ruff>=0.8; extra == "dev"
 Requires-Dist: mypy>=1.13; extra == "dev"
+Requires-Dist: pre-commit>=3.6.0; extra == "dev"
+Requires-Dist: types-requests; extra == "dev"
+Requires-Dist: types-psycopg2; extra == "dev"
+Requires-Dist: pandas-stubs; extra == "dev"
+Dynamic: license-file

@@ -18,22 +18,25 @@ def grafico_emendas_vs_proposicoes():
     """
     df = query_df("""
         WITH emendas AS (
-            SELECT parlamentar_nome, SUM(valor_total) as valor_recebido
+            SELECT parlamentar_nome, parlamentar_id, SUM(valor_total) as valor_recebido
             FROM planos_acao
             WHERE parlamentar_nome IS NOT NULL
-            GROUP BY parlamentar_nome
+            GROUP BY parlamentar_nome, parlamentar_id
         ),
         proposicoes AS (
-            SELECT parlamentar_nome, COUNT(*) as qtd_proposicoes
-            FROM parlamentar_proposicoes
-            GROUP BY parlamentar_nome
+            SELECT pp.parlamentar_nome, pp.parlamentar_id, COUNT(*) AS qtd_proposicoes
+            FROM parlamentar_proposicoes pp
+            WHERE pp.parlamentar_id IS NOT NULL
+            GROUP BY pp.parlamentar_nome, pp.parlamentar_id
         )
         SELECT
             e.parlamentar_nome,
+            e.parlamentar_id,
+            e.parlamentar_id AS pid,
             e.valor_recebido,
             COALESCE(p.qtd_proposicoes, 0) as qtd_proposicoes
         FROM emendas e
-        LEFT JOIN proposicoes p ON e.parlamentar_nome = p.parlamentar_nome
+        LEFT JOIN proposicoes p ON e.parlamentar_id = p.parlamentar_id
         WHERE p.qtd_proposicoes > 0 OR e.valor_recebido > 0
     """)
 

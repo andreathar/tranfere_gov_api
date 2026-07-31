@@ -11,8 +11,12 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "siconfi": ["siconfi"],
     "compras": ["compras", "pncp", "contratosgovbr", "dadosabertos"],
     "saude": [
-        "saude", "farmacia_popular", "rename",
-        "denasus", "imunizacao", "opendatasus",
+        "saude",
+        "farmacia_popular",
+        "rename",
+        "denasus",
+        "imunizacao",
+        "opendatasus",
     ],
     "educacao": ["inep", "fnde"],
     "seguranca": ["atlas_violencia", "forum_seguranca", "mj", "sinesp"],
@@ -21,11 +25,15 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "judicial": ["datajud", "jurisprudencia", "tcu"],
     "diario_oficial": ["diario_oficial"],
     "dashboard": [
-        "list_registered_charts", "inspect_chart_health",
+        "list_registered_charts",
+        "inspect_chart_health",
         "get_chart_data_summary",
     ],
     "meta": [
-        "listar_features", "recomendar_tools", "planejar_consulta",
-        "executar_lote", "listar_datasets_disponiveis",
+        "listar_features",
+        "recomendar_tools",
+        "planejar_consulta",
+        "executar_lote",
+        "listar_datasets_disponiveis",
     ],
 }

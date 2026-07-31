@@ -5,8 +5,9 @@ Usa mcp-brasil como biblioteca Python (NÃO via protocolo MCP).
 Fluxo: dados já extraídos → PostgreSQL → enriquecer com APIs externas.
 
 Uso:
-    python3 -m src.enrichers.validacao    # validar CNPJs
-    python3 -m src.enrichers.ibge         # dados IBGE dos municípios
-    python3 -m src.enrichers.camara       # perfil dos parlamentares
-    python3 -m src.enrichers.pipeline     # todas as fases
+    python3 -m src.enrichers.validacao          # validar CNPJs
+    python3 -m src.enrichers.ibge               # dados IBGE dos municípios
+    python3 -m src.enrichers.camara             # perfil dos parlamentares
+    python3 -m src.enrichers.camara_discursos   # discursos da Câmara
+    python3 -m src.enrichers.pipeline           # todas as fases (1-9)
 """

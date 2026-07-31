@@ -1,28 +1,40 @@
 """
-Modulo RAG v3: Geracao de Personas/Dossies de Deputados.
+Modulo RAG v7: Geracao de Personas/Dossies de Deputados (Multi-Analista).
 
-Melhorias v3 (risp. v2):
-  - Multi-query RAG (5 queries tematicas, batch embedding)
+Melhorias v7 (vs. v6):
+  - 7 analistas especialistas independentes (cada um com prompt focado)
+  - Roteador de chunks: cada analista recebe apenas dados relevantes
+  - Quality check proprio por analista + score global ponderado
+  - Tolerancia a falhas: se um analista falha, os demais continuam
+  - Assembly final concatena secoes na ordem correta
+
+v6 (base):
+  - Modelo padrao gemma-4-e2b-it (36.8 tok/s, melhor PT-BR)
+  - Retry automatico com fallback (llama-3.2-3b) se quality check reprovar
+  - ensure_model_loaded() chamado 1x no lote (eliminada duplicacao)
+  - Prompt mais estruturado com secoes "I. EXECUTIVO / OPOSICAO"
+  - RAG_FALLBACK_MODEL e RAG_MAX_RETRIES via settings.py
+
+v5 (base):
+  - Multi-query RAG (14 queries tematicas, batch embedding)
   - Reciprocal Rank Fusion (RRF) para re-ranking de chunks
   - Dedup via MD5 (nao por prefixo) para evitar falsos positivos
   - Validacao de tamanho do prompt (janela de contexto ~8K)
   - Quality check: validacao de secoes obrigatorias na analise
   - QdrantClient reutilizado por lote (nao 1 por query)
-  - ensure_model_loaded() chamado 1x por lote (nao 6x por deputado)
   - ThreadPoolExecutor para processamento paralelo em lote
   - Context_list retornado por generate (elimina busca duplicada)
 
-Fluxo:
+Fluxo v7:
   1. search_context_multiquery() -> batch embed + RRF -> chunks do Qdrant
-  2. build_analysis_prompt() -> prompt adaptativo baseado nos tipos de dados
-  3. _validate_prompt_size() -> trunca chunks se prompt exceder contexto
-  4. generate_persona_analysis() -> LLM gera dossier
-  5. _check_quality() -> valida secoes obrigatorias
-  6. _save_persona() -> salva no DB com contexto_rag + fontes_usadas
+  2. run_analyst_pipeline() -> 7 analistas independentes (com tolerancia a falhas)
+  3. assemble_dossier() -> concatena secoes na ordem
+  4. calculate_global_score() -> score ponderado das secoes
+  5. _save_persona() -> salva no DB com contexto_rag + fontes_usadas
 
 Uso:
     ./run.sh cron-dossie --nome "Afonso Florence"
-    ./run.sh cron-dossie --lote 50
+    ./run.sh cron-dossie --lote 50 --modelo gemma-4-e2b-it
     python3 -m src.enrichers.rag_persona --nome "Afonso Florence" --regerar
 """
 
@@ -36,17 +48,26 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
 
 from config.settings import (
-    EMBEDDER_MODEL,
+    CLOUD_PROXY_MODEL_NAMES,
     QDRANT_COLLECTION,
     QDRANT_URL,
     RAG_LLM_MODEL,
     RAG_MAX_CHUNKS,
     RAG_MIN_CHUNKS,
     RAG_PERSONA_VERSION,
+    USE_MODAL_VLLM,
+)
+from src.analysts import (
+    assemble_dossier,
+    calculate_global_score,
+    run_analyst_pipeline,
 )
 from src.db_utils import get_connection
-from src.enrichers.rag_qdrant_indexer import embed_text_batch
-from src.localai_client import LocalAIClient
+from src.enrichers.rag_qdrant_indexer import (
+    embed_text_batch,
+    text_to_sparse_vector,
+    texts_to_sparse_vectors,
+)
 from src.localai_manager import manager as localai_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -58,23 +79,83 @@ log = logging.getLogger(__name__)
 
 RRF_K = 60  # Constante de suavizacao do Reciprocal Rank Fusion
 RAG_TOKEN_CHARS = 4  # Estimativa: ~4 caracteres por token
-RAG_MAX_TOKENS = 7000  # Limite de tokens para gemma-4-e2b-it (janela 8K - margem)
-EMBEDDING_DIM = 768  # Dimensao do nomic-embed-text-v1.5
+# Limite de tokens adaptativo: 32k para Modal (Llama-3-70B), 7k para local
+RAG_MAX_TOKENS = 32000 if USE_MODAL_VLLM else 7000
+EMBEDDING_DIM = 768  # Dimensao do embeddinggemma-300m
 
 # ---------------------------------------------------------------------------
-# Multi-Query RAG -- 5 queries tematicas (incluindo TSE / Conexoes Partidarias)
+# Mapa: query_tematica_index -> chunk_types para filtro no Qdrant
+# Cada query busca apenas chunks do tipo relevante, melhorando o recall
+# e reduzindo ruido no RRF fusion.
+# ---------------------------------------------------------------------------
+
+QUERY_CHUNK_FILTER: dict[int, list[str]] = {
+    0: ["VOTO"],
+    1: ["PROPOSICAO"],
+    2: ["EMENDA", "BENEFICIARIO"],
+    3: ["EMENDA_DISCRICIONARIA"],
+    4: ["PARLAMENTAR_RESUMO", "PERFIL", "PERSONA_EXISTENTE"],
+    5: ["MUNICIPIO_FINANCEIRO"],
+    6: ["DEMOGRAFIA_MUNICIPIO"],
+    7: ["INDICADORES_SOCIAIS", "INDICADORES_MUNICIPAL"],
+    8: ["FNDE_REPASSES"],
+    9: ["CONEXAO_POLITICA", "PREFEITO", "VEREADORES_RESUMO", "SENADOR"],
+    10: ["RISCO_JUDICIAL", "DIARIO_OFICIAL", "PARLAMENTAR_ALERTAS"],
+    11: ["COMPRAS_MUNICIPIO", "BENEFICIARIO"],
+    12: ["DISCURSO_PLENARIO"],
+    13: ["DISCURSO_PLENARIO"],
+    # FIX 2026-07-31: antes, 7 dos 22 chunk types (perfil, beneficiario,
+    # diario_oficial, senador, indicadores_municipal, parlamentar_alertas,
+    # persona_existente) NUNCA eram buscados pelas queries tematicas — ficavam
+    # fora do contexto do dossier mesmo quando indexados. Agora todos os tipos
+    # sao alcancaveis por pelo menos uma query.
+}
+
+# ---------------------------------------------------------------------------
+# Multi-Query RAG -- 14 queries tematicas (cobrindo todos os 22 chunk types)
 # ---------------------------------------------------------------------------
 
 QUERIES_TEMATICAS = [
-    "Padrao de voto e alinhamento politico do deputado em votacoes nominais no plenario",
-    "Emendas parlamentares Pix, municipios beneficiarios e valores transferidos",
-    "Proposicoes legislativas apresentadas e areas tematicas de foco",
-    "Atos no diario oficial, fiscalizacao, decretos e movimentacoes relevantes",
-    "Conexao politica local, partido dos prefeitos beneficiados e alinhamento eleitoral municipal",
+    # === Comportamento Legislativo ===
+    "Padrao de voto e alinhamento politico do deputado em votacoes nominais, "
+    "dissenso partidario, obstrucao e abstencao no plenario",
+    "Proposicoes legislativas apresentadas: PLs, PECs, PDLs, areas tematicas, "
+    "produtividade legislativa e coerencia com emendas",
+    # === Emendas e Transferencias ===
+    "Emendas parlamentares Pix: municipios beneficiarios, valores transferidos, "
+    "situacao dos planos de acao, objetos de execucao",
+    "Emendas discricionarias e transferencias convencionais do Portal Transparencia: "
+    "convenios, status de execucao orcamentaria, beneficiarios CNPJ",
+    "Resumo consolidado do deputado: total de emendas, beneficiarios unicos, "
+    "municipios atendidos e valor global alocado",
+    # === Contexto Municipal Financeiro e Demografico ===
+    "Dados financeiros municipais SICONFI: receita orcamentaria, despesas totais, "
+    "divida passiva, arrecadacao FPM, ICMS e ISS dos municipios receptores",
+    "Dados demograficos IBGE dos municipios receptores: populacao, PIB per capita, "
+    "IDHM, area territorial, densidade demografica",
+    # === Indicadores Sociais e Transparencia ===
+    "Indicadores de saude e educacao nos municipios: leitos SUS, hospitais, UBS, "
+    "IDEB anos iniciais e finais, taxa de aprovacao e matriculas escolares",
+    "Repasses FNDE e programas educacionais (FUNDEB, PNAE, PNLD, PNATE) "
+    "nos municipios receptores de emendas parlamentares",
+    # === Rede Politica e Riscos ===
+    "Conexao politica local: partido dos prefeitos beneficiados, relacao partidaria, "
+    "vereadores aliados, apadrinhamento eleitoral, fisiologismo municipal",
+    "Risco judicial e compliance: processos judiciais dos beneficiarios via DataJud, "
+    "fraudes, irregularidades e acoes contra entidades receptoras",
+    # === Compras, Beneficiarios e Transparencia ===
+    "Compras publicas e licitacoes nos municipios receptores, fornecedores, "
+    "contratos homologados e beneficiarios diretos com CNPJ",
+    # === Discursos e Retorica ===
+    "Ideologia e posicionamento politico do deputado nos discursos de plenario: "
+    "pautas de costumes, conservadorismo, progressismo, polarizacao, retorica partidaria",
+    "Topicos recorrentes, palavras-chave e bandeiras publicas do deputado nos "
+    "discursos: saude, educacao, seguranca, economia, corrupcao, direitos humanos, meio ambiente",
 ]
 
-# Secoes obrigatorias que a analise gerada deve conter
+# Secoes obrigatorias que a analise gerada deve conter (v6 com CLASSIFICAÇÂO)
 SECOES_OBRIGATORIAS = [
+    "CLASSIFICACAO POLITICA",
     "PERFIL",
     "AREAS TEMATICAS",
     "CRUZAMENTO DE DADOS",
@@ -102,12 +183,17 @@ def search_context_qdrant(
     limit: int = 10,
     client: QdrantClient | None = None,
     query_vector: list[float] | None = None,
+    query_sparse_vector: qdrant_models.SparseVector | None = None,
+    chunk_types: list[str] | None = None,
 ) -> list[tuple[str, float]]:
-    """Busca chunks relevantes no Qdrant para um deputado e query especifica.
+    """Busca chunks relevantes no Qdrant usando hybrid search (dense + BM25 sparse + RRF).
 
     Args:
         client: QdrantClient reutilizado (None = criar novo).
-        query_vector: Vector ja embbedido (None = embbed agora).
+        query_vector: Dense vector pré-embeddado (None = embed agora).
+        query_sparse_vector: Sparse vector BM25 pré-computado (None = computa agora).
+        chunk_types: Filtrar por tipos específicos de chunk (ex: ["VOTO", "EMENDA"]).
+                     Se None, retorna todos os tipos (mantém compatibilidade).
 
     Returns:
         Lista de (texto_formatado, score_qdrant).
@@ -121,25 +207,64 @@ def search_context_qdrant(
         log.error(f"Falha ao embeddar query: '{query_text[:60]}...'")
         return []
 
+    # Sparse query vector (BM25) — gerado localmente
+    if query_sparse_vector is None:
+        query_sparse_vector = text_to_sparse_vector(query_text)
+
     # 1.2: Reutilizar client quando fornecido
     should_close = False
     if client is None:
         client = QdrantClient(url=QDRANT_URL)
         should_close = True
 
-    filtro = qdrant_models.Filter(
-        must=[
-            qdrant_models.FieldCondition(
-                key="deputado_id",
-                match=qdrant_models.MatchValue(value=deputado_id),
+    # Filtro base: deputado_id
+    conditions = [
+        qdrant_models.FieldCondition(
+            key="deputado_id",
+            match=qdrant_models.MatchValue(value=deputado_id),
+        )
+    ]
+
+    # Filtro opcional por chunk type
+    # IMPORTANTE: payloads do Qdrant usam tipos em MINÚSCULAS
+    # (ex: "proposicao", "voto") — normalizar para lowercase,
+    # pois MatchValue é case-sensitive.
+    if chunk_types:
+        chunk_types = [ct.lower() for ct in chunk_types]
+        if len(chunk_types) == 1:
+            conditions.append(
+                qdrant_models.FieldCondition(
+                    key="type",
+                    match=qdrant_models.MatchValue(value=chunk_types[0]),
+                )
             )
-        ]
-    )
+        else:
+            conditions.append(
+                qdrant_models.FieldCondition(
+                    key="type",
+                    match=qdrant_models.MatchAny(any=chunk_types),
+                )
+            )
+
+    filtro = qdrant_models.Filter(must=conditions)
 
     try:
+        # Hybrid search: prefetch dense + sparse, fuse with RRF
         hits = client.query_points(
             collection_name=QDRANT_COLLECTION,
-            query=query_vector,
+            prefetch=[
+                qdrant_models.Prefetch(
+                    query=query_vector,
+                    using="dense",
+                    limit=limit * 3,
+                ),
+                qdrant_models.Prefetch(
+                    query=query_sparse_vector,
+                    using="bm25",
+                    limit=limit * 3,
+                ),
+            ],
+            query=qdrant_models.FusionQuery(fusion=qdrant_models.Fusion.RRF),
             query_filter=filtro,
             search_params=qdrant_models.SearchParams(hnsw_ef=128),
             limit=limit,
@@ -168,7 +293,7 @@ def search_context_qdrant(
 def search_context_multiquery(
     deputado_id: int, top_k_per_query: int = 8
 ) -> tuple[list[str], list[tuple[str, float]]]:
-    """Executa 5 queries tematicas com batch embed, RRF merge + MD5 dedup.
+    """Executa 14 queries tematicas com batch embed, RRF merge + MD5 dedup.
 
     Returns:
         (context_list, scored_chunks):
@@ -178,11 +303,13 @@ def search_context_multiquery(
     # Embedder (nomic) e CPU-based, nao precisa de exclusividade GPU.
     # LocalAI lazy-load na primeira chamada de embedding.
 
-    # 1.2: reutilizar QdrantClient para todas as 5 queries
+    # 1.2: reutilizar QdrantClient para todas as queries
     client = QdrantClient(url=QDRANT_URL)
 
-    # 1.3: batch embed das 5 queries em 1 request (nao 5 sequenciais)
-    log.info(f"Batch embedding de {len(QUERIES_TEMATICAS)} queries para deputado {deputado_id}...")
+    # 1.3: batch embed de todas as queries em 1 request
+    log.info(
+        f"Batch embedding de {len(QUERIES_TEMATICAS)} queries tematicas para deputado {deputado_id}..."
+    )
     all_vectors = embed_text_batch(QUERIES_TEMATICAS)
     if len(all_vectors) != len(QUERIES_TEMATICAS):
         log.error(
@@ -192,15 +319,24 @@ def search_context_multiquery(
         client.close()
         return [], []
 
+    # Sparse query vectors (BM25-style) — geração local rápida, sem modelo
+    sparse_vectors = texts_to_sparse_vectors(QUERIES_TEMATICAS)
+
     # Coletar resultados de todas as queries com score e indice da query
     raw_results: list[tuple[str, float, int]] = []  # (texto, score_qdrant, query_idx)
-    for qi, (query_text, vector) in enumerate(zip(QUERIES_TEMATICAS, all_vectors)):
+    for qi, (query_text, vector, sparse_vec) in enumerate(
+        zip(QUERIES_TEMATICAS, all_vectors, sparse_vectors)
+    ):
+        # Filtro por chunk type especifico de cada query
+        chunk_types = QUERY_CHUNK_FILTER.get(qi)
         results = search_context_qdrant(
             deputado_id,
             query_text,
             limit=top_k_per_query,
             client=client,
             query_vector=vector,
+            query_sparse_vector=sparse_vec,
+            chunk_types=chunk_types,
         )
         for text, score in results:
             raw_results.append((text, score, qi))
@@ -224,7 +360,7 @@ def search_context_multiquery(
         per_query_hashes.setdefault(qi, []).append(h)
 
     rrf_scores: dict[str, float] = {}
-    for qi, hash_list in per_query_hashes.items():
+    for _qi, hash_list in per_query_hashes.items():
         for rank, h in enumerate(hash_list):
             rrf_scores[h] = rrf_scores.get(h, 0.0) + 1.0 / (RRF_K + rank + 1)
 
@@ -241,34 +377,63 @@ def search_context_multiquery(
 
 
 # ---------------------------------------------------------------------------
+# Helper: detecção de modelo cloud proxy
+# ---------------------------------------------------------------------------
+
+
+def _is_cloud_proxy_model(model_id: str) -> bool:
+    """Verifica se o modelo roda via cloud proxy (não precisa de VRAM local)."""
+    return model_id in CLOUD_PROXY_MODEL_NAMES
+
+
+def _effective_max_tokens(model_id: str | None = None) -> int:
+    """Retorna o limite de tokens efetivo baseado no tipo de modelo."""
+    model = model_id or RAG_LLM_MODEL
+    if USE_MODAL_VLLM:
+        return 32000
+    if _is_cloud_proxy_model(model):
+        return 128000  # Modelos cloud têm janela de contexto grande (128K+)
+    return 7000  # Padrão local
+
+
+# ---------------------------------------------------------------------------
 # Validacao de tamanho do prompt (janela de contexto)
 # ---------------------------------------------------------------------------
 
 
 def _validate_prompt_size(
-    prompt: str, context_list: list[str], nome: str
+    prompt: str,
+    context_list: list[str],
+    nome: str,
+    max_tokens: int | None = None,
 ) -> tuple[str, list[str]]:
-    """Trunca chunks se prompt exceder janela de contexto do modelo (~8K).
+    """Trunca chunks se prompt exceder janela de contexto do modelo.
 
-    Estima tokens como len(prompt) / 4. Se exceder RAG_MAX_TOKENS,
+    Estima tokens como len(prompt) / 4. Se exceder max_tokens,
     remove chunks ate caber (minimo RAG_MIN_CHUNKS).
+
+    Args:
+        max_tokens: Limite de tokens. Se None, usa _effective_max_tokens().
 
     Returns:
         (prompt_rebuild, context_list_trimmed)
     """
+    if max_tokens is None:
+        max_tokens = _effective_max_tokens()
+
     estimated_tokens = len(prompt) // RAG_TOKEN_CHARS
-    if estimated_tokens <= RAG_MAX_TOKENS:
+    if estimated_tokens <= max_tokens:
         return prompt, context_list
 
     log.warning(
-        f"Prompt excede limite ({estimated_tokens} tokens > {RAG_MAX_TOKENS}), "
+        f"Prompt excede limite ({estimated_tokens} tokens > {max_tokens}), "
         f"reduzindo de {len(context_list)} chunks..."
     )
     trimmed = list(context_list)
     while len(trimmed) > RAG_MIN_CHUNKS:
         trimmed.pop()
         rebuilt = build_analysis_prompt(trimmed, nome)
-        if len(rebuilt) // RAG_TOKEN_CHARS <= RAG_MAX_TOKENS:
+        if len(rebuilt) // RAG_TOKEN_CHARS <= max_tokens:
             prompt = rebuilt
             break
     else:
@@ -278,7 +443,7 @@ def _validate_prompt_size(
     final_tokens = len(prompt) // RAG_TOKEN_CHARS
     log.warning(
         f"Chunks reduzidos: {len(context_list)} -> {len(trimmed)} "
-        f"({final_tokens} tokens estimados)"
+        f"({final_tokens} tokens estimados, limite: {max_tokens})"
     )
     return prompt, trimmed
 
@@ -289,32 +454,17 @@ def _validate_prompt_size(
 
 
 def _check_quality(analise: str) -> bool:
-    """Valida se todas as secoes obrigatorias estao presentes na analise.
-
-    Secoes obrigatorias: PERFIL, AREAS TEMATICAS, CRUZAMENTO DE DADOS,
-    ALINHAMENTO POLITICO, ANOMALIAS E FISIOLOGISMO.
-
-    Normaliza acentos (unicodedata NFKD) antes de comparar para evitar
-    falsos negativos quando o LLM gera headers com acentos (ex: "AREAS TEMATICAS").
-
-    Returns:
-        True se todas as obrigatorias estiverem presentes.
-    """
+    """Valida se todas as secoes obrigatorias estao presentes na analise."""
     import unicodedata
 
-    # Normalizar: lowercase + remover acentos (NFKD decompose, strip combining)
     normalized = (
-        unicodedata.normalize("NFKD", analise)
-        .encode("ascii", "ignore")
-        .decode("ascii")
-        .upper()
+        unicodedata.normalize("NFKD", analise).encode("ascii", "ignore").decode("ascii").upper()
     )
     ausentes = [s for s in SECOES_OBRIGATORIAS if s not in normalized]
 
     if ausentes:
         log.warning(f"Secoes ausentes na analise: {', '.join(ausentes)}")
 
-    # Contar opcionais presentes (para logging)
     opcional_presentes = sum(1 for s in SECOES_OPCIONAIS if s in normalized)
     log.debug(
         f"  Secoes obrigatorias: {len(SECOES_OBRIGATORIAS) - len(ausentes)}/{len(SECOES_OBRIGATORIAS)}, "
@@ -324,6 +474,23 @@ def _check_quality(analise: str) -> bool:
     return len(ausentes) == 0
 
 
+def score_qualidade_eval(analise: str) -> float:
+    """Calcula pontuação de qualidade (0 a 100) baseada na cobertura de seções e densidade numérica."""
+    import re
+    import unicodedata
+
+    normalized = (
+        unicodedata.normalize("NFKD", analise).encode("ascii", "ignore").decode("ascii").upper()
+    )
+    encontradas = [s for s in SECOES_OBRIGATORIAS if s in normalized]
+    score = (len(encontradas) / len(SECOES_OBRIGATORIAS)) * 70.0
+    palavras = len(analise.split())
+    densidade = min(palavras / 400.0, 1.0) * 20.0
+    tem_numeros = bool(re.search(r"R\$\s*[\d.,]+|[\d.,]+%", analise))
+    numeros_bonus = 10.0 if tem_numeros else 0.0
+    return min(round(score + densidade + numeros_bonus, 1), 100.0)
+
+
 # ---------------------------------------------------------------------------
 # Prompt Adaptativo -- adapta secoes baseado nos dados disponiveis
 # ---------------------------------------------------------------------------
@@ -331,33 +498,75 @@ def _check_quality(analise: str) -> bool:
 
 def _count_sources(context_list: list[str]) -> dict[str, int]:
     """Conta chunks por tipo de fonte."""
-    counts = {
-        "votos": 0,
-        "emendas": 0,
-        "proposicoes": 0,
-        "diario_oficial": 0,
+    counts: dict[str, int] = {
         "perfil": 0,
+        "proposicoes": 0,
+        "emendas": 0,
+        "votos": 0,
+        "diario_oficial": 0,
         "conexao_politica": 0,
+        "emendas_discricionarias": 0,
+        "compras": 0,
+        "indicadores_sociais": 0,
+        "indicadores_municipais": 0,
+        "risco_judicial": 0,
+        "demografia": 0,
+        "financeiro": 0,
+        "resumo": 0,
+        "beneficiarios": 0,
+        "prefeitos": 0,
+        "senadores": 0,
+        "fnde": 0,
+        "vereadores": 0,
+        "discursos": 0,
     }
     for c in context_list:
         upper = c.upper()
         if "[VOTO]" in upper:
             counts["votos"] += 1
+        elif "[EMENDA_DISCRICIONARIA]" in upper:
+            counts["emendas_discricionarias"] += 1
         elif "[EMENDA]" in upper:
             counts["emendas"] += 1
         elif "[PROPOSICAO]" in upper:
             counts["proposicoes"] += 1
+        elif "[DISCURSO_PLENARIO]" in upper:
+            counts["discursos"] += 1
         elif "[DIARIO_OFICIAL]" in upper:
             counts["diario_oficial"] += 1
-        elif "[PERFIL]" in upper:
-            counts["perfil"] += 1
         elif "[CONEXAO_POLITICA]" in upper:
             counts["conexao_politica"] += 1
+        elif "[COMPRAS_MUNICIPIO]" in upper:
+            counts["compras"] += 1
+        elif "[INDICADORES_SOCIAIS]" in upper:
+            counts["indicadores_sociais"] += 1
+        elif "[INDICADORES_MUNICIPAL]" in upper:
+            counts["indicadores_municipais"] += 1
+        elif "[RISCO_JUDICIAL]" in upper:
+            counts["risco_judicial"] += 1
+        elif "[DEMOGRAFIA_MUNICIPIO]" in upper:
+            counts["demografia"] += 1
+        elif "[MUNICIPIO_FINANCEIRO]" in upper:
+            counts["financeiro"] += 1
+        elif "[PARLAMENTAR_RESUMO]" in upper:
+            counts["resumo"] += 1
+        elif "[BENEFICIARIO]" in upper:
+            counts["beneficiarios"] += 1
+        elif "[PREFEITO]" in upper:
+            counts["prefeitos"] += 1
+        elif "[SENADOR]" in upper:
+            counts["senadores"] += 1
+        elif "[FNDE_REPASSES]" in upper:
+            counts["fnde"] += 1
+        elif "[VEREADORES_RESUMO]" in upper:
+            counts["vereadores"] += 1
+        elif "[PERFIL]" in upper:
+            counts["perfil"] += 1
     return counts
 
 
 def build_analysis_prompt(context_list: list[str], deputado_nome: str) -> str:
-    """Monta prompt adaptativo baseado na quantidade e tipo de dados."""
+    """Monta prompt adaptativo baseado na quantidade e tipo de dados (19 chunk types)."""
     src = _count_sources(context_list)
 
     # Secao de votos -- so aparece se houver dados de voto
@@ -392,45 +601,157 @@ def build_analysis_prompt(context_list: list[str], deputado_nome: str) -> str:
    - Coerencia entre proposicoes e emendas (o que propoe vs. onde gasta)
 """
 
+    # Secao de discursos
+    secao_discursos = ""
+    if src["discursos"] > 0:
+        secao_discursos = """
+9. **POSICIONAMENTO PÚBLICO E DISCURSOS**: Analise AS TAGS e KEYWORDS dos discursos do plenário:
+   - TAGS/KEYWORDS mais frequentes: extraia as palavras-chave que mais aparecem (ex: "corrupção", "liberdade de expressão", "direitos humanos", "reforma tributária", "pauta de costumes")
+   - Posicionamento ideológico: o deputado se posiciona como conservador, progressista, liberal, nacionalista? Cite tags que comprovem.
+   - Temas polêmicos: identifique pautas quentes (armas, aborto, gênero, prisão em 2ª instância, reforma da previdência) e qual o lado do deputado
+   - Tom e retórica: confrontacional, técnico/propositivo, populista, conciliador, religioso
+   - Bandeiras públicas: nichos eleitorais e pautas defendidas consistentemente
+   - Consistência temporal: mudou de discurso ao longo do mandato? Acompanhou a virada do partido?
+   - Compare retórica com ações reais: o discurso combina com o voto em plenário e com o destino das emendas PIX?
+   - Sinalize HIPOCRISIAS ou CONTRADIÇÕES: criticou o governo mas direciona emendas para base governista? Pregou austeridade e destinou verba para municípios endividados?
+"""
+
     # Secao de conexao politica
     secao_politica = ""
     if src["conexao_politica"] > 0:
         secao_politica = """
-9. **FISIOLOGISMO E ALINHAMENTO MUNICIPAL (TSE x EMENDAS)**:
+10. **FISIOLOGISMO E ALINHAMENTO MUNICIPAL (TSE x EMENDAS)**:
    - Analise se as emendas foram concentradas em prefeituras governadas pelo MESMO PARTIDO do deputado ou da sua coligacao.
    - Identifique indicios de apadrinhamento politico ou favorecimento partidario local em repasses de emendas PIX.
+"""
+
+    # Secao de emendas discricionarias
+    secao_discricionaria = ""
+    if src["emendas_discricionarias"] > 0:
+        secao_discricionaria = """
+11. **EMENDAS DISCRICIONARIAS**: Compare com as emendas Pix:
+    - Volume e valores das transferencias convencionais vs. Pix
+    - Status de execucao (empenhado, liquidado, pago)
+    - Se ha sobreposicao com municipios ja receptores de emendas Pix
+"""
+
+    # Secao de compras publicas
+    secao_compras = ""
+    if src["compras"] > 0:
+        secao_compras = """
+12. **COMPRAS PUBLICAS**: Analise nos municipios receptores:
+    - Volume de licitacoes e contratos nos municipos que receberam emendas
+    - Valor total de compras e orgaos mais ativos
+    - Possiveis irregularidades ou concentracao suspeita
+"""
+
+    # Secao de indicadores sociais
+    secao_indicadores = ""
+    if src["indicadores_sociais"] > 0 or src["indicadores_municipais"] > 0:
+        secao_indicadores = """
+13. **INDICADORES SOCIAIS DOS MUNICIPIOS**: Analise:
+    - Saude: quantidade de leitos, hospitais, UBS, profissionais
+    - Educacao: IDEB (iniciais/finais), taxa de aprovacao, matriculas
+    - Correlacao entre investimento (emendas) e melhoria dos indicadores
+"""
+
+    # Secao de risco judicial
+    secao_risco = ""
+    if src["risco_judicial"] > 0:
+        secao_risco = """
+14. **RISCO JUDICIAL**: Verifique processos judiciais nos municipios:
+    - Quantidade e tipos de processos vinculados a beneficiarios
+    - Se ha processos que sugerem fraude ou mau uso de recursos
+    - Correlacao com emendas direcionadas
+"""
+
+    # Secao de dados demograficos e financeiros
+    secao_demografia = ""
+    if src["demografia"] > 0 or src["financeiro"] > 0:
+        secao_demografia = """
+15. **CONTEXTO DEMOGRAFICO E FINANCEIRO**: Analise:
+    - Populacao, PIB per capita e IDHM dos municipios receptores
+    - Receita orcamentaria, despesas e divida passiva
+    - Se emendas sao proporcionais ao tamanho e necessidade do municipio
+    - Fontes de receita (FPM, ICMS, ISS) e dependencia de transferencias
+"""
+
+    # Secao de rede politica local (prefeitos + vereadores + senadores)
+    secao_rede = ""
+    if src["prefeitos"] > 0 or src["vereadores"] > 0 or src["senadores"] > 0:
+        secao_rede = """
+16. **REDE POLITICA LOCAL**: Mapeie conexoes:
+    - Prefeitos eleitos nos municipios receptores (partido, coligacao)
+    - Vereadores eleitos do mesmo partido do deputado (base aliada local)
+    - Senadores em exercicio no estado (conexoes federais)
+    - Padroes de apadrinhamento ou indicacao de candidatos
+"""
+
+    # Secao de FNDE
+    secao_fnde = ""
+    if src["fnde"] > 0:
+        secao_fnde = """
+17. **REPASSES FNDE**: Cruze com emendas:
+    - Programas educacionais (FUNDEB, PNAE, PNLD) nos municipios
+    - Volume de repasses vs. emendas parlamentares
+    - Se ha sobreposicao de investimento federal no mesmo municipio
+"""
+
+    # Secao de beneficiarios
+    secao_benef = ""
+    if src["beneficiarios"] > 0:
+        secao_benef = """
+18. **BENEFICIARIOS DIRETOS**: Analise:
+    - Perfil dos beneficiarios (CNPJ, razao social, situacao cadastral)
+    - Entidades que recebem múltiplas emendas
+    - Possiveis conflitos de interesse ou entidades com pouco historico
 """
 
     contexto_str = "\n".join(f"  - {c}" for c in context_list)
     fontes_str = ", ".join(f"{k}: {v}" for k, v in src.items() if v > 0)
 
-    return f"""Voce e um Analista Investigativo especializado em Contas Publicas e Ciencia Politica.
-Analise o perfil do deputado federal {deputado_nome} com base nos dados reais abaixo.
+    return f"""Você é um Analista Investigativo Sênior especializado em Contas Públicas, Inteligência Financeira e Ciência Política.
+Sua missão é realizar uma autópsia política e fiscal detalhada do mandato do deputado federal {deputado_nome}, utilizando os dados empíricos fornecidos.
 
-CONTEXTO ({len(context_list)} fontes: {fontes_str}):
+Você tem acesso a dados ricos cruzados do TCU, SICONFI, TSE, Portal da Transparência, IBGE e Diário Oficial. Não faça resumos superficiais; faça uma SÍNTESE INVESTIGATIVA PROFUNDA.
+
+=== DADOS DE CONTEXTO ({len(context_list)} fontes cruzadas: {fontes_str}) ===
 {contexto_str}
+=====================================================
 
-INSTRUCOES DE ANALISE (Markdown):
+DIRETRIZES DE RACIOCÍNIO (Chain of Thought):
+1. Avalie discrepâncias: O que ele fala (votos e projetos) bate com o que ele financia (emendas)?
+2. Siga o dinheiro: Há concentração anormal de repasses (emendas PIX/Discricionárias) em redutos eleitorais específicos ou municípios com prefeitos aliados?
+3. Impacto vs Gasto: O município destino possui indicadores sociais (IDEB/IDHM) ou saúde condizentes com a verba, ou as compras públicas sugerem uso eleitoreiro?
+4. Risco e Compliance: Existem alertas do Diário Oficial ou processos judiciais cercando os beneficiários das emendas?
 
-1. **PERFIL**: Nome, partido, UF. Contexto politico (situacao/oposicao).
+=== ESTRUTURA DO DOSSIÊ (Markdown) ===
 
-2. **AREAS TEMATICAS**: Identifique as principais areas de atuacao priorizando
-   volume de emendas e proposicoes. Ordene por concentracao de verbas.
+0. **CLASSIFICACAO POLITICA**: [GOVERNO | OPOSIÇÃO | INDEPENDENTE | SEM DADOS]
+   - *Fundamentação:* Baseada nos votos nominais, dissenso partidário e pragmatismo no direcionamento das emendas.
 
-3. **CRUZAMENTO DE DADOS**: Conecte votos com emendas e proposicoes.
-   Exemplo: "Votou contra PEC da saude mas destinou R$ 2M para hospitais."
-   Busque contradicoes e coerencias entre o que o deputado vota, propoe e financia.
+1. **PERFIL BIO-POLÍTICO**: (Breve resumo do estado, partido, escolaridade, e alinhamento histórico)
 
-4. **ALINHAMENTO POLITICO**: Com base nos votos nominais, estime o grau de
-   alinhamento com a base do governo. Identifique momentos de dissenso.
+2. **ÁREAS TEMÁTICAS PRIORITÁRIAS**:
+   - Ordene por volume real de capital alocado (Emendas PIX + Discricionárias), não apenas por volume de projetos de lei. Compare retórica legislativa vs execução orçamentária.
 
-5. **ANOMALIAS E FISIOLOGISMO**: Valores atipicos em emendas, apadrinhamento de prefeitos do mesmo partido,
-   entidades pouco transparentes, padroes que merecem investigacao mais profunda.
-{secao_votos}{secao_emendas}{secao_props}{secao_politica}
+3. **CRUZAMENTO DE DADOS (O Pragmatismo Político)**:
+   - *Exemplo de insight desejado:* "O deputado votou sistematicamente contra pautas sociais do governo no plenário, mas destinou 60% de suas emendas PIX para prefeituras do partido do governo em seu estado." (Aplique isso aos dados reais).
 
-FORMATO: Markdown com titulos, bullet points e dados numericos.
-TOM: Firme, critico, fundamentado em dados reais.
-NAO invente informacoes ausentes do contexto. Se um dado nao esta disponivel, diga.
+4. **ALINHAMENTO POLÍTICO E DISSENSO NO PLENÁRIO**:
+   - Analise os padrões de voto, destacando pautas em que ele traiu a orientação do próprio partido (dissenso).
+
+5. **ANOMALIAS E FISIOLOGISMO (RED FLAGS)**:
+   - Identifique concentração extrema de emendas em prefeituras diminutas (feudos eleitorais).
+   - Aponte anomalias financeiras (ex: município com orçamento de R$ 20M recebendo R$ 15M em PIX).
+   - Sinalize beneficiários (CNPJs/Prefeituras) com alto risco judicial associado.
+{secao_votos}{secao_emendas}{secao_props}{secao_discursos}{secao_politica}{secao_discricionaria}{secao_compras}{secao_indicadores}{secao_risco}{secao_demografia}{secao_rede}{secao_fnde}{secao_benef}
+
+INSTRUÇÕES FINAIS E DE TOM:
+- Use um tom analítico, frio, investigativo e imparcial (padrão agência de inteligência financeira).
+- SEMPRE embase suas afirmações citando os valores (R$) e os dados do contexto.
+- NUNCA alucine ou invente informações fora do contexto. Se um dado ou seção inteira não tiver subsídios nos chunks, escreva "N/I (Não Identificado nos dados atuais)".
+- Mantenha a saída EXCLUSIVAMENTE em Markdown limpo.
 """
 
 
@@ -448,23 +769,21 @@ def _save_persona(
     duracao: float,
     conn=None,
     *,
+    parlamentar_id: int | None = None,
     qualidade_ok: bool | None = None,
+    modelo_usado: str = "llama-3.2-3b-instruct:q4_k_m",
+    score_qualidade: float = 0.0,
 ):
-    """Salva persona no DB com contexto rastreavel e versionamento.
-
-    Args:
-        qualidade_ok: Resultado do quality check (True/False). Logado mas
-            nao salvo em coluna propria (requer migration separada).
-    """
     should_close = False
     if conn is None:
         conn = get_connection()
         should_close = True
 
-    # Log do quality check (coluna nao existe ainda no schema)
     if qualidade_ok is not None:
         status = "APROVADO" if qualidade_ok else "REPROVADO"
-        log.info(f"  Qualidade check: {status}")
+        log.info(
+            f"  Qualidade check: {status} | Score: {score_qualidade:.1f}/100 | Modelo: {modelo_usado}"
+        )
 
     try:
         with conn.cursor() as cur:
@@ -472,15 +791,20 @@ def _save_persona(
                 """
                 INSERT INTO parlamentares_personas
                     (deputado_id, query_text, contexto_rag, analise_gerada,
-                     fontes_usadas, versao_prompt, duracao_segundos)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     fontes_usadas, versao_prompt, duracao_segundos, qualidade_ok,
+                     modelo_usado, score_qualidade, parlamentar_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (deputado_id, versao_prompt) DO UPDATE SET
                     analise_gerada = EXCLUDED.analise_gerada,
                     contexto_rag = EXCLUDED.contexto_rag,
                     fontes_usadas = EXCLUDED.fontes_usadas,
                     data_analise = NOW(),
                     duracao_segundos = EXCLUDED.duracao_segundos,
-                    query_text = EXCLUDED.query_text
+                    query_text = EXCLUDED.query_text,
+                    qualidade_ok = EXCLUDED.qualidade_ok,
+                    modelo_usado = EXCLUDED.modelo_usado,
+                    score_qualidade = EXCLUDED.score_qualidade,
+                    parlamentar_id = EXCLUDED.parlamentar_id
             """,
                 (
                     deputado_id,
@@ -490,6 +814,10 @@ def _save_persona(
                     fontes_usadas,
                     RAG_PERSONA_VERSION,
                     duracao,
+                    qualidade_ok,
+                    modelo_usado,
+                    score_qualidade,
+                    parlamentar_id,
                 ),
             )
             conn.commit()
@@ -502,14 +830,36 @@ def _save_persona(
 
 
 def _extract_fontes(context_list: list[str]) -> list[str]:
-    """Extrai lista de fontes usadas a partir dos prefixes [TYPE]."""
+    """Extrai lista de fontes usadas a partir dos prefixes [TYPE] (todos os 19 tipos)."""
+    _PREFIX_MAP: dict[str, str] = {
+        "[VOTO]": "voto",
+        "[EMENDA]": "emenda",
+        "[PROPOSICAO]": "proposicao",
+        "[DIARIO_OFICIAL]": "diario_oficial",
+        "[PERFIL]": "perfil",
+        "[CONEXAO_POLITICA]": "conexao_politica",
+        "[EMENDA_DISCRICIONARIA]": "emenda_discricionaria",
+        "[COMPRAS_MUNICIPIO]": "compras_municipio",
+        "[INDICADORES_SOCIAIS]": "indicadores_sociais",
+        "[INDICADORES_MUNICIPAL]": "indicadores_municipal",
+        "[RISCO_JUDICIAL]": "risco_judicial",
+        "[DEMOGRAFIA_MUNICIPIO]": "demografia_municipio",
+        "[MUNICIPIO_FINANCEIRO]": "municipio_financeiro",
+        "[PARLAMENTAR_RESUMO]": "parlamentar_resumo",
+        "[BENEFICIARIO]": "beneficiario",
+        "[PREFEITO]": "prefeito",
+        "[SENADOR]": "senador",
+        "[FNDE_REPASSES]": "fnde_repasses",
+        "[VEREADORES_RESUMO]": "vereadores_resumo",
+        "[DISCURSO_PLENARIO]": "discurso_plenario",
+    }
     fontes: list[str] = []
     for c in context_list:
-        for prefix in ("[VOTO]", "[EMENDA]", "[PROPOSICAO]", "[DIARIO_OFICIAL]", "[PERFIL]"):
+        for prefix, tag in _PREFIX_MAP.items():
             if c.startswith(prefix):
-                tag = prefix.strip("[]").lower()
                 if tag not in fontes:
                     fontes.append(tag)
+                break
     return fontes
 
 
@@ -517,13 +867,20 @@ def generate_persona_analysis(
     deputado_id: int,
     nome: str,
     query: str | None = None,
-) -> tuple[str, float, list[str], list[str]]:
-    """Gera dossier comportamental via RAG multi-query + LLM.
+    use_preparer: bool | None = None,
+) -> tuple[str, float, list[str], list[str], bool | None]:
+    """Gera dossier comportamental via pipeline multi-analista RAG v7.
+
+    Cada seção do dossier é gerada por um analista especialista independente,
+    com prompt focado e quality check próprio. O score global é a média
+    ponderada dos scores individuais.
 
     Returns:
-        (analise_text, duracao_segundos, fontes_usadas, context_list)
+        (analise_text, duracao_segundos, fontes_usadas, context_list, qualidade_ok)
         context_list e retornado para reutilizacao (elimina busca duplicada).
     """
+    inicio_total = time.time()
+
     # 1. Recuperacao multi-query (chamada unica)
     log.info(f"Recuperando contexto multi-query para {nome} (ID: {deputado_id})...")
     context_list, _scored = search_context_multiquery(deputado_id)
@@ -534,45 +891,64 @@ def generate_persona_analysis(
             f"(minimo: {RAG_MIN_CHUNKS}). Indexe mais dados com cron-qdrant."
         )
         log.warning(msg)
-        return msg, 0.0, [], context_list
+        return msg, 0.0, [], context_list, None
 
-    # 2. Montar prompt adaptativo
-    prompt = build_analysis_prompt(context_list, nome)
+    # Log da distribuicao de chunks por tipo
+    from src.analysts.router import count_chunks_by_type
 
-    # 2.3 Validar tamanho do prompt (janela de contexto)
-    prompt, context_list = _validate_prompt_size(prompt, context_list, nome)
+    tipo_counts = count_chunks_by_type(context_list)
+    log.info(f"Distribuicao de chunks para {nome}: {len(context_list)} total")
+    for tipo, count in sorted(tipo_counts.items(), key=lambda x: -x[1]):
+        if count > 0:
+            log.info(f"  [{tipo}]: {count}")
 
-    # 3. Gerar com LLM
-    llm_model = RAG_LLM_MODEL
-    log.info(f"Carregando modelo LLM ({llm_model})...")
-    localai_manager.ensure_model_loaded(llm_model)
+    # 2. Executar pipeline multi-analista
+    # Usa RAG_LLM_MODEL (que pode ser override via CLI em main())
+    results = run_analyst_pipeline(
+        deputado_id=deputado_id,
+        nome=nome,
+        context_list=context_list,
+        llm_model=RAG_LLM_MODEL,
+        use_preparer=use_preparer,
+    )
 
-    ai_client = LocalAIClient(model=llm_model)
-
-    log.info(f"Gerando dossier para {nome} ({len(context_list)} chunks no contexto)...")
-    inicio = time.time()
-    try:
-        resposta = ai_client.chat(
-            prompt=prompt,
-            system=(
-                "Voce e um assistente analitico focado em ciencia politica "
-                "e dados empiricos. Analise friamente os dados, sem viés ideologico."
-            ),
+    if not results:
+        log.error(f"Nenhum analista conseguiu gerar dados para {nome}.")
+        duracao_total = time.time() - inicio_total
+        return (
+            "Falha na geracao: nenhum analista ativo para os dados disponiveis.",
+            duracao_total,
+            [],
+            context_list,
+            None,
         )
-        duracao = time.time() - inicio
-        log.info(f"Geracao concluida em {duracao:.1f}s ({len(resposta)} chars).")
-    except Exception as e:
-        duracao = time.time() - inicio
-        log.error(f"Erro LLM apos {duracao:.1f}s: {e}")
-        return f"Erro na geracao: {e}", duracao, [], context_list
 
-    # 2.4 Quality check
-    qualidade_ok = _check_quality(resposta)
+    # 3. Montar dossier final
+    analise = assemble_dossier(results)
 
-    # 4. Extrair fontes usadas
+    # 4. Calcular score global
+    score_global, qualidade_ok = calculate_global_score(results)
+    duracao_total = time.time() - inicio_total
+
+    log.info(
+        f"Dossier multi-analista para {nome} gerado em {duracao_total:.1f}s "
+        f"({len(results)} analistas, score: {score_global}/100, "
+        f"{'APROVADO' if qualidade_ok else 'REPROVADO'})"
+    )
+
+    # Log por analista
+    for r in results:
+        status = "OK" if r.quality_ok else "FAIL"
+        log.info(
+            f"  [{r.analyst_id}] {r.section_title}: {status} "
+            f"(score: {r.quality_score:.1f}, {r.duration:.1f}s, "
+            f"{len(r.content)} chars)"
+        )
+
+    # 5. Extrair fontes usadas
     fontes = _extract_fontes(context_list)
 
-    return resposta, duracao, fontes, context_list
+    return analise, duracao_total, fontes, context_list, qualidade_ok
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +964,7 @@ def main() -> None:
     parser.add_argument(
         "--query",
         type=str,
-        help="Query customizada (override das 5 tematicas)",
+        help="Query customizada (override das 12 tematicas)",
     )
     parser.add_argument(
         "--lote",
@@ -611,6 +987,7 @@ def main() -> None:
     # Override do modelo via CLI
     if args.modelo:
         import config.settings as _s
+
         _s.RAG_LLM_MODEL = args.modelo
 
     # --- Modo lote ---
@@ -626,7 +1003,7 @@ def main() -> None:
     # Descobrir deputado
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT deputado_id, nome FROM parlamentares_dados WHERE nome ILIKE %s LIMIT 1",
+            "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados WHERE nome ILIKE %s LIMIT 1",
             (f"%{args.nome}%",),
         )
         result = cur.fetchone()
@@ -635,25 +1012,28 @@ def main() -> None:
         log.error(f"Deputado '{args.nome}' nao encontrado no banco.")
         return
 
-    dep_id, nome_real = result
+    dep_id, nome_real, parl_id = result
     log.info(f"Gerando dossier para: {nome_real} (ID: {dep_id})")
 
     # 1.1: chamada unica que retorna context_list junto com a analise
-    analise, duracao, fontes, context_list = generate_persona_analysis(
+    analise, duracao, fontes, context_list, qualidade_ok = generate_persona_analysis(
         dep_id, nome_real, args.query
     )
 
     # Output
     print("\n" + "=" * 80)
-    print(f" DOSSIE COMPORTAMENTAL v3: {nome_real} ".center(80, "="))
+    print(f" DOSSIE COMPORTAMENTAL v{RAG_PERSONA_VERSION}: {nome_real} ".center(80, "="))
     fontes_str: str = ", ".join(fontes) if fontes else "nenhuma"
-    print(f" Fontes: {fontes_str} ".center(80, "-"))
+    qual_str = "APROVADO" if qualidade_ok else "PENDENTE"
+    print(f" Fontes: {fontes_str} | Qualidade: {qual_str} ".center(80, "-"))
     print("=" * 80 + "\n")
     print(analise)
     print("\n" + "=" * 80 + "\n")
 
     # 1.1: REUTILIZAR context_list (sem segunda busca no Qdrant)
     if not analise.startswith("Dados insuficientes") and not analise.startswith("Erro"):
+        score = score_qualidade_eval(analise)
+        modelo = args.modelo or RAG_LLM_MODEL
         _save_persona(
             dep_id,
             args.query or "Analise comportamental multi-query v3",
@@ -661,70 +1041,41 @@ def main() -> None:
             analise,
             fontes,
             duracao,
+            parlamentar_id=parl_id,
+            qualidade_ok=qualidade_ok,
+            modelo_usado=modelo,
+            score_qualidade=score,
         )
-        log.info(f"Dossier salvo no banco (v{RAG_PERSONA_VERSION}).")
+        log.info(f"Dossier salvo no banco (v{RAG_PERSONA_VERSION}). Score: {score:.1f}/100")
 
 
-def _generate_with_client(
-    ai_client: LocalAIClient,
+def _generate_with_retry(
     deputado_id: int,
     nome: str,
     query: str | None = None,
-) -> tuple[str, float, list[str], list[str]]:
-    """Gera persona usando um client ja existente (sem reload de modelo).
-
-    Returns:
-        (analise, duracao, fontes, context_list)
-    """
-    # Multi-query (1.1: retorna context_list)
-    context_list, _scored = search_context_multiquery(deputado_id)
-    if len(context_list) < RAG_MIN_CHUNKS:
-        return (
-            f"Dados insuficientes: {len(context_list)} chunks (minimo {RAG_MIN_CHUNKS})",
-            0.0,
-            [],
-            context_list,
-        )
-
-    prompt = build_analysis_prompt(context_list, nome)
-    prompt, context_list = _validate_prompt_size(prompt, context_list, nome)
-
-    inicio = time.time()
-    try:
-        resposta = ai_client.chat(
-            prompt=prompt,
-            system=(
-                "Voce e um assistente analitico focado em ciencia politica "
-                "e dados empiricos. Analise friamente os dados, sem viés ideologico."
-            ),
-        )
-        duracao = time.time() - inicio
-    except Exception as e:
-        duracao = time.time() - inicio
-        return f"Erro LLM: {e}", duracao, [], context_list
-
-    qualidade_ok = _check_quality(resposta)
-
-    fontes = _extract_fontes(context_list)
-    return resposta, duracao, fontes, context_list
+    use_preparer: bool | None = None,
+) -> tuple[str, float, list[str], list[str], bool | None]:
+    """Gera persona com retry + fallback para uso em lote."""
+    return generate_persona_analysis(
+        deputado_id,
+        nome,
+        query,
+        use_preparer=use_preparer,
+    )
 
 
 def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
-    """Gera personas em lote para deputados sem persona v3.
-
-    1.5: Processamento paralelo com ThreadPoolExecutor(max_workers=2).
-    Cada worker tem propria conexao DB e QdrantClient.
-    """
+    """Gera personas em lote para deputados sem persona v3."""
     with get_connection() as conn, conn.cursor() as cur:
         if regenerar:
             cur.execute(
-                "SELECT deputado_id, nome FROM parlamentares_dados ORDER BY deputado_id LIMIT %s",
+                "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados ORDER BY deputado_id LIMIT %s",
                 (lote,),
             )
         else:
             cur.execute(
                 """
-                SELECT pd.deputado_id, pd.nome
+                SELECT pd.deputado_id, pd.nome, pd.parlamentar_id
                 FROM parlamentares_dados pd
                 LEFT JOIN parlamentares_personas pp
                     ON pd.deputado_id = pp.deputado_id
@@ -739,6 +1090,12 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
                      FROM votos_camara vc
                      WHERE vc.deputado_id = pd.deputado_id
                     ) DESC,
+                    (SELECT COUNT(*)
+                     FROM planos_acao pa2
+                     JOIN parlamentares p ON pa2.parlamentar_id = p.parlamentar_id
+                     JOIN parlamentares_dados pd2 ON pd2.parlamentar_id = p.parlamentar_id
+                     WHERE pd2.deputado_id = pd.deputado_id
+                     ) DESC,
                     pd.deputado_id ASC
                 LIMIT %s
             """,
@@ -755,25 +1112,30 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
 
     log.info(f"Lote: {len(deputados)} deputados para processar.")
 
-    # Garantir exclusividade GPU para o LLM antes do paralelismo.
-    # Embedder (nomic) e CPU-based, nao precisa de ensure_model_loaded.
-    llm_model = RAG_LLM_MODEL
-    localai_manager.ensure_model_loaded(llm_model)
+    # model_scope mantém o modelo carregado durante todo o lote
+    # e libera automaticamente no final, com refcount tracking.
+    # Como este pin impede o modelo do PREPARER (LARGE) de caber, os
+    # workers passam use_preparer=False (chunks crus, sem stall de VRAM).
+    model_ctx = localai_manager.model_scope(RAG_LLM_MODEL)
+    model_ctx.__enter__()
+    _model_ctx_active = True
 
-    def _process_one(
-        dep_id: int, nome_real: str
-    ) -> tuple[str, int, int, float, list[str]] | None:
+    def _process_one(dep_id: int, nome_real: str, parl_id: int | None) -> tuple[str, int, int, float, list[str]] | None:
         """Worker: gera e salva persona para um deputado (thread-safe)."""
-        ai_client = LocalAIClient(model=llm_model)
         try:
-            analise, duracao, fontes, context_list = _generate_with_client(
-                ai_client, dep_id, nome_real, query
+            # No lote, o model_scope externo prende o modelo de análise
+            # (RAG_LLM_MODEL) durante todo o batch — o modelo do PREPARER
+            # (zero-gemma, LARGE) nunca cabe na GPU ao lado dele. Em vez de
+            # esperar o timeout de VRAM a cada analista, pula o preparer
+            # (analistas usam chunks crus diretamente, sem stall).
+            analise, duracao, fontes, context_list, qualidade_ok = _generate_with_retry(
+                dep_id, nome_real, query, use_preparer=False
             )
             if analise.startswith("Dados insuficientes") or analise.startswith("Erro"):
                 log.warning(f"  -> {analise[:80]}")
                 return None
 
-            # 1.1: REUTILIZAR context_list (sem segunda busca)
+            score = score_qualidade_eval(analise)
             worker_conn = get_connection()
             try:
                 _save_persona(
@@ -784,6 +1146,10 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
                     fontes,
                     duracao,
                     conn=worker_conn,
+                    parlamentar_id=parl_id,
+                    qualidade_ok=qualidade_ok,
+                    modelo_usado=RAG_LLM_MODEL,
+                    score_qualidade=score,
                 )
             finally:
                 worker_conn.close()
@@ -796,8 +1162,8 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
     # 1.5: Paralelismo com 2 workers (evitar VRAM exhaustion)
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_map = {
-            executor.submit(_process_one, dep_id, nome_real): (dep_id, nome_real)
-            for dep_id, nome_real in deputados
+            executor.submit(_process_one, dep_id, nome_real, parl_id): (dep_id, nome_real)
+            for dep_id, nome_real, parl_id in deputados
         }
 
         concluidos = 0
@@ -813,17 +1179,18 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
                         f"{n_chars} chars, {dur:.1f}s, fontes: {', '.join(fnts)}"
                     )
                 else:
-                    log.warning(
-                        f"[{concluidos}/{len(deputados)}] {nome_real}: skipped"
-                    )
+                    log.warning(f"[{concluidos}/{len(deputados)}] {nome_real}: skipped")
             except Exception as e:
-                log.error(
-                    f"[{concluidos}/{len(deputados)}] {nome_real}: erro fatal: {e}"
-                )
+                log.error(f"[{concluidos}/{len(deputados)}] {nome_real}: erro fatal: {e}")
 
-    log.info(
-        f"Lote concluido: {concluidos}/{len(deputados)} deputados processados."
-    )
+    log.info(f"Lote concluido: {concluidos}/{len(deputados)} deputados processados.")
+
+    # Liberar modelo no final do lote
+    if _model_ctx_active:
+        try:
+            model_ctx.__exit__(None, None, None)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

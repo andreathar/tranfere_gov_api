@@ -35,12 +35,19 @@ import httpx
 import pandas as pd
 
 from config.settings import (
+    CLOUD_PROXY_MODEL_NAMES,
+    CLOUD_PROXY_MODELS,
     LOCALAI_BASE_URL,
     LOCALAI_DEFAULT_MODEL,
     LOCALAI_MAX_RETRIES,
     LOCALAI_MODEL_TIMEOUTS,
     LOCALAI_MODELS,
     LOCALAI_TIMEOUT,
+    LOCAL_VLLM_BASE_URL,
+    MODAL_VLLM_TOKEN,
+    MODAL_VLLM_URL,
+    USE_LOCAL_VLLM,
+    USE_MODAL_VLLM,
 )
 from src.http_cache import cache_get, cache_set
 from src.localai_circuit import circuit_breaker
@@ -50,7 +57,24 @@ logger = logging.getLogger(__name__)
 
 
 class LocalAIClient:
-    """Cliente para LocalAI com retry, timeout e helpers de alto nível."""
+    """Cliente para LocalAI com retry, timeout e helpers de alto nível.
+
+    Roteamento automático:
+      - Modelos de embedding (nomic-embed-text*, embeddinggemma*) → sempre LocalAI local
+      - Modelos cloud proxy → LocalAI (que roteia para cloud via backend cloud-proxy)
+      - Modelos de chat/LLM → vLLM local se USE_LOCAL_VLLM=true, senão ↓
+      - Modelos de chat/LLM → Modal vLLM se USE_MODAL_VLLM=true, senão ↓
+      - Fallback → LocalAI local
+      - base_url explícito sobrescreve a detecção automática
+    """
+
+    # Modelos que devem SEMPRE usar LocalAI, não Modal
+    _EMBEDDING_MODELS = {"nomic-embed-text-v1.5", "nomic-embed-text", "embeddinggemma-300m"}
+
+    @staticmethod
+    def _is_cloud_proxy_model(model: str) -> bool:
+        """Verifica se o modelo roda via cloud proxy (roteado pelo LocalAI para API cloud)."""
+        return model in CLOUD_PROXY_MODEL_NAMES
 
     def __init__(
         self,
@@ -58,9 +82,45 @@ class LocalAIClient:
         model: str | None = None,
         timeout: int | None = None,
     ) -> None:
-        self.base_url = (base_url or LOCALAI_BASE_URL).rstrip("/")
         self.model = model or LOCALAI_DEFAULT_MODEL
-        self.timeout = timeout or LOCALAI_TIMEOUT
+
+        # Se base_url foi passado explicitamente, usar ele
+        if base_url:
+            self.base_url = base_url.rstrip("/")
+            self.token = None
+            self.timeout = timeout or LOCALAI_TIMEOUT
+        # Modelos de embedding SEMPRE vão para LocalAI local
+        elif self._is_embedding_model(self.model):
+            self.base_url = LOCALAI_BASE_URL.rstrip("/")
+            self.token = None
+            self.timeout = timeout or LOCALAI_TIMEOUT
+        # Cloud proxy: roteia via LocalAI para LLMs cloud (auth server-side)
+        elif self._is_cloud_proxy_model(self.model):
+            self.base_url = LOCALAI_BASE_URL.rstrip("/")
+            self.token = None
+            proxy_cfg = CLOUD_PROXY_MODELS.get(self.model, {})
+            self.timeout = timeout or proxy_cfg.get("timeout") or LOCALAI_TIMEOUT
+        # Chat/LLM → vLLM local (USE_LOCAL_VLLM=true)
+        elif USE_LOCAL_VLLM and LOCAL_VLLM_BASE_URL:
+            self.base_url = LOCAL_VLLM_BASE_URL.rstrip("/")
+            self.token = None
+            self.timeout = timeout or LOCALAI_TIMEOUT
+        # Chat/LLM → Modal vLLM (cloud GPU)
+        elif USE_MODAL_VLLM and MODAL_VLLM_URL:
+            self.base_url = MODAL_VLLM_URL.rstrip("/")
+            self.token = MODAL_VLLM_TOKEN
+            self.timeout = timeout or 300
+        # Fallback: LocalAI local
+        else:
+            self.base_url = LOCALAI_BASE_URL.rstrip("/")
+            self.token = None
+            self.timeout = timeout or LOCALAI_TIMEOUT
+
+    @staticmethod
+    def _is_embedding_model(model: str) -> bool:
+        """Verifica se o modelo é de embedding (deve rodar local, não no Modal)."""
+        model_lower = model.lower()
+        return any(model_lower.startswith(prefix) for prefix in LocalAIClient._EMBEDDING_MODELS)
 
     # ------------------------------------------------------------------
     # Chat (sync)
@@ -169,7 +229,7 @@ class LocalAIClient:
             "max_tokens": max_tokens,
             "stream": True,
         }
-        url = f"{self.base_url}/chat/completions"
+        url = f"{self.base_url}/v1/chat/completions"
         with (
             httpx.Client(timeout=self.timeout) as client,
             client.stream("POST", url, json=payload) as resp,
@@ -232,16 +292,21 @@ class LocalAIClient:
         texts: Sequence[str],
         *,
         model: str | None = None,
+        batch_size: int = 20,
     ) -> list[list[float]]:
-        """Gera embeddings para lista de textos."""
-        payload = {
-            "model": model or LOCALAI_MODELS["embedding"],
-            "input": list(texts),
-        }
-        data = self._post("/embeddings", payload)
-        # Ordenar por índice para garantir ordem
-        sorted_data = sorted(data["data"], key=lambda x: x["index"])
-        return [item["embedding"] for item in sorted_data]
+        """Gera embeddings para lista de textos, enviando em lotes para evitar 500 Internal Server Error (OOM)."""
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            payload = {
+                "model": model or self.model or LOCALAI_MODELS["embedding"],
+                "input": list(batch),
+            }
+            data = self._post("/embeddings", payload)
+            sorted_data = sorted(data["data"], key=lambda x: x["index"])
+            all_embeddings.extend([item["embedding"] for item in sorted_data])
+
+        return all_embeddings
 
     # ------------------------------------------------------------------
     # Jobs assíncronos (batch processing)
@@ -281,7 +346,7 @@ class LocalAIClient:
 
     def poll_job(self, job_id: str) -> dict[str, Any]:
         """Verifica status de um job assíncrono."""
-        url = f"{self.base_url}/jobs/{job_id}"
+        url = f"{self.base_url}/v1/jobs/{job_id}"
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.get(url)
             resp.raise_for_status()
@@ -365,7 +430,7 @@ class LocalAIClient:
         self,
         df: pd.DataFrame,
         *,
-        group_by: str = "parlamentar_nome",
+        group_by: str = "parlamentar_id",
         value_col: str = "valor_total",
         situation_col: str = "plano_acao_situacao",
         model: str | None = None,
@@ -406,7 +471,7 @@ class LocalAIClient:
         """Verifica se o LocalAI está respondendo e lista modelos."""
         try:
             with httpx.Client(timeout=10) as client:
-                resp = client.get(f"{self.base_url}/models")
+                resp = client.get(f"{self.base_url}/v1/models")
                 resp.raise_for_status()
                 data = resp.json()
                 models = [m["id"] for m in data.get("data", [])]
@@ -448,6 +513,13 @@ class LocalAIClient:
         model_name = payload.get("model", LOCALAI_DEFAULT_MODEL)
         return LOCALAI_MODEL_TIMEOUTS.get(model_name, LOCALAI_TIMEOUT)
 
+    @staticmethod
+    def _ensure_v1(endpoint: str) -> str:
+        """Garante que o endpoint tenha o prefixo /v1 (formato OpenAI-compatível)."""
+        if not endpoint.startswith("/v1/"):
+            return f"/v1{endpoint if endpoint.startswith('/') else f'/{endpoint}'}"
+        return endpoint
+
     def _post(self, endpoint: str, payload: dict, ttl: int | None = None) -> dict:
         """POST com circuit breaker, métricas, retry e cache seletivo.
 
@@ -456,12 +528,12 @@ class LocalAIClient:
         """
         if not circuit_breaker.allow_request():
             raise RuntimeError(
-                f"LocalAI indisponível (circuit breaker OPEN): "
-                f"{circuit_breaker.status()}"
+                f"LocalAI indisponível (circuit breaker OPEN): {circuit_breaker.status()}"
             )
 
         if ttl is None:
             ttl = self._cache_ttl(endpoint)
+        endpoint = self._ensure_v1(endpoint)
         url = f"{self.base_url}{endpoint}"
 
         if ttl and ttl > 0:
@@ -473,11 +545,15 @@ class LocalAIClient:
         timeout = self._model_timeout(payload)
         start = time.monotonic()
 
+        headers = {}
+        if getattr(self, "token", None):
+            headers["Authorization"] = f"Bearer {self.token}"
+
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
                 with httpx.Client(timeout=timeout) as client:
-                    resp = client.post(url, json=payload)
+                    resp = client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
                     latency_ms = (time.monotonic() - start) * 1000
@@ -518,12 +594,12 @@ class LocalAIClient:
         """POST async com circuit breaker, métricas, retry e cache seletivo."""
         if not circuit_breaker.allow_request():
             raise RuntimeError(
-                f"LocalAI indisponível (circuit breaker OPEN): "
-                f"{circuit_breaker.status()}"
+                f"LocalAI indisponível (circuit breaker OPEN): {circuit_breaker.status()}"
             )
 
         if ttl is None:
             ttl = self._cache_ttl(endpoint)
+        endpoint = self._ensure_v1(endpoint)
         url = f"{self.base_url}{endpoint}"
 
         if ttl and ttl > 0:
@@ -535,11 +611,15 @@ class LocalAIClient:
         timeout = self._model_timeout(payload)
         start = time.monotonic()
 
+        headers = {}
+        if getattr(self, "token", None):
+            headers["Authorization"] = f"Bearer {self.token}"
+
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.post(url, json=payload)
+                    resp = await client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
                     latency_ms = (time.monotonic() - start) * 1000

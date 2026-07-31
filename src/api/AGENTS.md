@@ -1,7 +1,7 @@
 # AGENTS.md — src/api
 
-Aplicação FastAPI — Painel de Inteligência Parlamentar & Municipal. API REST com 38 endpoints
-distribuídos em 8 routers, suportada por 4 serviços e uma SPA vanilla com Plotly.js.
+Aplicação FastAPI — Painel de Inteligência Parlamentar & Municipal. API REST com 43 endpoints
+distribuídos em 9 routers, suportada por 4 serviços e uma SPA vanilla com Plotly.js.
 
 ---
 
@@ -30,7 +30,8 @@ src/api/
 │   ├── auditoria.py        /api/v1/auditoria/*     (3 endpoints)
 │   ├── compras.py          /api/v1/compras/*       (2 endpoints)
 │   ├── diario.py           /api/v1/diario/*        (2 endpoints)
-│   └── fnde.py             /api/v1/fnde/*          (5 endpoints)
+│   ├── fnde.py             /api/v1/fnde/*          (5 endpoints)
+│   └── governadores.py     /api/v1/governadores/*  (5 endpoints)
 ├── services/
 │   ├── db_service.py       Consultas PostgreSQL (psycopg2, 30+ funcoes)
 │   ├── camara_service.py   HTTP client assincrono para API Camara dos Deputados
@@ -44,7 +45,7 @@ src/api/
 
 ---
 
-## Endpoints — 38 totais
+## Endpoints — 43 totais
 
 ### Deputados (10)
 
@@ -124,6 +125,16 @@ src/api/
 | GET | `/api/v1/fnde/programas` | Lista de programas disponiveis | DB |
 | GET | `/api/v1/fnde/search?q=&limit=` | Busca municipios com dados FNDE | DB |
 
+### Governadores (5)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/governadores?partido=&regiao=` | Lista governadores (filtros opcionais) | DB (governadores_dados) |
+| GET | `/api/v1/governadores/ranking/emendas?limit=` | Ranking por emendas Pix captadas na UF | DB (JOIN planos_acao) |
+| GET | `/api/v1/governadores/ranking/alinhamento?limit=` | Alinhamento partidario com bancada federal | DB |
+| GET | `/api/v1/governadores/triangulo-politico?uf=&limit=` | Triangulo politico deputado x prefeito x governador | DB (v_triangulo_politico) |
+| GET | `/api/v1/governadores/{uf}/perfil` | Perfil: dados eleitorais + SICONFI + bancada aliada | DB |
+
 ---
 
 ## Padrao de Fallback
@@ -154,6 +165,7 @@ Requisicao -> Busca local (PostgreSQL)
   - Vereadores: `search_vereadores`, `get_ranking_vereadores`, `get_resumo_vereadores`, `get_vereadores_por_partido`, `get_vereadores_por_municipio`, `get_vereadores_por_uf`
   - Votacoes: `get_votacoes_deputado`, `get_resumo_votos_deputado`, `get_resumo_votacao`, `get_votacoes_recentes`, `get_votos_por_votacao`
   - FNDE: `get_fnde_resumo_estado`, `get_fnde_resumo_municipio`, `get_fnde_programas_municipio`, `get_fnde_programas_disponiveis`, `search_fnde_municipios`
+  - Governadores: `get_all_governadores`, `get_ranking_governadores_emendas`, `get_ranking_alinhamento_governador`, `get_triangulo_politico`, `get_perfil_governador`
 - **Conversao**: `_rows_to_list()` e `_row_to_dict()` convertem `Decimal -> float` automaticamente
 
 ### camara_service.py — API Camara dos Deputados

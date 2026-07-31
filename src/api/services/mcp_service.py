@@ -7,8 +7,9 @@ import time
 from typing import Any
 
 from dotenv import load_dotenv
-from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+from mcp import ClientSession, StdioServerParameters
 
 log = logging.getLogger(__name__)
 

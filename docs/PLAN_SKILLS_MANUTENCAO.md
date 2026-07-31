@@ -21,7 +21,7 @@
 
 1. `transferegov-api` v2.0 — Extração (bom, completo)
 2. `transferegov-charts` v1.0 — Gráficos (bom, com pitfalls SICONFI)
-3. `transferegov-dashboard` v1.0 — Dashboard HTML legado (desatualizado, aponta src/dashboard.py)
+3. `transferegov-dashboard` v1.0 — Dashboard legado (substituído por src/dash_app.py + src/graphs/)
 4. `transferegov-mcp-integration` v1.0 — MCP setup (bom)
 5. `brazilian-gov-data` v1.0 — Padrões gov APIs (bom)
 

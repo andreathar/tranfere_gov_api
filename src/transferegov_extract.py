@@ -10,6 +10,13 @@ Uso (da raiz do projeto):
   python3 src/transferegov_extract.py --objeto all --ano 2026 --csv --db
   python3 src/transferegov_extract.py --objeto 662 --ano 2026 --situacao REPROVADO CANCELADO
 
+  # Por parlamentar (emendas de um deputado específico)
+  python3 src/transferegov_extract.py --objeto all --ano 2026 --parlamentar 4291
+  python3 src/transferegov_extract.py --objeto all --ano 2026 --parlamentar 4291 --csv --db
+
+  # Por parlamentar + negados
+  python3 src/transferegov_extract.py --objeto all --ano 2026 --parlamentar 4291 --negados --csv --db
+
 Dependências:
     pip install -r requirements.txt
 """
@@ -132,7 +139,15 @@ def parse_page(body):
 # ---------------------------------------------------------------------------
 # Paginação genérica
 # ---------------------------------------------------------------------------
-def extract_all(objeto, ano, politicas_publicas="", uf=None, programa_id=None, situacao_api=None):
+def extract_all(
+    objeto,
+    ano,
+    politicas_publicas="",
+    uf=None,
+    programa_id=None,
+    situacao_api=None,
+    parlamentar=None,
+):
     """Extrai todos os planos de ação com paginação e filtros de API."""
     session = requests.Session()
     all_records = []
@@ -152,6 +167,8 @@ def extract_all(objeto, ano, politicas_publicas="", uf=None, programa_id=None, s
         # Filtros opcionais de API (descobertos via URL real)
         if uf:
             params["uf"] = uf
+        if parlamentar:
+            params["parlamentar"] = str(parlamentar)
         if programa_id:
             params["programaId"] = str(programa_id)
         if situacao_api:
@@ -348,26 +365,6 @@ def import_to_db(records: list[dict]) -> tuple[int, int]:
             conn.rollback()
             continue
 
-    # Parsear codigo_emenda_formatado → emenda_codigo + parlamentar_nome
-    try:
-        cur.execute("""
-            UPDATE planos_acao SET
-                emenda_codigo = split_part(codigo_emenda_formatado, '-', 1),
-                parlamentar_nome = TRIM(split_part(codigo_emenda_formatado, '-', 2)),
-                emenda_ano = CASE
-                    WHEN length(split_part(codigo_emenda_formatado, '-', 1)) >= 4
-                    THEN SUBSTRING(split_part(codigo_emenda_formatado, '-', 1) FROM 1 FOR 4)::INTEGER
-                    ELSE NULL
-                END
-            WHERE codigo_emenda_formatado IS NOT NULL AND codigo_emenda_formatado != ''
-              AND (emenda_codigo IS NULL OR emenda_codigo = '')
-        """)
-        parsed = cur.rowcount
-        if parsed:
-            logger.info("Emendas parseadas: %d registros", parsed)
-    except Exception as e:
-        logger.warning("Erro parseando emendas: %s", e)
-
     # Log de extração
     try:
         ano = None
@@ -433,6 +430,12 @@ Exemplos:
         type=str,
         default=None,
         help="Filtrar por programaId (25 = Transferências Especiais)",
+    )
+    parser.add_argument(
+        "--parlamentar",
+        type=str,
+        default=None,
+        help="Filtrar por ID do parlamentar autor (ex: 4291)",
     )
     parser.add_argument(
         "--situacao-api",
@@ -593,6 +596,7 @@ def run_extraction(args: argparse.Namespace, ts: str) -> int:
         uf=args.uf,
         programa_id=args.programa,
         situacao_api=args.situacao_api,
+        parlamentar=args.parlamentar,
     )
     if not records:
         logger.warning("Nenhum registro encontrado.")

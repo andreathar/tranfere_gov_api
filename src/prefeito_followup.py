@@ -44,7 +44,7 @@ def buscar_prefeitos(termo: str) -> list[tuple]:
     return rows
 
 
-def mostrar_perfil_prefeito(termo: str) -> bool:
+def mostrar_perfil_prefeito(termo: str, parlamentar_id: int | None = None) -> bool:
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
@@ -119,20 +119,37 @@ def mostrar_perfil_prefeito(termo: str) -> bool:
     print(f"   - Valor Impedido:        {fmt_brl(val_imped)}")
     print(f"   - Valor Per Capita:      {fmt_brl(per_capita)} / habitante")
 
-    # Buscar Top 5 Deputados que enviaram recursos para esta prefeitura
-    cur.execute(
-        """
-        SELECT pa.parlamentar_nome, COUNT(pa.id) AS qtd, SUM(pa.valor_total) AS total
-        FROM planos_acao pa
-        JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
-        WHERE bm.municipio_id = %s AND pa.parlamentar_nome IS NOT NULL
-        GROUP BY pa.parlamentar_nome
-        ORDER BY total DESC
-        LIMIT 5
-    """,
-        (mun_id,),
-    )
+    # Buscar Top Deputados que enviaram recursos para esta prefeitura
+    if parlamentar_id is not None:
+        cur.execute(
+            """
+            SELECT (SELECT nome FROM parlamentares WHERE parlamentar_id = pa.parlamentar_id LIMIT 1) AS parlamentar_nome,
+                   COUNT(pa.id) AS qtd, SUM(pa.valor_total) AS total
+            FROM planos_acao pa
+            JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+            JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
+            WHERE bm.municipio_id = %s AND pa.parlamentar_id = %s
+            GROUP BY pa.parlamentar_id
+            ORDER BY total DESC
+            LIMIT 5
+        """,
+            (mun_id, parlamentar_id),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT (SELECT nome FROM parlamentares WHERE parlamentar_id = pa.parlamentar_id LIMIT 1) AS parlamentar_nome,
+                   COUNT(pa.id) AS qtd, SUM(pa.valor_total) AS total
+            FROM planos_acao pa
+            JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+            JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
+            WHERE bm.municipio_id = %s AND pa.parlamentar_id IS NOT NULL
+            GROUP BY pa.parlamentar_id
+            ORDER BY total DESC
+            LIMIT 5
+        """,
+            (mun_id,),
+        )
     deputados = cur.fetchall()
 
     if deputados:
@@ -230,6 +247,7 @@ def main():
     parser.add_argument("termo", nargs="?", help="Nome do município ou prefeito")
     parser.add_argument("--buscar", type=str, help="Busca por termo")
     parser.add_argument("--ranking", action="store_true", help="Exibir ranking de captação")
+    parser.add_argument("--parlamentar-id", type=int, help="Filtrar por ID do parlamentar")
     args = parser.parse_args()
 
     termo = args.termo or args.buscar
@@ -242,7 +260,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if not mostrar_perfil_prefeito(termo):
+    if not mostrar_perfil_prefeito(termo, parlamentar_id=args.parlamentar_id):
         prefeitos = buscar_prefeitos(termo)
         if prefeitos:
             print(f"\n🔍 Nenhum resultado exato encontrado para '{termo}'. Sugestões:")

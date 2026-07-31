@@ -21,8 +21,13 @@ log = logging.getLogger(__name__)
 
 
 def sync_proposicoes_deputado(
-    dep_id: int, nome: str, *, max_items: int = 200,
-    ano_inicio: int = 2023, ano_fim: int = 2026,
+    dep_id: int,
+    nome: str,
+    parlamentar_id: int | None = None,
+    *,
+    max_items: int = 200,
+    ano_inicio: int = 2023,
+    ano_fim: int = 2026,
 ) -> int:
     """Busca TODAS as proposições de um deputado (paginado) e salva no banco."""
     url = f"{CAMARA_API_BASE}/proposicoes"
@@ -72,12 +77,14 @@ def sync_proposicoes_deputado(
                     if data_apres:
                         data_apres = data_apres.split("T")[0]
 
+                    # Nota: parlamentar_proposicoes pode precisar de migration
+                    # para adicionar a coluna parlamentar_id caso ainda não exista.
                     cur.execute(
                         """
                         INSERT INTO parlamentar_proposicoes
-                        (proposicao_id, deputado_id, parlamentar_nome, sigla_tipo,
-                         numero, ano, ementa, data_apresentacao)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        (proposicao_id, deputado_id, parlamentar_nome, parlamentar_id,
+                         sigla_tipo, numero, ano, ementa, data_apresentacao)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (proposicao_id) DO UPDATE SET
                             ementa = EXCLUDED.ementa,
                             data_apresentacao = EXCLUDED.data_apresentacao
@@ -86,6 +93,7 @@ def sync_proposicoes_deputado(
                             proposicao_id,
                             dep_id,
                             nome,
+                            parlamentar_id,
                             prop.get("siglaTipo"),
                             prop.get("numero"),
                             prop.get("ano"),
@@ -112,33 +120,61 @@ def sync_proposicoes_deputado(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sincronizar proposições dos deputados (paginado).")
+    parser = argparse.ArgumentParser(
+        description="Sincronizar proposições dos deputados (paginado)."
+    )
     parser.add_argument("--limit", type=int, default=0, help="Limitar N deputados (0=todos)")
-    parser.add_argument("--itens", type=int, default=200, help="Máximo de proposições por deputado (padrão=200)")
-    parser.add_argument("--ano-inicio", type=int, default=2023, help="Ano início legislatura (padrão=2023)")
-    parser.add_argument("--ano-fim", type=int, default=2026, help="Ano fim legislatura (padrão=2026)")
+    parser.add_argument(
+        "--itens", type=int, default=200, help="Máximo de proposições por deputado (padrão=200)"
+    )
+    parser.add_argument(
+        "--ano-inicio", type=int, default=2023, help="Ano início legislatura (padrão=2023)"
+    )
+    parser.add_argument(
+        "--ano-fim", type=int, default=2026, help="Ano fim legislatura (padrão=2026)"
+    )
     args = parser.parse_args()
 
     with get_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT deputado_id, nome FROM parlamentares_dados ORDER BY nome")
+        cur.execute(
+            """
+            SELECT pd.deputado_id, pd.nome,
+                   COALESCE(
+                     (SELECT parlamentar_id FROM planos_acao WHERE parlamentar_nome = pd.nome AND parlamentar_id IS NOT NULL LIMIT 1),
+                     (SELECT parlamentar_id FROM parlamentares WHERE nome = pd.nome LIMIT 1)
+                   ) AS parlamentar_id
+            FROM parlamentares_dados pd ORDER BY pd.nome
+        """
+        )
         deputados = cur.fetchall()
 
     if args.limit > 0:
-        deputados = deputados[:args.limit]
+        deputados = deputados[: args.limit]
 
-    log.info("Iniciando sincronização para %d deputados (max %d proposições, %d-%d)...",
-             len(deputados), args.itens, args.ano_inicio, args.ano_fim)
+    log.info(
+        "Iniciando sincronização para %d deputados (max %d proposições, %d-%d)...",
+        len(deputados),
+        args.itens,
+        args.ano_inicio,
+        args.ano_fim,
+    )
 
     total_inseridos = 0
-    for i, (dep_id, nome) in enumerate(deputados, 1):
+    for i, (dep_id, nome, parlamentar_id) in enumerate(deputados, 1):
         inseridos = sync_proposicoes_deputado(
-            dep_id, nome, max_items=args.itens,
-            ano_inicio=args.ano_inicio, ano_fim=args.ano_fim,
+            dep_id,
+            nome,
+            parlamentar_id=parlamentar_id,
+            max_items=args.itens,
+            ano_inicio=args.ano_inicio,
+            ano_fim=args.ano_fim,
         )
         total_inseridos += inseridos
 
         if i % 10 == 0:
-            log.info("[%d/%d] %s: +%d (total: %d)", i, len(deputados), nome, inseridos, total_inseridos)
+            log.info(
+                "[%d/%d] %s: +%d (total: %d)", i, len(deputados), nome, inseridos, total_inseridos
+            )
 
         time.sleep(ENRICH_RATE_LIMIT)
 

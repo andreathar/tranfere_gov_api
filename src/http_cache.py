@@ -20,7 +20,14 @@ MAX_CACHE_ENTRIES = 2000
 
 def _evict_oldest_if_needed() -> None:
     """Remove arquivos mais antigos quando cache excede MAX_CACHE_ENTRIES."""
-    files = sorted(CACHE_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    files = []
+    for f in CACHE_DIR.glob("*.json"):
+        try:
+            _ = f.stat()
+            files.append(f)
+        except OSError:
+            pass  # arquivo foi removido entre glob e stat
+    files.sort(key=lambda f: f.stat().st_mtime)
     if len(files) <= MAX_CACHE_ENTRIES:
         return
     to_remove = files[: len(files) - MAX_CACHE_ENTRIES]

@@ -114,10 +114,11 @@ def _fetch_odata(url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _get_municipio_id(cur, nome_municipio: str, uf: str) -> int | None:
-    """Busca municipio_id pelo nome e UF."""
+    """Busca municipio_id pelo nome e UF (accent-insensitive via f_unaccent)."""
     cur.execute(
-        "SELECT municipio_id FROM municipios_ibge WHERE UPPER(nome) = %s AND uf = %s LIMIT 1",
-        (nome_municipio.upper().strip(), uf.upper()),
+        "SELECT municipio_id FROM municipios_ibge"
+        " WHERE f_unaccent(UPPER(nome)) = f_unaccent(UPPER(%s)) AND uf = %s LIMIT 1",
+        (nome_municipio.strip(), uf.upper()),
     )
     row = cur.fetchone()
     return row[0] if row else None

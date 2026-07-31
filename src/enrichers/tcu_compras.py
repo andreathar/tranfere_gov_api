@@ -36,24 +36,27 @@ def auditar_parlamentares_tcu() -> list[dict[str, Any]]:
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT parlamentar_nome
-                FROM planos_acao
-                WHERE parlamentar_nome IS NOT NULL AND parlamentar_nome != ''
-                ORDER BY parlamentar_nome
+                SELECT DISTINCT pa.parlamentar_nome,
+                       pa.parlamentar_id
+                FROM planos_acao pa
+                LEFT JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
+                WHERE pa.parlamentar_id IS NOT NULL
+                ORDER BY pa.parlamentar_nome
                 LIMIT 50;
             """)
             rows = cur.fetchall()
-            parlamentares = [r[0] for r in rows]
+            parlamentares = [(r[0], r[1]) for r in rows]
     finally:
         conn.close()
 
     log.info("Auditando %d parlamentares no banco de dados...", len(parlamentares))
     findings = []
 
-    for p in parlamentares:
+    for nome, pid in parlamentares:
         findings.append(
             {
-                "parlamentar": p,
+                "parlamentar": nome,
+                "parlamentar_id": pid,
                 "tcu_status": "REGULAR",
                 "detalhe": "Nenhuma inabilitação ativa encontrada no TCU",
             }

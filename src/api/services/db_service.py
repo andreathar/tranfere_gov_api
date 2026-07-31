@@ -78,6 +78,23 @@ def get_nome_by_id(deputado_id: int) -> str | None:
     return None
 
 
+def get_parlamentar_id(deputado_id: int) -> int | None:
+    """Mapeia deputado_id (Câmara) → parlamentar_id (TransfereGov) via nome."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT p.parlamentar_id
+                FROM parlamentares_dados pd
+                JOIN parlamentares p ON p.nome = pd.nome OR p.nome = pd.nome_urna
+                WHERE pd.deputado_id = %s AND p.parlamentar_id IS NOT NULL
+                LIMIT 1
+            """,
+            (deputado_id,),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else None
+
+
 # ---------------------------------------------------------------------------
 # Emendas (planos de ação)
 # ---------------------------------------------------------------------------
@@ -104,6 +121,34 @@ def get_emendas_deputado(parlamentar_nome: str) -> list[dict]:
                 ORDER BY valor_total DESC
             """,
             (parlamentar_nome,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_emendas_por_parlamentar_id(parlamentar_id: int) -> list[dict]:
+    """Retorna planos de ação usando parlamentar_id (exato, sem ILIKE)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    pa.emenda_codigo,
+                    pa.plano_acao_situacao,
+                    pa.valor_total,
+                    b.nome AS beneficiario_nome,
+                    b.uf AS beneficiario_uf,
+                    b.cnpj AS beneficiario_cnpj,
+                    mi.municipio_id AS beneficiario_ibge,
+                    o.descricao AS objeto_descricao,
+                    'TRANSFERENCIA_ESPECIAL' AS modalidade
+                FROM planos_acao pa
+                LEFT JOIN objetos o ON pa.objeto_id = o.objeto_id
+                JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+                LEFT JOIN beneficiario_ibge_map bim ON b.beneficiario_id = bim.beneficiario_id
+                LEFT JOIN municipios_ibge mi ON bim.municipio_id = mi.municipio_id
+                WHERE pa.parlamentar_id = %s
+                ORDER BY pa.valor_total DESC
+            """,
+            (parlamentar_id,),
         )
         return _rows_to_list(cur.fetchall())
 
@@ -173,6 +218,71 @@ def get_municipios_deputado(parlamentar_nome: str) -> list[dict]:
         return _rows_to_list(cur.fetchall())
 
 
+def get_resumo_emendas_por_parlamentar_id(parlamentar_id: int) -> dict:
+    """Retorna KPIs agregados usando parlamentar_id (exato)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    COUNT(*) AS total_planos,
+                    COALESCE(SUM(pa.valor_total), 0) AS valor_total,
+                    COUNT(DISTINCT pa.beneficiario_id) AS municipios,
+                    COUNT(DISTINCT pa.objeto_id) AS objetos,
+                    COUNT(DISTINCT pa.emenda_codigo) AS emendas,
+                    SUM(CASE WHEN pa.plano_acao_situacao IN (
+                        'IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO',
+                        'REPROVADO', 'CANCELADO', 'NAO_CUMPROU'
+                    ) THEN 1 ELSE 0 END) AS negados,
+                    SUM(CASE WHEN pa.plano_acao_situacao = 'EM_EXECUCAO'
+                        THEN 1 ELSE 0 END) AS em_execucao,
+                    SUM(CASE WHEN pa.plano_acao_situacao = 'CONCLUIDO'
+                        THEN 1 ELSE 0 END) AS concluidos,
+                    SUM(CASE WHEN pa.plano_acao_situacao = 'CIENTE'
+                        THEN 1 ELSE 0 END) AS cientes
+                FROM planos_acao pa
+                WHERE pa.parlamentar_id = %s
+            """,
+            (parlamentar_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {}
+        res = _row_to_dict(row)
+        if not res:
+            return {}
+        total = res.get("total_planos", 0)
+        negados = res.get("negados", 0)
+        res["taxa_sucesso"] = round(100.0 * (total - negados) / total, 1) if total > 0 else 0
+        return res
+
+
+def get_municipios_por_parlamentar_id(parlamentar_id: int) -> list[dict]:
+    """Retorna municípios beneficiários com dados IBGE usando parlamentar_id."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    b.nome AS municipio,
+                    b.uf,
+                    mi.regiao,
+                    mi.populacao,
+                    mi.idhm,
+                    COUNT(*) AS planos,
+                    SUM(pa.valor_total) AS valor_total,
+                    STRING_AGG(DISTINCT pa.plano_acao_situacao, ', ') AS situacoes
+                FROM planos_acao pa
+                JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
+                LEFT JOIN beneficiario_ibge_map bm ON pa.beneficiario_id = bm.beneficiario_id
+                LEFT JOIN municipios_ibge mi ON bm.municipio_id = mi.municipio_id
+                WHERE pa.parlamentar_id = %s
+                GROUP BY b.nome, b.uf, mi.regiao, mi.populacao, mi.idhm
+                ORDER BY valor_total DESC
+            """,
+            (parlamentar_id,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
 # ---------------------------------------------------------------------------
 # Dossiê IA (RAG)
 # ---------------------------------------------------------------------------
@@ -201,8 +311,10 @@ def get_dossie_deputado(deputado_id: int) -> dict | None:
         raw = r.get("fontes_usadas")
         if isinstance(raw, str):
             # PG array literal  {voto,perfil,...}  →  ["voto","perfil",...]
-            stripped = raw.strip('{}')
-            r["fontes_usadas"] = [s.strip() for s in stripped.split(',') if s.strip()] if stripped else []
+            stripped = raw.strip("{}")
+            r["fontes_usadas"] = (
+                [s.strip() for s in stripped.split(",") if s.strip()] if stripped else []
+            )
         else:
             r["fontes_usadas"] = raw or []
         return r
@@ -729,5 +841,348 @@ def search_fnde_municipios(query: str, limit: int = 20) -> list[dict]:
                 LIMIT %s
             """,
             (f"%{query}%", f"%{query}%", limit),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Governadores estaduais
+# ---------------------------------------------------------------------------
+
+REGIAO_MAP = {
+    "N": ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
+    "NE": ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"],
+    "CO": ["DF", "GO", "MS", "MT"],
+    "SE": ["ES", "MG", "RJ", "SP"],
+    "S": ["PR", "RS", "SC"],
+}
+
+
+def get_all_governadores(partido: str | None = None, regiao: str | None = None) -> list[dict]:
+    """Lista todos os governadores com totais de emendas e deputados aliados na UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        wheres = []
+        params: list = []
+        if partido:
+            wheres.append("g.sigla_partido ILIKE %s")
+            params.append(f"%{partido}%")
+        if regiao:
+            ufs = REGIAO_MAP.get(regiao.upper(), [])
+            if ufs:
+                wheres.append("g.uf = ANY(%s)")
+                params.append(ufs)
+        where_sql = "WHERE " + " AND ".join(wheres) if wheres else ""
+        cur.execute(
+            f"""
+                SELECT
+                    g.uf, g.nome_governador, g.sigla_partido, g.coligacao,
+                    g.ano_eleicao, g.votos_t1, g.pct_votos_t1,
+                    g.votos_t2, g.pct_votos_t2, g.situacao,
+                    COALESCE(e.total_emendas, 0)          AS total_emendas_uf,
+                    COALESCE(e.valor_total, 0)             AS valor_total_emendas_uf,
+                    COALESCE(d.total_deputados, 0)         AS total_deputados_uf,
+                    COALESCE(d.aliados, 0)                 AS deputados_aliados,
+                    COALESCE(d.oposicao, 0)                AS deputados_oposicao
+                FROM governadores_dados g
+                LEFT JOIN (
+                    SELECT b.uf, COUNT(*) AS total_emendas, SUM(pa.valor_total) AS valor_total
+                    FROM planos_acao pa
+                    JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                    GROUP BY b.uf
+                ) e ON e.uf = g.uf
+                LEFT JOIN (
+                    SELECT pd.uf,
+                           COUNT(*)                                                             AS total_deputados,
+                           COUNT(*) FILTER (WHERE pd.sigla_partido = g2.sigla_partido)         AS aliados,
+                           COUNT(*) FILTER (WHERE pd.sigla_partido != g2.sigla_partido)        AS oposicao
+                    FROM parlamentares_dados pd
+                    JOIN governadores_dados g2 ON g2.uf = pd.uf
+                    GROUP BY pd.uf
+                ) d ON d.uf = g.uf
+                {where_sql}
+                ORDER BY g.uf
+            """,
+            params,
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_perfil_governador(uf: str) -> dict | None:
+    """Perfil completo do governador: dados eleitorais + financeiro SICONFI + bancada."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT g.*,
+                    mf_agg.receitas_correntes,
+                    mf_agg.despesas_totais,
+                    mf_agg.resultado_primario,
+                    mf_agg.arrec_cota_icms AS icms_arrecadado,
+                    mf_agg.arrec_cota_fpm  AS fpm_recebido
+                FROM governadores_dados g
+                LEFT JOIN (
+                    SELECT mi.uf,
+                           SUM(mf.receitas_correntes) AS receitas_correntes,
+                           SUM(mf.despesas_totais)    AS despesas_totais,
+                           SUM(mf.resultado_primario) AS resultado_primario,
+                           SUM(mf.arrec_cota_icms)    AS arrec_cota_icms,
+                           SUM(mf.arrec_cota_fpm)     AS arrec_cota_fpm
+                    FROM municipios_financeiro mf
+                    JOIN municipios_ibge mi ON mi.municipio_id = mf.municipio_id
+                    GROUP BY mi.uf
+                ) mf_agg ON mf_agg.uf = g.uf
+                WHERE g.uf = %s
+            """,
+            (uf,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        result = _row_to_dict(row)
+
+        # Totais de emendas para a UF (via beneficiarios.uf)
+        cur.execute(
+            """
+                SELECT COUNT(*) AS total_planos, SUM(pa.valor_total) AS valor_total_emendas,
+                       COUNT(DISTINCT pa.parlamentar_nome) AS total_parlamentares
+                FROM planos_acao pa
+                JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                WHERE b.uf = %s
+            """,
+            (uf,),
+        )
+        totais = _row_to_dict(cur.fetchone())
+        if totais:
+            result.update(totais)
+
+        # Top 5 municípios mais beneficiados
+        cur.execute(
+            """
+                SELECT b.nome AS municipio, COUNT(*) AS planos, SUM(pa.valor_total) AS valor
+                FROM planos_acao pa
+                JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                WHERE b.uf = %s
+                GROUP BY b.nome ORDER BY valor DESC LIMIT 5
+            """,
+            (uf,),
+        )
+        result["top_municipios"] = _rows_to_list(cur.fetchall())
+
+        # Distribuição por partido dos deputados da bancada
+        cur.execute(
+            """
+                SELECT sigla_partido, COUNT(*) AS n FROM parlamentares_dados
+                WHERE uf = %s GROUP BY sigla_partido ORDER BY n DESC
+            """,
+            (uf,),
+        )
+        result["distribuicao_partidos_bancada"] = _rows_to_list(cur.fetchall())
+
+        return result
+
+
+def get_ranking_governadores_emendas(limit: int = 27) -> list[dict]:
+    """Ranking de estados por volume total de emendas Pix captadas na UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT g.uf, g.nome_governador, g.sigla_partido,
+                       COUNT(pa.id)             AS total_planos,
+                       SUM(pa.valor_total)      AS valor_total_emendas,
+                       AVG(pa.valor_total)      AS valor_medio_emenda
+                FROM governadores_dados g
+                LEFT JOIN beneficiarios b ON b.uf = g.uf
+                LEFT JOIN planos_acao pa ON pa.beneficiario_id = b.beneficiario_id
+                GROUP BY g.uf, g.nome_governador, g.sigla_partido
+                ORDER BY valor_total_emendas DESC NULLS LAST
+                LIMIT %s
+            """,
+            (limit,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_ranking_alinhamento_governador(limit: int = 27) -> list[dict]:
+    """Ranking de governadores por percentual de deputados aliados na bancada federal."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    g.uf, g.nome_governador, g.sigla_partido,
+                    COUNT(pd.deputado_id)                                        AS total_deputados,
+                    COUNT(pd.deputado_id) FILTER (WHERE pd.sigla_partido = g.sigla_partido) AS aliados,
+                    ROUND(
+                        100.0 * COUNT(pd.deputado_id) FILTER (WHERE pd.sigla_partido = g.sigla_partido)
+                        / NULLIF(COUNT(pd.deputado_id), 0), 1
+                    ) AS pct_aliados
+                FROM governadores_dados g
+                LEFT JOIN parlamentares_dados pd ON pd.uf = g.uf
+                GROUP BY g.uf, g.nome_governador, g.sigla_partido
+                ORDER BY pct_aliados DESC NULLS LAST
+                LIMIT %s
+            """,
+            (limit,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_bancada_deputados_uf(uf: str, limit: int = 100) -> list[dict]:
+    """Lista os deputados da bancada federal de uma UF com alinhamento ao governador."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT pd.deputado_id, pd.nome, pd.nome_urna, pd.sigla_partido,
+                       pd.uf, pd.situacao, pd.url_foto,
+                       g.nome_governador, g.sigla_partido AS partido_governador,
+                       (pd.sigla_partido = g.sigla_partido) AS mesmo_partido_governador
+                FROM parlamentares_dados pd
+                JOIN governadores_dados g ON g.uf = pd.uf
+                WHERE pd.uf = %s
+                ORDER BY pd.nome
+                LIMIT %s
+            """,
+            (uf, limit),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_emendas_estado(uf: str, ano: int | None = None, limit: int = 200) -> dict:
+    """Retorna emendas Pix para a UF, com totais por deputado e situação."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        ano_filter = "AND pa.emenda_ano = %s" if ano else ""
+        params_base: list = [uf]
+        if ano:
+            params_base.append(ano)
+
+        cur.execute(
+            f"""
+                SELECT pa.parlamentar_nome, pa.emenda_codigo, pa.emenda_ano,
+                       b.nome AS municipio, pa.valor_total,
+                       COALESCE(sm.display_site, sm.categoria, 'Sem situação') AS situacao_desc,
+                       o.descricao AS objeto_nome,
+                       pa.politicas_publicas
+                FROM planos_acao pa
+                JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                LEFT JOIN situacoes_map sm ON sm.valor_api = pa.plano_acao_situacao
+                LEFT JOIN objetos o ON o.objeto_id = pa.objeto_id
+                WHERE b.uf = %s {ano_filter}
+                ORDER BY pa.valor_total DESC
+                LIMIT %s
+            """,
+            params_base + [limit],
+        )
+        emendas = _rows_to_list(cur.fetchall())
+
+        cur.execute(
+            f"""
+                SELECT pa.parlamentar_nome, COUNT(*) AS total_planos,
+                       SUM(pa.valor_total) AS valor_total
+                FROM planos_acao pa
+                JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                WHERE b.uf = %s {ano_filter}
+                GROUP BY pa.parlamentar_nome ORDER BY valor_total DESC
+            """,
+            params_base,
+        )
+        por_parlamentar = _rows_to_list(cur.fetchall())
+
+        return {
+            "uf": uf,
+            "ano": ano,
+            "total_emendas": len(emendas),
+            "emendas": emendas,
+            "por_parlamentar": por_parlamentar,
+        }
+
+
+def get_financeiro_estado(uf: str) -> dict | None:
+    """Retorna dados financeiros SICONFI do estado (DCA + arrecadação)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT
+                    mi.uf,
+                    MAX(mf.exercicio) AS exercicio,
+                    SUM(mf.receitas_correntes)    AS receitas_correntes,
+                    SUM(mf.despesas_totais)       AS despesas_totais,
+                    SUM(mf.resultado_primario)    AS resultado_primario,
+                    SUM(mf.resultado_orcamentario) AS resultado_orcamentario,
+                    SUM(mf.arrec_cota_icms)       AS icms_arrecadado,
+                    SUM(mf.arrec_cota_fpm)        AS fpm_recebido,
+                    SUM(mf.arrec_impostos_geral)  AS arrecadacao_total,
+                    SUM(mf.arrec_iptu)            AS arrec_iptu,
+                    SUM(mf.arrec_iss)             AS arrec_iss,
+                    SUM(mf.arrec_receitas_correntes) AS arrec_receitas_correntes,
+                    SUM(mf.arrec_transferencias)  AS arrec_transferencias,
+                    SUM(mf.divida_ativa)          AS divida_ativa,
+                    SUM(mf.divida_passiva)        AS divida_passiva,
+                    SUM(mf.patrimonio_liquido)    AS patrimonio_liquido,
+                    SUM(mf.ativo_imobilizado)     AS ativo_imobilizado
+                FROM municipios_financeiro mf
+                JOIN municipios_ibge mi ON mi.municipio_id = mf.municipio_id
+                WHERE mi.uf = %s
+                GROUP BY mi.uf
+                ORDER BY MAX(mf.exercicio) DESC
+                LIMIT 1
+            """,
+            (uf,),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(row) if row else None
+
+
+def get_municipios_por_estado(uf: str, limit: int = 100) -> list[dict]:
+    """Lista municípios de uma UF com prefeito, emendas captadas e indicadores básicos."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT mi.municipio_id, mi.nome AS municipio_nome, mi.uf,
+                       mi.populacao, mi.pib_per_capita,
+                       pd_prefeito.prefeito_nome, pd_prefeito.prefeito_partido,
+                       COALESCE(em.total_planos, 0)     AS total_planos,
+                       COALESCE(em.valor_total, 0)      AS valor_total_emendas
+                FROM municipios_ibge mi
+                LEFT JOIN (
+                    SELECT p.municipio_id,
+                           p.prefeito_nome, p.sigla_partido AS prefeito_partido
+                    FROM prefeitos_dados p
+                    WHERE p.situacao_candidatura ILIKE 'ELEITO'
+                ) pd_prefeito ON pd_prefeito.municipio_id = mi.municipio_id
+                LEFT JOIN (
+                    SELECT bim.municipio_id,
+                           COUNT(*) AS total_planos, SUM(pa.valor_total) AS valor_total
+                    FROM planos_acao pa
+                    JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                    JOIN beneficiario_ibge_map bim ON bim.beneficiario_id = b.beneficiario_id
+                    GROUP BY bim.municipio_id
+                ) em ON em.municipio_id = mi.municipio_id
+                WHERE mi.uf = %s
+                ORDER BY valor_total_emendas DESC NULLS LAST
+                LIMIT %s
+            """,
+            (uf, limit),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_triangulo_politico(uf: str | None = None, limit: int = 100) -> list[dict]:
+    """Retorna cruzamento triângulo político (deputado × prefeito × governador) por UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        where = "WHERE vtp.uf = %s" if uf else ""
+        params: list = [uf, limit] if uf else [limit]
+        cur.execute(
+            f"""
+                SELECT vtp.deputado_id, vtp.deputado_nome, vtp.partido_deputado,
+                       vtp.uf, vtp.municipio_nome, vtp.municipio_id,
+                       vtp.prefeito_nome, vtp.partido_prefeito, vtp.relacao_partidaria_prefeito,
+                       vtp.total_planos_acao, vtp.total_emendas_brl,
+                       g.nome_governador, g.sigla_partido AS partido_governador,
+                       (vtp.partido_deputado = g.sigla_partido) AS aliado_governador
+                FROM v_triangulo_politico vtp
+                LEFT JOIN governadores_dados g ON g.uf = vtp.uf
+                {where}
+                ORDER BY vtp.total_emendas_brl DESC NULLS LAST
+                LIMIT %s
+            """,
+            params,
         )
         return _rows_to_list(cur.fetchall())

@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 class State(Enum):
-    CLOSED = "closed"        # Normal — requests passam
-    OPEN = "open"            # Bloqueado — requests são recusados
+    CLOSED = "closed"  # Normal — requests passam
+    OPEN = "open"  # Bloqueado — requests são recusados
     HALF_OPEN = "half_open"  # Teste — 1 request permitido
 
 

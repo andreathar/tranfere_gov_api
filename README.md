@@ -12,7 +12,7 @@ Projeto Python de engenharia de dados e inteligência parlamentar para extraçã
 
 ## 📌 Visão Geral & Arquitetura
 
-O sistema implementa uma pipeline completa em 8 fases + RAG:
+O sistema implementa uma pipeline completa em 9 fases + RAG v7:
 
 1. **Extração**: Coleta resiliente de dados via API pública do Transferegov com paginação e backoff exponencial.
 2. **Validação Pydantic**: Normalização e validação de schemas com `Pydantic v2`.
@@ -23,25 +23,26 @@ O sistema implementa uma pipeline completa em 8 fases + RAG:
    - **Fase 3**: Vinculação agregada Parlamentar × Beneficiário × Emenda.
    - **Fase 7a/7b**: Dados TSE de Prefeitos e Vereadores eleitos.
    - **Fase 8**: Perfil de Senadores em exercício (API Senado).
-   - **Complementares**: Compras (FNDE/TCU), DataJud, Diário Oficial, Saúde/Educação, Proposições, Votações.
-5. **Pipeline RAG v3**: Indexação vetorial (Qdrant) e geração de personas com Multi-Query (5 perspectivas temáticas).
-6. **Integração LocalAI**: Gerenciamento de modelos locais (Gemma, Qwen, Llama) via API compatível OpenAI — com gerenciamento de VRAM.
+   - **Fase 9**: Discursos de deputados em plenário (Câmara Dados Abertos).
+   - **Complementares**: Compras (FNDE/TCU), DataJud, Diário Oficial, Saúde/Educação, Proposições, Votações, Governadores (TSE 2022), Violência municipal (ISP-RJ/Atlas).
+5. **Pipeline RAG v7**: Indexação vetorial (Qdrant, 22 chunk types) e geração de dossiês com 7 analistas especialistas + PromptPreparer (14 queries temáticas + RRF).
+6. **Integração LocalAI**: Gerenciamento de modelos locais (Llama 3.2, Gemma, agentes customizados) via API compatível OpenAI — com gerenciamento de VRAM. Alternativa: vLLM local (porta 8001) ou Modal (GPU cloud).
 7. **Visualização & Servidor MCP**:
-   - **Plotly Dash**: 68 gráficos analíticos interativos (17 módulos) na porta `8050`.
+   - **Plotly Dash**: 74 gráficos analíticos interativos (18 módulos) na porta `8050`.
    - **Servidor MCP Hub**: Endpoint MCP nativo (`/_mcp`) para Agentes de IA autônomos.
-8. **Painel Web FastAPI**: 38 endpoints REST + SPA para inteligência parlamentar e municipal.
+8. **Painel Web FastAPI**: 43 endpoints REST + SPA para inteligência parlamentar, municipal e estadual.
 
 ```
 [ API TransfereGov ] ──► [ Extração & Pydantic ] ──► [ PostgreSQL ]
                                                           │
    ┌──────────────────────┬───────────────────────┬────────┴────────────────────────────────────────────────┐
    ▼                      ▼                       ▼                                                        ▼
-[ Enriquecimento ]   [ RAG v3 (Qdrant) ]   [ LocalAI (GPU) ]              [ Dash 68 charts + MCP ]
-[ 25+ fontes ]       + Persona (LLM)       Gemma / Qwen / Llama            Porta 8050 /_mcp
+[ Enriquecimento ]   [ RAG v7 (Qdrant) ]   [ LocalAI / vLLM ]          [ Dash 74 charts + MCP ]
+[ 25+ fontes ]       + 7 analistas        Llama / Gemma                Porta 8050 /_mcp
                                   │                │
                                   └────────┬───────┘
                                            ▼
-                              [ FastAPI Web App — Porta 8080/8000 ]
+                              [ FastAPI Web App — Porta 8000 ]
 ```
 
 ---
@@ -68,7 +69,7 @@ tranfere_gov_api/
 │   ├── localai_client.py         # Cliente HTTP para API LocalAI
 │   ├── mcp_tool_bridge.py        # Bridge MCP ↔ ferramentas externas
 │   │
-│   ├── api/                      # Aplicação Web FastAPI (38 endpoints)
+│   ├── api/                      # Aplicação Web FastAPI (43 endpoints)
 │   │   ├── app.py                # App FastAPI principal
 │   │   ├── routes/               # Endpoints REST
 │   │   │   ├── deputados.py      # /api/v1/deputados/* (perfil, emendas, despesas, comissões, votações)
@@ -78,7 +79,8 @@ tranfere_gov_api/
 │   │   │   ├── compras.py        # /api/v1/compras/*
 │   │   │   ├── auditoria.py      # /api/v1/auditoria/*
 │   │   │   ├── diario.py         # /api/v1/diario/*
-│   │   │   └── fnde.py           # /api/v1/fnde/*
+│   │   │   ├── fnde.py           # /api/v1/fnde/*
+│   │   │   └── governadores.py   # /api/v1/governadores/* (perfil, rankings, triângulo político)
 │   │   └── services/             # Regras de negócio e integração
 │   │       ├── db_service.py     # Acesso centralizado ao banco
 │   │       ├── camara_service.py # Integração API Câmara dos Deputados
@@ -86,7 +88,7 @@ tranfere_gov_api/
 │   │       └── mcp_service.py    # Serviços MCP
 │   │
 │   ├── enrichers/                # Pipeline de Enriquecimento (25+ módulos)
-│   │   ├── pipeline.py           # Orquestrador do enriquecimento (fases 1-3)
+│   │   ├── pipeline.py           # Orquestrador do enriquecimento (fases 1-9)
 │   │   ├── validacao.py          # Fase 1a: CNPJ via BrasilAPI
 │   │   ├── ibge.py               # Fase 1b: Dados locais IBGE
 │   │   ├── ibge_agregados.py     # Fase 1d: População, PIB, área
@@ -97,6 +99,9 @@ tranfere_gov_api/
 │   │   ├── tse_vereadors.py      # Fase 7b: Candidatos a vereador (TSE)
 │   │   ├── tse_deputados.py      # Dados TSE de deputados
 │   │   ├── senado.py             # Fase 8: Senadores (API Senado)
+│   │   ├── camara_discursos.py   # Fase 9: Discursos em plenário
+│   │   ├── governadores.py       # Governadores eleitos (TSE 2022)
+│   │   ├── violencia.py          # Violência municipal (ISP-RJ/Atlas IPEA)
 │   │   ├── completar_deputados.py # Enriquecimento complementar
 │   │   ├── compras.py            # Compras públicas
 │   │   ├── datajud.py            # Dados judiciais (DataJud/CNJ)
@@ -108,10 +113,16 @@ tranfere_gov_api/
 │   │   ├── votacoes_camara.py    # Votações da Câmara
 │   │   ├── votacoes_temas.py     # Temas das votações
 │   │   ├── diario_oficial_worker.py # Worker DOU
-│   │   ├── rag_persona.py        # Multi-Query RAG (5 perspectivas)
-│   │   └── rag_qdrant_indexer.py # Indexador vetorial Qdrant
+│   │   ├── rag_persona.py        # Multi-Query RAG v7 (14 queries + 7 analistas)
+│   │   └── rag_qdrant_indexer.py # Indexador vetorial Qdrant (22 chunk types)
 │   │
-│   ├── graphs/                   # Módulos Plotly (17 domínios, 68 gráficos)
+│   ├── analysts/                 # RAG v7 — 7 analistas especialistas
+│   │   ├── base.py               # AnalystBase + AnalystResult
+│   │   ├── router.py             # Filtro de chunks por analista
+│   │   ├── preparer.py           # PromptPreparer (Briefing + Fact Table)
+│   │   └── classificador.py | perfil.py | tematicas.py | cruzamento.py | alinhamento.py | discursos.py | anomalias.py
+│   │
+│   ├── graphs/                   # Módulos Plotly (18 domínios, 74 gráficos)
 │   │   ├── registry.py           # @register_chart decorator + CHART_REGISTRY
 │   │   ├── theme.py              # Theme tokens, TODAS_UFS, CORES_SITUACAO
 │   │   ├── analitico.py (2)      ├── arrecadacao.py (13)
@@ -122,7 +133,7 @@ tranfere_gov_api/
 │   │   ├── intel_proposicoes.py (1) ├── parlamentar.py (3)
 │   │   ├── prefeitos.py (2)      ├── radar_diario.py (1)
 │   │   ├── siconfi.py (10)       ├── socioeconomico.py (3)
-│   │   └── votacoes.py (1)
+│   │   ├── votacoes.py (1)       └── governadores.py (6)
 │   │
 │   └── redator/                  # (legado → src/redator_transferegov.py)
 │
@@ -138,7 +149,7 @@ tranfere_gov_api/
 │   ├── DEVELOPMENT.md            # Padrões de desenvolvimento e pre-commit
 │   ├── MIGRATIONS.md             # Instruções e histórico de migrations
 │   ├── LOCALAI.md                # Configuração e modelos LocalAI
-│   ├── RAG.md                    # Pipeline RAG v3 com Qdrant
+│   ├── RAG.md                    # Pipeline RAG v7 com Qdrant
 │   ├── REDATOR.md                # Redator oficial de documentos
 │   ├── MCP_BRIDGE.md             # Bridge MCP para ferramentas externas
 │   └── CRON_JOBS.md              # Jobs agendados (Diário Oficial, Qdrant, Dossiê)
@@ -255,17 +266,17 @@ python3 -m src.enrichers.senado            # Fase 8: Senadores (API Senado)
 ## 🌐 Aplicações Web & Servidor MCP
 
 ### 1. Painel Web de Inteligência Parlamentar (FastAPI)
-Interface RESTful e SPA com 38 endpoints para consulta de deputados, emendas, despesas CEAP, proposições, prefeitos, vereadores, compras e Diário Oficial.
+Interface RESTful e SPA com 43 endpoints para consulta de deputados, emendas, despesas CEAP, proposições, prefeitos, vereadores, compras, Diário Oficial e governadores.
 ```bash
-./run.sh web                          # Porta 8080 (http://localhost:8080)
-# Ou diretamente via uvicorn na porta 8000:
+./run.sh web                          # Porta 8000 (http://localhost:8000)
+# Ou diretamente via uvicorn:
 # uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
 ```
-- **Interface Web**: [http://localhost:8080](http://localhost:8080) ou [http://localhost:8000](http://localhost:8000)
-- **Documentação Swagger/ReDoc**: [http://localhost:8080/docs](http://localhost:8080/docs)
+- **Interface Web**: [http://localhost:8000](http://localhost:8000)
+- **Documentação Swagger/ReDoc**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ### 2. Plotly Dash & Servidor MCP Hub (Dash 4.3+)
-Dashboard analítico interativo com 68 gráficos (17 módulos) e Servidor MCP nativo integrado.
+Dashboard analítico interativo com 74 gráficos (18 módulos) e Servidor MCP nativo integrado.
 ```bash
 python3 src/dash_app.py
 ```
@@ -284,23 +295,28 @@ python3 src/verify_graphs.py
 Gerenciamento de modelos de linguagem locais via API compatível OpenAI com controle de VRAM. O `LocalAIManager` descarrega modelos inativos antes de invocar novos, evitando OOM/RPC EOF em GPU.
 
 **Modelos validados** (ver `config/settings.py`):
-| Modelo | Uso | Velocidade |
-|--------|-----|-----------|
-| `gemma-4-e2b-it` | Padrão RAG / Redação PT-BR | 36.8 tok/s |
-| `qwen2.5-1.5b-instruct-q4-k-m` | Triagem / NER | 88.9 tok/s |
-| `llama-3.1-8b-q4-k-m` | Análise investigativa profunda | 7.7 tok/s |
+| Modelo | Uso |
+|--------|-----|
+| `llama-3.2-3b-instruct:q4_k_m` | Padrão RAG (dossiês) / uso geral |
+| `zero-gemma4-e4b-openzero-q5-k-m` | Redação PT-BR, reasoning + PromptPreparer |
+| `agente-dossie-investigativo` | Análise investigativa profunda |
+| `agente-dossie-rapido` | Triagem rápida |
+| `embeddinggemma-300m` | Embeddings Qdrant (768d) |
+
+Engines alternativas: **vLLM local** (`USE_LOCAL_VLLM`, porta 8001, `./run.sh vllm`) e **Modal vLLM** (`USE_MODAL_VLLM`, GPU cloud). Controle fino das YAMLs via `src/models_config.py`.
 
 Documentação: [docs/LOCALAI.md](docs/LOCALAI.md)
 
 ---
 
-## 📚 Pipeline RAG v3
+## 📚 Pipeline RAG v7
 
 Sistema de Retrieval-Augmented Generation com Qdrant + LocalAI:
 
-- **Indexação vetorial** via `rag_qdrant_indexer.py` — embeddings `nomic-embed-text-v1.5` (768d).
-- **Multi-Query Persona** (`rag_persona.py`) — 5 consultas temáticas por deputado: votos, emendas PIX, proposições, Diário Oficial e conexões políticas municipais (TSE × Emendas).
-- **Benchmark de modelos** em `scripts/benchmark_models.py`.
+- **Indexação vetorial** via `rag_qdrant_indexer.py` — embeddings `embeddinggemma-300m` (768d), 22 chunk types, checkpoint incremental (`--diff`).
+- **Multi-Analista** (`rag_persona.py` + `src/analysts/`) — 14 consultas temáticas por deputado (votos, emendas PIX, proposições, discursos, conexões políticas TSE × Emendas, etc.) + RRF, com 7 analistas especialistas (classificador, perfil, temáticas, cruzamento, alinhamento, discursos, anomalias) e PromptPreparer com validação de fidelidade numérica R$.
+- **Diagnóstico**: `./run.sh qdrant-status` e `./run.sh qdrant-staleness`.
+- **Benchmark de modelos** em `scripts/benchmark_models.py` e `scripts/benchmark_vllm_vs_localai.py`.
 
 Documentação: [docs/RAG.md](docs/RAG.md)
 
@@ -338,7 +354,7 @@ Push ou PR para `main`/`master` dispara o workflow GitHub Actions (`.github/work
 - [**Guia de Migrações SQL (`docs/MIGRATIONS.md`)**](docs/MIGRATIONS.md): Instruções para aplicação de scripts SQL.
 - [**Guia de Agentes (`AGENTS.md`)**](AGENTS.md): Especificações técnicas para agentes autônomos de IA.
 - [**Integração LocalAI (`docs/LOCALAI.md`)**](docs/LOCALAI.md): Configuração e modelos LocAI.
-- [**Pipeline RAG v3 (`docs/RAG.md`)**](docs/RAG.md): Indexação vetorial e geração de personas.
+- [**Pipeline RAG v7 (`docs/RAG.md`)**](docs/RAG.md): Indexação vetorial e geração de dossiês multi-analista.
 - [**Redator Oficial (`docs/REDATOR.md`)**](docs/REDATOR.md): Documentos oficiais automatizados.
 - [**Bridge MCP (`docs/MCP_BRIDGE.md`)**](docs/MCP_BRIDGE.md): Bridge MCP para ferramentas externas.
 - [**Jobs Agendados (`docs/CRON_JOBS.md`)**](docs/CRON_JOBS.md): Configuração de cron-diario, cron-qdrant, cron-dossie.

@@ -40,7 +40,7 @@ def test_model_agent(model_id: str, label: str, prompt_user: str) -> dict:
     localai_manager.ensure_model_loaded(model_id)
     time.sleep(2)
 
-    url = f"{LOCALAI_BASE_URL}/chat/completions"
+    url = f"{LOCALAI_BASE_URL}/v1/chat/completions"
     payload = {
         "model": model_id,
         "messages": [

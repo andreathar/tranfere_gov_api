@@ -17,9 +17,12 @@ from src.db_utils import get_connection
 def buscar_municipios_ibge(uf: str) -> list:
     """Busca todos os municípios de uma UF via IBGE (localidades)."""
     url = f"{IBGE_API_BASE}/localidades/estados/{uf}/municipios"
-    resp = requests.get(url, timeout=15)
-    if resp.status_code == 200:
-        return resp.json()  # type: ignore[no-any-return]
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()  # type: ignore[no-any-return]
+    except Exception:
+        pass
     return []
 
 

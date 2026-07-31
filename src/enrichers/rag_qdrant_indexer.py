@@ -1,20 +1,35 @@
 """
-Indexer para base do Qdrant — v3 com novos chunk types e qualidade.
+Indexer para base do Qdrant — v5+ com 20 chunk types otimizados.
 
-Fontes de dados indexadas:
-  1. perfil                 — Nome, partido, UF do deputado
-  2. proposicao             — PLs e proposicoes legislativas
-  3. emenda                 — Emendas Pix (planos_acao) com dados financeiros do municipio
+Fontes de dados indexadas (20 tipos):
+  1. perfil                 — Perfil enriquecido (escolaridade, naturalidade, situacao)
+  2. proposicao             — PLs com resumo_ia e LIMIT 30
+  3. emenda                 — Emendas Pix completas + situacao + contexto demografico inline + SICONFI
   4. voto                   — Padrao de voto com tema classificado (votacoes_temas.py)
-  5. diario_oficial         — Atos do Diario Oficial
+  5. diario_oficial         — Atos DOU com nivel_relevancia e LIMIT 20
   6. conexao_politica       — Triangulo politico (deputado x prefeito x vereadores)
-  7. emenda_discricionaria  — Convenios/transferencias discricionarias (NOVO)
-  8. compras_municipio      — Compras publicas nos municipios receptores (NOVO)
-  9. indicadores_sociais    — Saude + educacao municipal (NOVO)
-  10. risco_judicial        — Processos judiciais via DataJud (NOVO)
-  11. demografia_municipio  — Populacao, PIB, IDHM dos municipios (NOVO)
+  7. emenda_discricionaria  — Emendas discricionarias completas com CNPJ + convenio + tipo_emenda
+  8. compras_municipio      — Compras publicas nos municipios receptores
+  9. indicadores_sociais    — Saude + educacao + IDHM + populacao (fundido)
+  10. risco_judicial        — Processos judiciais via DataJud
+  11. demografia_municipio  — Populacao, PIB, IDHM dos municipios
+  12. municipio_financeiro  — SICONFI (receita, despesa, FPM, ICMS, ISS) com UF corrigida
+  13. parlamentar_resumo    — Resumo consolidado emendas/beneficiarios
+  14. beneficiario          — Perfil CNPJ com razao social e situacao
+  15. prefeito              — Perfil prefeito com partido e coligacao
+  16. senador               — Senadores em exercicio no estado
+  17. fnde_repasses         — Repasses FNDE (FUNDEB, PNAE, PNLD)
+  18. vereadores_resumo     — Rede politica local (aliados, partido dominante)
+  19. parlamentar_alertas   — Alertas de relevancia no DOU vinculados ao deputado
+  20. persona_existente     — Dossies/personas analiticas ja geradas (re-aproveitamento RAG)
 
-Model: nomic-embed-text-v1.5 (768d) | Metric: Cosine
+Model: embeddinggemma-300m (768d) | Metric: Cosine
+
+Melhorias FASE 5 implementadas:
+  - JOINs migrados de nome fuzzy (f_unaccent + REPLACE) para parlamentar_id (indexado, 0 NULLs)
+  - tipo_emenda incluido nos chunks de emenda_discricionaria
+  - Novos chunk types: parlamentar_alertas (Fase 7), persona_existente (Fase 8)
+  - _SQL_NORM removido -- todas as queries usam parlamentar_id agora
 
 Uso:
     ./run.sh cron-qdrant --limit 10
@@ -23,6 +38,7 @@ Uso:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import uuid
@@ -44,21 +60,20 @@ from src.localai_manager import manager as localai_manager
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-# Normalizacao de nomes para JOINs robustos (remove espacos, pontos, acentos via LOWER)
-# Para unaccent completo, requer: CREATE EXTENSION IF NOT EXISTS unaccent;
-# Usamos REPLACE + LOWER como alternativa sem dependencia de extensao.
-_SQL_NORM: str = "REPLACE(REPLACE(LOWER({col}), ' ', ''), '.', '')"
+# NOTA: JOINs antes usavam _SQL_NORM (f_unaccent + REPLACE) para fuzzy match.
+# Migrados para parlamentar_id (indexado, 0 NULLs) -- Fase 5.
+# f_unaccent() continua disponivel no banco via migration 021.
 
 CHUNK_TYPE_DESCRIPTIONS: dict[str, str] = {
-    "perfil": "Perfil basico do deputado (nome, partido, UF)",
-    "proposicao": "Proposicoes legislativas (PLs, PLPs, PECs)",
-    "emenda": "Emendas Pix com dados financeiros do municipio receptor",
+    "perfil": "Perfil enriquecido do deputado (nome, partido, UF, escolaridade, naturalidade, situacao)",
+    "proposicao": "Proposicoes legislativas (PLs, PLPs, PECs) com resumo_ia e LIMIT 30",
+    "emenda": "Emendas Pix com contexto demografico inline (pop, IDHM) + financeiro SICONFI",
     "voto": "Padrao de voto em votacoes nominais com tema classificado",
-    "diario_oficial": "Atos publicados no Diario Oficial da Uniao",
+    "diario_oficial": "Atos DOU com nivel de relevancia (1-5) e LIMIT 20",
     "conexao_politica": "Triangulo politico: deputado x prefeito x vereadores eleitos",
-    "emenda_discricionaria": "Convenios e transferencias discricionarias (Portal Transparencia)",
+    "emenda_discricionaria": "Convenios com beneficiario CNPJ + tipo_emenda para rastreabilidade",
     "compras_municipio": "Compras publicas nos municipios receptores de emendas",
-    "indicadores_sociais": "Indicadores de saude e educacao municipal (CNES/IDEB)",
+    "indicadores_sociais": "Indicadores sociais + demograficos (saude, IDEB, IDHM, populacao)",
     "risco_judicial": "Processos judiciais vinculados a beneficiarios (DataJud)",
     "demografia_municipio": "Dados demograficos dos municipios (IBGE: pop, PIB, IDHM)",
     "municipio_financeiro": "Dados financeiros municipais (SICONFI: receita, despesa, FPM, ICMS)",
@@ -67,8 +82,9 @@ CHUNK_TYPE_DESCRIPTIONS: dict[str, str] = {
     "prefeito": "Perfil do prefeito municipal receptor de emendas",
     "senador": "Senadores em exercício no estado do deputado",
     "fnde_repasses": "Repasses educacionais FNDE nos municipios receptores",
-    "indicadores_municipal": "Painel municipal: IDEB, saude, IDHM, leitos, matriculas",
     "vereadores_resumo": "Rede politica local: total vereadores, partido dominante, aliados",
+    "parlamentar_alertas": "Alertas de relevancia no DOU com potencial vinculacao ao deputado",
+    "persona_existente": "Dossies/personas analiticas ja geradas (re-aproveitamento entre ciclos RAG)",
 }
 
 # ---------------------------------------------------------------------------
@@ -85,13 +101,23 @@ def ensure_collection(client: QdrantClient, recreate: bool = False) -> None:
             client.delete_collection(QDRANT_COLLECTION)
 
         if QDRANT_COLLECTION not in collections or recreate:
-            log.info(f"Criando coleção {QDRANT_COLLECTION} ({EMBEDDING_DIM}d, cosine)...")
+            log.info(
+                f"Criando coleção {QDRANT_COLLECTION} ({EMBEDDING_DIM}d, cosine + BM25 sparse)..."
+            )
             client.create_collection(
                 collection_name=QDRANT_COLLECTION,
-                vectors_config=qdrant_models.VectorParams(
-                    size=EMBEDDING_DIM,
-                    distance=qdrant_models.Distance.COSINE,
-                ),
+                vectors_config={
+                    "dense": qdrant_models.VectorParams(
+                        size=EMBEDDING_DIM,
+                        distance=qdrant_models.Distance.COSINE,
+                    ),
+                },
+                sparse_vectors_config={
+                    "bm25": qdrant_models.SparseVectorParams(
+                        index=qdrant_models.SparseIndexParams(on_disk=False),
+                        modifier=qdrant_models.Modifier.IDF,
+                    ),
+                },
                 hnsw_config=qdrant_models.HnswConfigDiff(
                     m=32,
                     ef_construct=200,
@@ -100,13 +126,14 @@ def ensure_collection(client: QdrantClient, recreate: bool = False) -> None:
             )
             log.info("Coleção criada com sucesso.")
 
-        # Garantir payload indexes para busca filtrada ultra-rápida (deputado_id, type, uf)
+        # Garantir payload indexes para busca filtrada ultra-rápida (deputado_id, type, uf, relevancia)
         log.info("Garantindo payload indexes no Qdrant...")
         for field, ftype in [
             ("deputado_id", qdrant_models.PayloadSchemaType.INTEGER),
             ("type", qdrant_models.PayloadSchemaType.KEYWORD),
             ("uf", qdrant_models.PayloadSchemaType.KEYWORD),
             ("municipio_ibge_id", qdrant_models.PayloadSchemaType.KEYWORD),
+            ("nivel_relevancia", qdrant_models.PayloadSchemaType.INTEGER),
         ]:
             client.create_payload_index(
                 collection_name=QDRANT_COLLECTION,
@@ -133,9 +160,16 @@ def _get_embed_client() -> LocalAIClient:
 
 
 def embed_text_batch(texts: list[str]) -> list[list[float]]:
-    """Gera embeddings em batch via LocalAIClient (1 request para N textos)."""
+    """Gera embeddings em batch via LocalAIClient (1 request para N textos).
+
+    Nota: embeddinggemma-300m tem limite de 8192 tokens (~24000 chars PT-BR).
+          Textos maiores sao truncados automaticamente antes do embedding.
+    """
     if not texts:
         return []
+    # Safeguard: truncar textos longos para evitar erro do modelo de embedding
+    MAX_CHARS = 5500
+    texts = [t[:MAX_CHARS] if len(t) > MAX_CHARS else t for t in texts]
     client = _get_embed_client()
     try:
         return client.embed(texts)
@@ -151,27 +185,82 @@ def embed_text(text: str) -> list[float] | None:
 
 
 # ---------------------------------------------------------------------------
+# Sparse vectors (BM25-style) para hybrid search
+# ---------------------------------------------------------------------------
+
+
+import hashlib as _hashlib
+import re as _re
+from collections import Counter as _Counter
+
+
+def _tokenize_text(text: str) -> list[str]:
+    """Tokeniza texto para geração de sparse vector BM25.
+
+    Preserva palavras acentuadas (português), siglas e números.
+    Ex: 'SICONFI' → ['siconfi'], 'FPM' → ['fpm'], 'R$ 1.500,00' → ['r', '1', '500', '00']
+    """
+    text = text.lower()
+    return _re.findall(r"[a-zà-ÿ0-9]+", text)
+
+
+def _token_to_index(token: str) -> int:
+    """Hash determinístico de token → índice uint32 para sparse vector."""
+    return int(_hashlib.md5(token.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def text_to_sparse_vector(text: str) -> qdrant_models.SparseVector:
+    """Converte texto em sparse vector TF (raw term frequency).
+
+    Usa top-200 tokens mais frequentes para manter o vetor esparso eficiente.
+    O IDF é aplicado pelo Qdrant em tempo de busca (modifier=IDF no SparseVectorParams).
+    """
+    tokens = _tokenize_text(text)
+    if not tokens:
+        return qdrant_models.SparseVector(indices=[0], values=[0.0])
+
+    tf = _Counter(tokens)
+    indices: list[int] = []
+    values: list[float] = []
+    for token, count in tf.most_common(200):
+        indices.append(_token_to_index(token))
+        values.append(float(count))
+
+    return qdrant_models.SparseVector(indices=indices, values=values)
+
+
+def texts_to_sparse_vectors(texts: list[str]) -> list[qdrant_models.SparseVector]:
+    """Batch convert textos para sparse vectors."""
+    return [text_to_sparse_vector(t) for t in texts]
+
+
+# ---------------------------------------------------------------------------
 # Extração de dados do banco — cada fonte retorna lista de chunks
 # ---------------------------------------------------------------------------
 
 
 def _extract_perfil(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunk 1: Perfil básico do deputado."""
+    """Chunk 1: Perfil enriquecido do deputado (11 campos disponíveis)."""
     cur.execute(
-        "SELECT nome, sigla_partido, uf FROM parlamentares_dados WHERE deputado_id = %s",
+        "SELECT nome, sigla_partido, uf, escolaridade, "
+        "municipio_nascimento, uf_nascimento, situacao "
+        "FROM parlamentares_dados WHERE deputado_id = %s",
         (deputado_id,),
     )
     row = cur.fetchone()
     if not row:
         return []
-    nome_full, partido, uf = row
+    nome_full, partido, uf, escolaridade, mun_nasc, uf_nasc, situacao = row
+    txt = (
+        f"Deputado Federal {nome_full} ({partido}/{uf}). "
+        f"Situacao: {situacao or 'ativo'}. "
+        f"Escolaridade: {escolaridade or 'N/I'}. "
+        f"Natural de {mun_nasc or 'N/I'}/{uf_nasc or 'N/I'}. "
+        f"Atuacao legislativa na Camara dos Deputados."
+    )
     return [
         {
-            "text": (
-                f"Deputado Federal: {nome_full}. "
-                f"Partido: {partido}. Estado: {uf}. "
-                f"Atuação legislativa na Câmara dos Deputados."
-            ),
+            "text": txt,
             "type": "perfil",
             "deputado_id": deputado_id,
         }
@@ -179,19 +268,22 @@ def _extract_perfil(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any
 
 
 def _extract_proposicoes(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunks: Proposições legislativas (PLs, PLPs, PECs)."""
+    """Chunks: Proposições legislativas (PLs, PLPs, PECs) com resumo_ia e LIMIT 30."""
     cur.execute(
-        "SELECT sigla_tipo, numero, ano, ementa FROM parlamentar_proposicoes "
-        "WHERE deputado_id = %s",
+        "SELECT sigla_tipo, numero, ano, COALESCE(resumo_ia, ementa) "
+        "FROM parlamentar_proposicoes "
+        "WHERE deputado_id = %s "
+        "ORDER BY data_apresentacao DESC NULLS LAST "
+        "LIMIT 30",
         (deputado_id,),
     )
     docs: list[dict[str, Any]] = []
-    for sigla, num, ano, ementa in cur.fetchall():
-        if not ementa:
+    for sigla, num, ano, texto in cur.fetchall():
+        if not texto:
             continue
         docs.append(
             {
-                "text": (f"Proposição do deputado {nome}: {sigla} {num}/{ano}. Ementa: {ementa}"),
+                "text": (f"Proposicao legislativa de {nome}: {sigla} {num}/{ano}. {texto}"),
                 "type": "proposicao",
                 "deputado_id": deputado_id,
                 "ref": f"{sigla} {num}/{ano}",
@@ -201,44 +293,48 @@ def _extract_proposicoes(cur: Any, deputado_id: int, nome: str) -> list[dict[str
 
 
 def _extract_emendas(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunks: Emendas Pix com dados financeiros do município (SICONFI)."""
-    norm_pa = _SQL_NORM.format(col="pa.parlamentar_nome")
-    norm_pd = _SQL_NORM.format(col="pd.nome_urna")
-    norm_pd2 = _SQL_NORM.format(col="pd.nome")
+    """Chunks: Emendas Pix com dados financeiros + contexto demográfico inline.
+
+    Sem LIMIT artificial — todas as emendas do deputado são indexadas.
+    A seleção dos chunks mais relevantes é feita pelo Qdrant via HNSW em tempo de busca.
+    O prompt final é limitado por RAG_MAX_CHUNKS (rag_persona.py).
+    """
     cur.execute(
-        f"""
+        """
         SELECT b.nome, b.uf, o.descricao, pa.valor_total,
-               mf.receitas_orcamentarias, mf.despesas_totais, mf.divida_passiva
+               pa.plano_acao_situacao,
+               mf.receitas_orcamentarias, mf.despesas_totais, mf.divida_passiva,
+               mib.populacao, mib.idhm
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
         JOIN objetos o ON pa.objeto_id = o.objeto_id
-        JOIN parlamentares_dados pd
-            ON {norm_pa} = {norm_pd} OR {norm_pa} = {norm_pd2}
         LEFT JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         LEFT JOIN municipios_financeiro mf
             ON bm.municipio_id = mf.municipio_id
             AND mf.exercicio = EXTRACT(YEAR FROM COALESCE(pa.data_atualizacao_plano_acao, NOW()))
-        WHERE pd.deputado_id = %s
+        LEFT JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
         ORDER BY pa.valor_total DESC NULLS LAST
-        LIMIT 20
     """,
         (deputado_id,),
     )
     docs: list[dict[str, Any]] = []
     for row in cur.fetchall():
-        municipio, emp_uf, obj, valor, receita, despesa, divida = row
-        txt = (
-            f"Emenda do deputado {nome} para {municipio}-{emp_uf}. "
-            f"Objeto: {obj}. Valor: R$ {valor:,.2f}."
-        )
-        # Enriquecer com dados financeiros do município (se disponíveis)
+        municipio, emp_uf, obj, valor, situacao, receita, despesa, divida, pop, idhm = row
+        txt = f"Emenda PIX de {nome} para {municipio}-{emp_uf}: R$ {valor:,.2f} — {obj}."
+        if situacao:
+            txt += f" Situacao: {situacao}."
+        # Contexto demográfico inline (elimina fragmentação com demografia_municipio)
+        if pop:
+            txt += f" Municipio: {pop:,} hab"
+            if idhm:
+                txt += f", IDHM {idhm}"
+            txt += "."
+        # Dados financeiros do município (se disponíveis)
         if receita and despesa:
-            txt += (
-                f" Dados financeiros do município: receita orçamentária R$ {receita:,.2f}, "
-                f"despesas totais R$ {despesa:,.2f}."
-            )
+            txt += f" Receita orcamentaria R$ {receita:,.2f}, despesas totais R$ {despesa:,.2f}."
             if divida:
-                txt += f" Dívida passiva R$ {divida:,.2f}."
+                txt += f" Divida passiva R$ {divida:,.2f}."
         docs.append(
             {
                 "text": txt,
@@ -317,9 +413,8 @@ def _extract_votos(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]
     for tipo_voto, descricao, aprovacao, tema in cur.fetchall():
         if not descricao or not tipo_voto:
             continue
-        dissenso: bool = (
-            (aprovacao is True and tipo_voto in ("Não", "Obstrução"))
-            or (aprovacao is False and tipo_voto == "Sim")
+        dissenso: bool = (aprovacao is True and tipo_voto in ("Não", "Obstrução")) or (
+            aprovacao is False and tipo_voto == "Sim"
         )
 
         prefixo: str = "[DISSENSO] " if dissenso else ""
@@ -332,34 +427,33 @@ def _extract_votos(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]
 
 
 def _extract_diario_oficial(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunks: Atos do Diário Oficial (via alertas)."""
+    """Chunks: Atos do Diário Oficial (via alertas) com nível de relevância e LIMIT 20."""
     cur.execute(
         """
         SELECT da.orgao, da.tipo_ato, da.resumo_ia, da.valor_financeiro,
-               da.entidades_citadas
+               da.entidades_citadas, pa.nivel_relevancia
         FROM parlamentar_alertas pa
         JOIN diario_oficial_atos da ON pa.ato_id = da.ato_id
-        WHERE pa.parlamentar_nome = %s
-           OR pa.parlamentar_nome = (
-               SELECT nome_urna FROM parlamentares_dados
-               WHERE deputado_id = %s LIMIT 1
-           )
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
+        ORDER BY pa.nivel_relevancia DESC, da.data_publicacao DESC
+        LIMIT 20
     """,
-        (nome, deputado_id),
+        (deputado_id,),
     )
     docs: list[dict[str, Any]] = []
-    for orgao, tipo_ato, resumo, valor, entidades in cur.fetchall():
-        txt = f"Ato Oficial ({tipo_ato}) em {orgao}. Resumo: {resumo}."
+    for orgao, tipo_ato, resumo, valor, entidades, nivel in cur.fetchall():
+        txt = f"[Relevancia {nivel or 0}/5] Ato Oficial ({tipo_ato}) em {orgao}. Resumo: {resumo}."
         if entidades and entidades != "[]":
-            txt += f" Entidades citadas: {entidades}."
+            txt += f" Entidades: {entidades}."
         if valor:
-            txt += f" Valor associado: R$ {valor:,.2f}."
+            txt += f" Valor: R$ {valor:,.2f}."
         docs.append(
             {
                 "text": txt,
                 "type": "diario_oficial",
                 "deputado_id": deputado_id,
                 "ref": f"Ato: {tipo_ato}",
+                "nivel_relevancia": nivel or 0,
             }
         )
     return docs
@@ -408,54 +502,101 @@ def _extract_prefeitos_aliados(cur: Any, deputado_id: int, nome: str) -> list[di
     return docs
 
 
-def _extract_emendas_discricionarias(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunks: Emendas discricionarias (convenios/transferencias do Portal Transparencia)."""
-    norm = _SQL_NORM.format(col="ed.parlamentar_nome")
+def _extract_emendas_discricionarias(
+    cur: Any, deputado_id: int, nome: str
+) -> list[dict[str, Any]]:
+    """Chunks: Emendas discricionarias com beneficiario CNPJ + tipo_emenda.
+
+    Sem LIMIT artificial — todas as emendas do deputado são indexadas.
+    Usa parlamentar_id (indexado, 0 NULLs) para JOIN direto.
+    """
     cur.execute(
-        f"""
-        SELECT ed.ano, ed.valor_total, ed.objeto, ed.status_execucao
+        """
+        SELECT ed.ano, ed.valor_total, ed.objeto, ed.status_execucao,
+               ed.beneficiario_nome, ed.beneficiario_cnpj, ed.numero_convenio,
+               ed.tipo_emenda
         FROM emendas_discricionarias ed
-        JOIN parlamentares_dados pd ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-                                  OR {norm} = {_SQL_NORM.format(col='pd.nome')}
-        WHERE pd.deputado_id = %s
+        WHERE ed.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
           AND ed.valor_total IS NOT NULL
         ORDER BY ed.valor_total DESC
-        LIMIT 15
     """,
         (deputado_id,),
     )
     docs: list[dict[str, Any]] = []
-    for ano, valor, objeto, status in cur.fetchall():
+    for row in cur.fetchall():
+        ano, valor, objeto, status, ben_nome, ben_cnpj, num_convenio, tipo_emenda = row
         if not valor:
             continue
         desc_part: str = f" — {objeto}" if objeto else ""
-        status_part: str = f" — Situacao: {status}" if status else ""
+        status_part: str = f" Status: {status}." if status else ""
+        ben_part: str = f" Ben: {ben_nome} (CNPJ: {ben_cnpj})." if ben_nome else ""
+        conv_part: str = f" Convenio: {num_convenio}." if num_convenio else ""
+        tipo_part: str = f" Tipo: {tipo_emenda}." if tipo_emenda else ""
         txt = (
             f"Emenda Discricionaria {ano or '?'} do deputado {nome}: "
-            f"R$ {valor:,.2f}{desc_part}{status_part}"
+            f"R$ {valor:,.2f}{desc_part}.{status_part}{ben_part}{conv_part}{tipo_part}"
         )
         docs.append({"text": txt, "type": "emenda_discricionaria", "deputado_id": deputado_id})
     return docs
 
 
+def _extract_discursos(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
+    """Chunks: Discursos no plenário e comissões do deputado."""
+    cur.execute(
+        """
+        SELECT data_hora_inicio, fase_evento, tipo_discurso, keywords, sumario, transcricao
+        FROM parlamentar_discursos
+        WHERE deputado_id = %s
+        ORDER BY data_hora_inicio DESC
+        LIMIT 50
+        """,
+        (deputado_id,),
+    )
+
+    docs = []
+    for row in cur.fetchall():
+        data, fase, tipo, kw, sumario, trans = row
+        data_str = data.strftime("%d/%m/%Y %H:%M") if data else "Data desconhecida"
+
+        texto = f"[DISCURSO_PLENARIO] Deputado(a) {nome}\nFase: {fase or 'N/I'} | Tipo: {tipo or 'N/I'}\nData: {data_str}\n"
+        if sumario:
+            texto += f"Resumo: {sumario}\n"
+        if kw:
+            texto += f"Tags: {kw}\n"
+        # embeddinggemma-300m: max 8192 tokens (~24000 chars PT-BR)
+        # mantendo 5500 como safe-guard para consistencia com todos os chunk types
+        if trans and len(trans) > 5500:
+            trans = (
+                trans[:5500]
+                + "\n[...truncado para caber no contexto do embedding (2048 tokens)...]"
+            )
+        texto += f"Transcrição Literal:\n{trans or 'N/I'}"
+
+        docs.append(
+            {
+                "type": "discurso_plenario",
+                "deputado_id": deputado_id,
+                "text": texto,
+                "data": data_str,
+            }
+        )
+    return docs
+
+
 def _extract_compras_municipio(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunks: Compras publicas nos municipios receptores de emendas do deputado."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT mib.nome, COUNT(DISTINCT cm.id) as n_compras,
                SUM(COALESCE(cm.valor_homologado, cm.valor_estimado, 0)) as valor_total,
                STRING_AGG(DISTINCT cm.nome_orgao, ', ' ORDER BY cm.nome_orgao)
                    FILTER (WHERE cm.nome_orgao IS NOT NULL) as orgaos
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN compras_municipios cm ON bm.municipio_id = cm.municipio_id
         JOIN municipios_ibge mib ON cm.municipio_id = mib.municipio_id
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
         GROUP BY mib.nome
         ORDER BY valor_total DESC
         LIMIT 10
@@ -476,27 +617,25 @@ def _extract_compras_municipio(cur: Any, deputado_id: int, nome: str) -> list[di
 
 
 def _extract_indicadores_sociais(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
-    """Chunks: Indicadores de saude e educacao nos municipios receptores de emendas."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
+    """Chunks: Indicadores de saude, educacao + populacao/IDHM (fundido com antigo indicadores_municipal)."""
     cur.execute(
-        f"""
-        SELECT mib.nome,
+        """
+        SELECT mib.nome, mib.populacao, mib.idhm,
                sm.total_estabelecimentos, sm.total_leitos, sm.leitos_sus,
                sm.hospitais, sm.ubs, sm.total_profissionais,
                em.ideb_initial_years, em.ideb_final_years,
                em.taxa_aprovacao, em.matriculas_totais, em.escolas_totais
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         LEFT JOIN saude_municipios sm ON bm.municipio_id = sm.municipio_id
         LEFT JOIN educacao_municipios em ON bm.municipio_id = em.municipio_id
-        WHERE pd.deputado_id = %s
-          AND (sm.municipio_id IS NOT NULL OR em.municipio_id IS NOT NULL)
-        GROUP BY mib.nome, sm.total_estabelecimentos, sm.total_leitos, sm.leitos_sus,
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
+          AND (sm.municipio_id IS NOT NULL OR em.municipio_id IS NOT NULL
+               OR mib.populacao IS NOT NULL)
+        GROUP BY mib.nome, mib.populacao, mib.idhm,
+                 sm.total_estabelecimentos, sm.total_leitos, sm.leitos_sus,
                  sm.hospitais, sm.ubs, sm.total_profissionais,
                  em.ideb_initial_years, em.ideb_final_years, em.taxa_aprovacao,
                  em.matriculas_totais, em.escolas_totais
@@ -508,10 +647,30 @@ def _extract_indicadores_sociais(cur: Any, deputado_id: int, nome: str) -> list[
     for row in cur.fetchall():
         (
             municipio,
-            estab, leitos, leitos_sus, hosp, ubs, prof,
-            ideb_i, ideb_f, aprov, matric, escolas,
-        ) = row
+            pop,
+            idhm,
+            estab,
+            leitos,
+            leitos_sus,
+            hosp,
+            ubs,
+            prof,
+            ideb_i,
+            ideb_f,
+            aprov,
+            matric,
+            escolas,
+        ) = row  # noqa: E501
         partes: list[str] = []
+        # Demografia (fundido do antigo indicadores_municipal)
+        demograf: list[str] = []
+        if pop:
+            demograf.append(f"{pop:,} hab")
+        if idhm:
+            demograf.append(f"IDHM {idhm}")
+        if demograf:
+            partes.append(f"Demografia: {', '.join(demograf)}")
+        # Saude
         if estab or leitos:
             saude_parts: list[str] = []
             if estab:
@@ -521,6 +680,7 @@ def _extract_indicadores_sociais(cur: Any, deputado_id: int, nome: str) -> list[
             if prof:
                 saude_parts.append(f"{prof} profissionais")
             partes.append(f"Saude: {', '.join(saude_parts)}")
+        # Educacao
         if ideb_i or ideb_f or aprov:
             edu_parts: list[str] = []
             if ideb_i:
@@ -544,19 +704,15 @@ def _extract_indicadores_sociais(cur: Any, deputado_id: int, nome: str) -> list[
 
 def _extract_risco_judicial(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunks: Processos judiciais vinculados a beneficiarios do deputado (DataJud)."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT mib.nome, bp.total_processos, bp.processos_detalhes
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         JOIN beneficiario_processos bp ON b.cnpj = bp.cnpj
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
           AND bp.total_processos > 0
         ORDER BY bp.total_processos DESC
         LIMIT 10
@@ -603,19 +759,15 @@ def _extract_risco_judicial(cur: Any, deputado_id: int, nome: str) -> list[dict[
 
 def _extract_demografia_municipio(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunks: Dados demograficos dos municipios receptores de emendas (IBGE)."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT mib.nome, mib.populacao, mib.pib_per_capita,
                mib.area_km2, mib.idhm, mib.densidade_demografica
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
           AND mib.populacao IS NOT NULL
         ORDER BY mib.populacao DESC
         LIMIT 10
@@ -652,26 +804,61 @@ def _extract_demografia_municipio(cur: Any, deputado_id: int, nome: str) -> list
 # ---------------------------------------------------------------------------
 
 
+# Mapa de prefixo IBGE (2 dígitos) → UF sigla para corrigir payload de municipio_financeiro
+IBGE_UF_MAP: dict[str, str] = {
+    "11": "RO",
+    "12": "AC",
+    "13": "AM",
+    "14": "RR",
+    "15": "PA",
+    "16": "AP",
+    "17": "TO",
+    "21": "MA",
+    "22": "PI",
+    "23": "CE",
+    "24": "RN",
+    "25": "PB",
+    "26": "PE",
+    "27": "AL",
+    "28": "SE",
+    "29": "BA",
+    "31": "MG",
+    "32": "ES",
+    "33": "RJ",
+    "35": "SP",
+    "41": "PR",
+    "42": "SC",
+    "43": "RS",
+    "50": "MS",
+    "51": "MT",
+    "52": "GO",
+    "53": "DF",
+}
+
+
 def _extract_municipio_financeiro(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Dados financeiros dos municipios receptores de emendas (SICONFI)."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT mib.nome, mib.municipio_id, mf.exercicio,
                mf.receitas_orcamentarias, mf.despesas_totais,
                mf.divida_passiva, mf.arrec_impostos_geral,
                mf.arrec_cota_fpm, mf.arrec_cota_icms, mf.arrec_iss
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         JOIN municipios_financeiro mf ON bm.municipio_id = mf.municipio_id
-        WHERE pd.deputado_id = %s
-          AND mf.receitas_orcamentarias IS NOT NULL
-        ORDER BY mf.exercicio DESC, mf.receitas_orcamentarias DESC
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
+          -- FIX 2026-07-31: receitas_orcamentarias é 100 por cento NULL no SICONFI-RREO;
+          -- o filtro antigo (IS NOT NULL) tornava o SICONFI INVISÍVEL ao RAG.
+          -- Os dados úteis estão nas colunas arrec_* (arrecadação).
+          AND (mf.arrec_impostos_geral IS NOT NULL
+               OR mf.arrec_cota_fpm IS NOT NULL
+               OR mf.arrec_cota_icms IS NOT NULL
+               OR mf.arrec_iss IS NOT NULL)
+        ORDER BY mf.exercicio DESC,
+                 mf.arrec_impostos_geral DESC NULLS LAST
         LIMIT 10
     """,
         (deputado_id,),
@@ -696,6 +883,10 @@ def _extract_municipio_financeiro(cur: Any, deputado_id: int, nome: str) -> list
             fontes.append(f"ICMS R$ {icms:,.2f}")
         if iss:
             fontes.append(f"ISS R$ {iss:,.2f}")
+        # SICONFI-RREO costuma preencher só arrecadação (receitas/despesas NULL)
+        if not partes and fontes:
+            partes = ["arrecadação: " + "; ".join(fontes)]
+            fontes = []
         if not partes:
             continue
         txt = (
@@ -705,19 +896,24 @@ def _extract_municipio_financeiro(cur: Any, deputado_id: int, nome: str) -> list
         )
         if fontes:
             txt += f" Fontes de receita: {', '.join(fontes)}."
-        docs.append({
-            "text": txt, "type": "municipio_financeiro",
-            "deputado_id": deputado_id, "municipio_ibge_id": mun_id,
-            "uf": mun_id[:2] if mun_id else None,
-        })
+        # Corrigir uf: código IBGE numérico → sigla (ex: "35" → "SP")
+        uf_real = IBGE_UF_MAP.get(str(mun_id)[:2]) if mun_id else None
+        docs.append(
+            {
+                "text": txt,
+                "type": "municipio_financeiro",
+                "deputado_id": deputado_id,
+                "municipio_ibge_id": mun_id,
+                "uf": uf_real,
+            }
+        )
     return docs
 
 
 def _extract_parlamentar_resumo(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Resumo consolidado do deputado (emendas, beneficiários, valores)."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT COUNT(DISTINCT pa.plano_acao_id) as n_planos,
                COUNT(DISTINCT b.beneficiario_id) as n_benef,
                COUNT(DISTINCT bm.municipio_id) as n_municipios,
@@ -725,9 +921,7 @@ def _extract_parlamentar_resumo(cur: Any, deputado_id: int, nome: str) -> list[d
                pd.sigla_partido, pd.uf
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
+        JOIN parlamentares_dados pd ON pa.parlamentar_id = pd.parlamentar_id
         LEFT JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         WHERE pd.deputado_id = %s
         GROUP BY pd.sigla_partido, pd.uf
@@ -743,26 +937,25 @@ def _extract_parlamentar_resumo(cur: Any, deputado_id: int, nome: str) -> list[d
         f"{n_planos} planos de ação, {n_benef} beneficiários em {n_municipios} municípios, "
         f"valor total R$ {valor_total:,.2f}."
     )
-    return [{
-        "text": txt, "type": "parlamentar_resumo",
-        "deputado_id": deputado_id,
-    }]
+    return [
+        {
+            "text": txt,
+            "type": "parlamentar_resumo",
+            "deputado_id": deputado_id,
+        }
+    ]
 
 
 def _extract_beneficiarios(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Perfil dos beneficiários diretos do deputado."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT b.nome, b.cnpj, b.uf,
                vc.razao_social, vc.situacao_cadastral, pa.valor_total
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         LEFT JOIN validacao_cnpj vc ON b.cnpj = vc.cnpj
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
         ORDER BY pa.valor_total DESC NULLS LAST
         LIMIT 15
     """,
@@ -776,28 +969,27 @@ def _extract_beneficiarios(cur: Any, deputado_id: int, nome: str) -> list[dict[s
             f"Beneficiário{razao_part} {b_nome} em {uf} "
             f"(CNPJ {cnpj or 'N/A'}){sit_part}, receptor de emendas do deputado {nome}."
         )
-        docs.append({
-            "text": txt, "type": "beneficiario",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "beneficiario",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
 def _extract_prefeitos(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Perfil dos prefeitos nos municípios receptores de emendas."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT pf.prefeito_nome, pf.municipio_nome, pf.sigla_partido,
                pf.ano_eleicao, pf.coligacao
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados dep
-            ON {norm} = {_SQL_NORM.format(col='dep.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='dep.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN prefeitos_dados pf ON bm.municipio_id = pf.municipio_id
-        WHERE dep.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
         ORDER BY pf.ano_eleicao DESC
         LIMIT 10
     """,
@@ -811,10 +1003,13 @@ def _extract_prefeitos(cur: Any, deputado_id: int, nome: str) -> list[dict[str, 
             f"eleito(a) em {ano or '?'}, "
             f"município receptor de emendas do deputado {nome}.{colig_part}"
         )
-        docs.append({
-            "text": txt, "type": "prefeito",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "prefeito",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
@@ -828,40 +1023,41 @@ def _extract_senadores(cur: Any, deputado_id: int, nome: str) -> list[dict[str, 
     if not row:
         return []
     uf = row[0]
+    # FIX 2026-07-31: situacao real é 'EM EXERCÍCIO' (não 'Exercício') —
+    # o match exato anterior nunca retornava senadores.
     cur.execute(
         "SELECT nome_parlamentar, sigla_partido, email, legislatura "
-        "FROM senadores_dados WHERE uf = %s AND situacao = 'Exercício'",
+        "FROM senadores_dados WHERE uf = %s AND situacao ILIKE '%%EXERC%%'",
         (uf,),
     )
     docs: list[dict[str, Any]] = []
-    for s_nome, partido, email, _leg in cur.fetchall():
+    for s_nome, partido, _email, _leg in cur.fetchall():
         txt = (
             f"Senador(a) {s_nome} ({partido}) em exercício em {uf}. "
             f"Conexão federal relevante para deputado {nome} ({uf})."
         )
-        docs.append({
-            "text": txt, "type": "senador",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "senador",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
 def _extract_fnde_repasses(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Repasses FNDE nos municípios receptores de emendas."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT mib.nome, fr.programa, fr.valor_total,
                fr.ano, fr.descricao_programa
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         JOIN fnde_repasses fr ON bm.municipio_id = fr.municipio_id
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
         ORDER BY fr.valor_total DESC NULLS LAST
         LIMIT 10
     """,
@@ -876,32 +1072,31 @@ def _extract_fnde_repasses(cur: Any, deputado_id: int, nome: str) -> list[dict[s
             f"ano {ano or '?'}{sit_part}. "
             f"Município receptor de emendas do deputado {nome}."
         )
-        docs.append({
-            "text": txt, "type": "fnde_repasses",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "fnde_repasses",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
 def _extract_indicadores_municipal(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Painel consolidado de indicadores municipais (saúde + educação + IBGE)."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT DISTINCT mib.nome, mib.populacao, mib.idhm,
                sm.total_leitos, sm.total_profissionais,
                em.ideb_initial_years, em.ideb_final_years,
                em.taxa_aprovacao, em.matriculas_totais
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         LEFT JOIN saude_municipios sm ON bm.municipio_id = sm.municipio_id
         LEFT JOIN educacao_municipios em ON bm.municipio_id = em.municipio_id
-        WHERE pd.deputado_id = %s
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
           AND (sm.municipio_id IS NOT NULL OR em.municipio_id IS NOT NULL)
         ORDER BY mib.populacao DESC NULLS LAST
         LIMIT 8
@@ -932,27 +1127,27 @@ def _extract_indicadores_municipal(cur: Any, deputado_id: int, nome: str) -> lis
             f"Painel municipal de {mun} (receptor de emendas do deputado {nome}): "
             f"{', '.join(partes)}."
         )
-        docs.append({
-            "text": txt, "type": "indicadores_municipal",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "indicadores_municipal",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
 def _extract_vereadores_resumo(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Resumo de vereadores nos municípios receptores de emendas."""
-    norm = _SQL_NORM.format(col="pa.parlamentar_nome")
     cur.execute(
-        f"""
+        """
         SELECT mib.nome, mib.municipio_id,
                COUNT(*) as n_veread,
                MODE() WITHIN GROUP (ORDER BY vd.sigla_partido) as partido_mais,
                SUM(CASE WHEN vd.sigla_partido = pd.sigla_partido THEN 1 ELSE 0 END) as aliados
         FROM planos_acao pa
         JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id
-        JOIN parlamentares_dados pd
-            ON {norm} = {_SQL_NORM.format(col='pd.nome_urna')}
-           OR {norm} = {_SQL_NORM.format(col='pd.nome')}
+        JOIN parlamentares_dados pd ON pa.parlamentar_id = pd.parlamentar_id
         JOIN beneficiario_ibge_map bm ON b.beneficiario_id = bm.beneficiario_id
         JOIN municipios_ibge mib ON bm.municipio_id = mib.municipio_id
         JOIN vereadores_dados vd ON bm.municipio_id = vd.municipio_id
@@ -971,20 +1166,301 @@ def _extract_vereadores_resumo(cur: Any, deputado_id: int, nome: str) -> list[di
             f"partido dominante: {partido_mais or 'N/A'}, "
             f"{aliados} aliados do deputado {nome} (mesmo partido)."
         )
-        docs.append({
-            "text": txt, "type": "vereadores_resumo",
-            "deputado_id": deputado_id,
-        })
+        docs.append(
+            {
+                "text": txt,
+                "type": "vereadores_resumo",
+                "deputado_id": deputado_id,
+            }
+        )
     return docs
 
 
 # ---------------------------------------------------------------------------
-# Orchestrador: extrai todos os chunks de um deputado
+# Fase 7: Novo chunk type — parlamentar_alertas (alertas DOU vinculados ao deputado)
 # ---------------------------------------------------------------------------
 
 
-def get_deputado_texts(deputado_id: int) -> list[dict[str, Any]]:
-    """Extrai chunks de TODAS as fontes para um deputado."""
+def _extract_parlamentar_alertas(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
+    """Chunks: Alertas de relevancia do DOU com vinculacao direta ao deputado."""
+    cur.execute(
+        """
+        SELECT pa.nivel_relevancia, COUNT(*) as n_alertas,
+               MAX(da.data_publicacao)::date as ultimo_ato
+        FROM parlamentar_alertas pa
+        JOIN diario_oficial_atos da ON pa.ato_id = da.ato_id
+        WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
+        GROUP BY pa.nivel_relevancia
+        ORDER BY pa.nivel_relevancia DESC
+    """,
+        (deputado_id,),
+    )
+    docs: list[dict[str, Any]] = []
+    for nivel, n_alertas, ultimo in cur.fetchall():
+        if not n_alertas or n_alertas == 0:
+            continue
+        nivel_str = f"Relevancia {nivel or 0}/5"
+        txt = (
+            f"Alertas DOU para o deputado {nome}: {n_alertas} atos "
+            f"(nivel {nivel_str}), ultimo em {ultimo or 'N/I'}."
+        )
+        docs.append(
+            {
+                "text": txt,
+                "type": "parlamentar_alertas",
+                "deputado_id": deputado_id,
+                "nivel_relevancia": nivel or 0,
+            }
+        )
+    return docs
+
+
+# ---------------------------------------------------------------------------
+# Fase 8: Novo chunk type — persona_existente (dossies RAG ja gerados)
+# ---------------------------------------------------------------------------
+
+
+def _extract_personas_existentes(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
+    """Chunks: Re-aproveitamento de dossies/personas analiticas ja geradas."""
+    cur.execute(
+        """
+        SELECT analise_gerada, versao_prompt, score_qualidade,
+               data_analise::date, modelo_usado
+        FROM parlamentares_personas
+        WHERE deputado_id = %s
+          AND qualidade_ok = true
+          AND analise_gerada IS NOT NULL
+        ORDER BY data_analise DESC
+        LIMIT 3
+    """,
+        (deputado_id,),
+    )
+    docs: list[dict[str, Any]] = []
+    for analise, versao, score, data, modelo in cur.fetchall():
+        if not analise:
+            continue
+        preview: str = analise[:2000] + ("..." if len(analise) > 2000 else "")
+        txt = (
+            f"[Persona RAG v{versao or '?'}] Dossier do deputado {nome} "
+            f"(score: {score or 0:.1f}/100, modelo: {modelo or 'N/I'}, data: {data or 'N/I'}).\n"
+            f"**Analise**: {preview}"
+        )
+        docs.append(
+            {
+                "text": txt,
+                "type": "persona_existente",
+                "deputado_id": deputado_id,
+            }
+        )
+    return docs
+
+
+# Mapa de extratores por tipo de chunk — usado pelo modo --types e --diff
+CHUNK_EXTRACTORS: dict[str, str] = {
+    "perfil": "_extract_perfil",
+    "proposicao": "_extract_proposicoes",
+    "emenda": "_extract_emendas",
+    "voto": "_extract_votos",
+    "diario_oficial": "_extract_diario_oficial",
+    "conexao_politica": "_extract_prefeitos_aliados",
+    "emenda_discricionaria": "_extract_emendas_discricionarias",
+    "compras_municipio": "_extract_compras_municipio",
+    "indicadores_sociais": "_extract_indicadores_sociais",
+    "risco_judicial": "_extract_risco_judicial",
+    "demografia_municipio": "_extract_demografia_municipio",
+    "municipio_financeiro": "_extract_municipio_financeiro",
+    "parlamentar_resumo": "_extract_parlamentar_resumo",
+    "beneficiario": "_extract_beneficiarios",
+    "prefeito": "_extract_prefeitos",
+    "senador": "_extract_senadores",
+    "fnde_repasses": "_extract_fnde_repasses",
+    "indicadores_municipal": "_extract_indicadores_municipal",
+    "vereadores_resumo": "_extract_vereadores_resumo",
+    "discurso_plenario": "_extract_discursos",
+    "parlamentar_alertas": "_extract_parlamentar_alertas",
+    "persona_existente": "_extract_personas_existentes",
+}
+
+# ---------------------------------------------------------------------------
+# Checkpoint: tabela de controle no PostgreSQL
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_SQL = """
+CREATE TABLE IF NOT EXISTS qdrant_index_checkpoint (
+    chunk_type TEXT NOT NULL,
+    deputado_id INTEGER NOT NULL,
+    data_hash TEXT NOT NULL,
+    indexed_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (chunk_type, deputado_id)
+);
+"""
+
+
+def _ensure_checkpoint_table() -> None:
+    """Cria tabela de checkpoint se não existir."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_CHECKPOINT_SQL)
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_checkpoint_hash(chunk_type: str, deputado_id: int) -> str | None:
+    """Retorna hash do último checkpoint para (chunk_type, deputado_id)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT data_hash FROM qdrant_index_checkpoint WHERE chunk_type = %s AND deputado_id = %s",
+                (chunk_type, deputado_id),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def _save_checkpoint(chunk_type: str, deputado_id: int, data_hash: str) -> None:
+    """Salva/atualiza checkpoint."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO qdrant_index_checkpoint (chunk_type, deputado_id, data_hash) "
+                "VALUES (%s, %s, %s) "
+                "ON CONFLICT (chunk_type, deputado_id) DO UPDATE SET data_hash = EXCLUDED.data_hash, indexed_at = NOW()",
+                (chunk_type, deputado_id, data_hash),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _compute_data_hash(cur: Any, deputado_id: int, extractor_name: str) -> str:
+    """Calcula hash MD5 dos dados atuais para detectar mudancas (modo --diff)."""
+    # Para cada extrator, faz uma consulta resumida para gerar hash
+    hasher = hashlib.md5()
+    hasher.update(f"{deputado_id}_{extractor_name}".encode())
+
+    if extractor_name == "_extract_perfil":
+        cur.execute(
+            "SELECT nome, sigla_partido, uf FROM parlamentares_dados WHERE deputado_id = %s",
+            (deputado_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            hasher.update(str(row).encode())
+    elif extractor_name == "_extract_proposicoes":
+        cur.execute(
+            "SELECT COUNT(*), COALESCE(MAX(data_apresentacao)::text, '') FROM parlamentar_proposicoes WHERE deputado_id = %s",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_emendas":
+        cur.execute(
+            "SELECT COUNT(*), COALESCE(SUM(pa.valor_total)::text, '0') FROM planos_acao pa "
+            "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_votos":
+        cur.execute(
+            "SELECT COUNT(*), MAX(id) FROM votos_camara WHERE deputado_id = %s",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_diario_oficial":
+        cur.execute(
+            "SELECT COUNT(*) FROM parlamentar_alertas pa "
+            "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_discursos":
+        cur.execute(
+            "SELECT COUNT(*), MAX(data_hora_inicio::text) FROM parlamentar_discursos WHERE deputado_id = %s",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name in (
+        "_extract_municipio_financeiro",
+        "_extract_demografia_municipio",
+        "_extract_indicadores_sociais",
+        "_extract_compras_municipio",
+        "_extract_risco_judicial",
+        "_extract_indicadores_municipal",
+        "_extract_vereadores_resumo",
+        "_extract_prefeitos_aliados",
+        "_extract_prefeitos",
+        "_extract_fnde_repasses",
+    ):
+        # Para extratores com JOIN complexos, hash generico
+        hasher.update(f"generic_{deputado_id}".encode())
+    elif extractor_name == "_extract_emendas_discricionarias":
+        cur.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(ed.valor_total)::text, '0')
+            FROM emendas_discricionarias ed
+            WHERE ed.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)
+            """,
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_beneficiarios":
+        cur.execute(
+            "SELECT COUNT(DISTINCT b.beneficiario_id) FROM planos_acao pa "
+            "JOIN beneficiarios b ON pa.beneficiario_id = b.beneficiario_id "
+            "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_senadores":
+        cur.execute("SELECT uf FROM parlamentares_dados WHERE deputado_id = %s", (deputado_id,))
+        row = cur.fetchone()
+        if row:
+            cur.execute("SELECT COUNT(*) FROM senadores_dados WHERE uf = %s", (row[0],))
+            hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_parlamentar_resumo":
+        hasher.update(f"resumo_{deputado_id}".encode())
+    elif extractor_name == "_extract_parlamentar_alertas":
+        cur.execute(
+            "SELECT COUNT(*) FROM parlamentar_alertas pa "
+            "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    elif extractor_name == "_extract_personas_existentes":
+        cur.execute(
+            "SELECT COUNT(*), COALESCE(MAX(data_analise)::text, '') "
+            "FROM parlamentares_personas WHERE deputado_id = %s AND qualidade_ok = true",
+            (deputado_id,),
+        )
+        hasher.update(str(cur.fetchone()).encode())
+    return hasher.hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Orchestrador: extrai todos os chunks de um deputado (com resiliência)
+# ---------------------------------------------------------------------------
+
+
+def get_deputado_texts(
+    deputado_id: int,
+    *,
+    chunk_types: list[str] | None = None,
+    diff: bool = False,
+) -> list[dict[str, Any]]:
+    """Extrai chunks de fontes selecionadas para um deputado.
+
+    Args:
+        chunk_types: Lista de tipos para filtrar (None = todos).
+        diff: Se True, pula chunks que nao mudaram desde o ultimo checkpoint.
+
+    Returns:
+        Lista de chunks com metadados.
+    """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT nome FROM parlamentares_dados WHERE deputado_id = %s",
@@ -995,27 +1471,47 @@ def get_deputado_texts(deputado_id: int) -> list[dict[str, Any]]:
             return []
         nome = row[0]
 
+        # Mapear tipos para funcoes extratoras
+        extractors: list[tuple[str, Any]] = []
+        for tipo, func_name in CHUNK_EXTRACTORS.items():
+            if chunk_types and tipo not in chunk_types:
+                continue
+            func = globals().get(func_name)
+            if func:
+                extractors.append((tipo, func))
+
         docs: list[dict[str, Any]] = []
-        docs.extend(_extract_perfil(cur, deputado_id, nome))
-        docs.extend(_extract_proposicoes(cur, deputado_id, nome))
-        docs.extend(_extract_emendas(cur, deputado_id, nome))
-        docs.extend(_extract_votos(cur, deputado_id, nome))
-        docs.extend(_extract_diario_oficial(cur, deputado_id, nome))
-        docs.extend(_extract_prefeitos_aliados(cur, deputado_id, nome))
-        docs.extend(_extract_emendas_discricionarias(cur, deputado_id, nome))
-        docs.extend(_extract_compras_municipio(cur, deputado_id, nome))
-        docs.extend(_extract_indicadores_sociais(cur, deputado_id, nome))
-        docs.extend(_extract_risco_judicial(cur, deputado_id, nome))
-        docs.extend(_extract_demografia_municipio(cur, deputado_id, nome))
-        # Fase 1: Novos chunk types
-        docs.extend(_extract_municipio_financeiro(cur, deputado_id, nome))
-        docs.extend(_extract_parlamentar_resumo(cur, deputado_id, nome))
-        docs.extend(_extract_beneficiarios(cur, deputado_id, nome))
-        docs.extend(_extract_prefeitos(cur, deputado_id, nome))
-        docs.extend(_extract_senadores(cur, deputado_id, nome))
-        docs.extend(_extract_fnde_repasses(cur, deputado_id, nome))
-        docs.extend(_extract_indicadores_municipal(cur, deputado_id, nome))
-        docs.extend(_extract_vereadores_resumo(cur, deputado_id, nome))
+        for chunk_type, extractor in extractors:
+            try:
+                # Modo diff: verificar se dados mudaram
+                if diff:
+                    current_hash = _compute_data_hash(cur, deputado_id, extractor.__name__)
+                    stored_hash = _get_checkpoint_hash(chunk_type, deputado_id)
+                    if current_hash is not None and stored_hash == current_hash:
+                        log.debug(
+                            f"  [diff] {chunk_type} para deputado {deputado_id}: inalterado, pulando"
+                        )
+                        continue
+
+                chunk_docs = extractor(cur, deputado_id, nome)
+                if chunk_docs:
+                    docs.extend(chunk_docs)
+                    log.debug(f"  {extractor.__name__}: {len(chunk_docs)} chunks")
+
+                    # Salvar checkpoint se modo diff
+                    if diff:
+                        current_hash = _compute_data_hash(cur, deputado_id, extractor.__name__)
+                        if current_hash:
+                            _save_checkpoint(chunk_type, deputado_id, current_hash)
+                else:
+                    log.debug(f"  {extractor.__name__}: 0 chunks")
+
+            except Exception as e:
+                log.error(
+                    f"  Erro no extrator {extractor.__name__} para deputado {deputado_id}: {e}"
+                )
+                # Nao aborta — continua com os proximos extratores
+
         return docs
 
 
@@ -1026,12 +1522,41 @@ def get_deputado_texts(deputado_id: int) -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Popula o Qdrant com dados dos Deputados para RAG (v2)"
+        description="Popula o Qdrant com dados dos Deputados para RAG (v4+ com 18 chunk types)"
     )
     parser.add_argument("--limit", type=int, default=10, help="Número de deputados a processar")
     parser.add_argument("--nome", type=str, help="Nome do deputado (busca exata por ILIKE)")
     parser.add_argument("--rebuild", action="store_true", help="Recriar coleção do zero")
+    parser.add_argument(
+        "--diff", action="store_true", help="Modo incremental: pula chunks com hash inalterado"
+    )
+    parser.add_argument(
+        "--types",
+        type=str,
+        help="Filtrar tipos de chunk (separados por virgula). "
+        f"Disponiveis: {', '.join(CHUNK_EXTRACTORS.keys())}",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        action="store_true",
+        help="Forcar verificacao/criacao da tabela de checkpoint",
+    )
     args = parser.parse_args()
+
+    # Garantir tabela de checkpoint se --diff ou --checkpoint
+    if args.diff or args.checkpoint:
+        _ensure_checkpoint_table()
+
+    # Filtrar tipos de chunk
+    tipos_filtro: list[str] | None = None
+    if args.types:
+        tipos_filtro = [t.strip() for t in args.types.split(",") if t.strip() in CHUNK_EXTRACTORS]
+        if not tipos_filtro:
+            log.error(
+                f"Nenhum tipo valido em --types. Disponiveis: {', '.join(CHUNK_EXTRACTORS.keys())}"
+            )
+            return
+        log.info(f"Filtrando tipos: {tipos_filtro}")
 
     # 1. Carregar embedder
     log.info("Carregando modelo de embeddings...")
@@ -1053,16 +1578,18 @@ def main() -> None:
                 (f"%{args.nome}%", f"%{args.nome}%"),
             )
         else:
-            # Priorizar deputados com mais dados (alertas DO + votos)
+            # Priorizar deputados com mais dados (alertas DO + votos + emendas)
             cur.execute(
                 """
                 SELECT pd.deputado_id, pd.nome,
                     (SELECT COUNT(*) FROM parlamentar_alertas pa
-                     WHERE pa.parlamentar_nome IN (pd.nome, pd.nome_urna)) as n_alertas,
+                     WHERE pa.parlamentar_id = pd.parlamentar_id) as n_alertas,
                     (SELECT COUNT(*) FROM votos_camara vc
-                     WHERE vc.deputado_id = pd.deputado_id) as n_votos
+                     WHERE vc.deputado_id = pd.deputado_id) as n_votos,
+                    (SELECT COUNT(*) FROM planos_acao pa2
+                     WHERE pa2.parlamentar_id = pd.parlamentar_id) as n_emendas
                 FROM parlamentares_dados pd
-                ORDER BY n_alertas DESC, n_votos DESC, pd.deputado_id ASC
+                ORDER BY n_alertas DESC, n_votos DESC, n_emendas DESC, pd.deputado_id ASC
                 LIMIT %s
             """,
                 (args.limit,),
@@ -1073,40 +1600,51 @@ def main() -> None:
         log.info("Nenhum deputado encontrado para indexar.")
         return
 
-    log.info(f"Indexando {len(deputados)} deputados no Qdrant...")
+    log.info(
+        f"Indexando {len(deputados)} deputados no Qdrant (diff={args.diff}, tipos={tipos_filtro or 'todos'})..."
+    )
     total_points = 0
 
     for idx, dep_row in enumerate(deputados, 1):
         deputado_id = dep_row[0]
         nome = dep_row[1]
 
-        # Extrair chunks
-        docs = get_deputado_texts(deputado_id)
+        # Extrair chunks (com resiliencia + diff)
+        docs = get_deputado_texts(deputado_id, chunk_types=tipos_filtro, diff=args.diff)
         if not docs:
-            log.warning(f"  [{idx}/{len(deputados)}] {nome}: sem dados, pulando.")
+            log.debug(f"  [{idx}/{len(deputados)}] {nome}: sem dados novos, pulando.")
             continue
 
         # Batch embedding (1 request para todos os chunks)
         texts = [d["text"] for d in docs]
         vectors = embed_text_batch(texts)
 
-        # Montar points
+        # Sparse vectors (BM25) — geração local rápida, sem modelo
+        sparse_vectors = texts_to_sparse_vectors(texts)
+
+        # Montar points com named vectors (dense + sparse)
         points: list[qdrant_models.PointStruct] = []
-        for doc, vector in zip(docs, vectors):
+        for doc, vector, sparse_vec in zip(docs, vectors, sparse_vectors):
             if not vector or len(vector) != EMBEDDING_DIM:
                 continue
             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{deputado_id}_{doc['text']}"))
             points.append(
                 qdrant_models.PointStruct(
                     id=point_id,
-                    vector=vector,
+                    vector={
+                        "dense": vector,
+                        "bm25": sparse_vec,
+                    },
                     payload=doc,
                 )
             )
 
-        # Upsert
+        # Upsert em lotes reduzidos para evitar timeout no Qdrant durante rebuild
         if points:
-            client.upsert(collection_name=QDRANT_COLLECTION, points=points)
+            batch_size = 20
+            for i in range(0, len(points), batch_size):
+                batch = points[i : i + batch_size]
+                client.upsert(collection_name=QDRANT_COLLECTION, points=batch)
             total_points += len(points)
 
         if idx % 10 == 0 or idx == len(deputados):

@@ -1,7 +1,7 @@
 """
 Pipeline de enriquecimento orquestrador.
 
-Uso: python3 -m src.enrichers.pipeline [--fase 1|2|3|4|5|6|7|all] [--dry-run]
+Uso: python3 -m src.enrichers.pipeline [--fase 1|2|3|4|5|6|7|8|9|all] [--dry-run]
 
 Fase 1: Validação CNPJ + IBGE
 Fase 2: Perfil Câmara
@@ -11,6 +11,7 @@ Fase 5: Compras Públicas (PNCP/Contratos.gov)
 Fase 6: Saúde + Educação (CNES/INEP)
 Fase 7: TSE — Prefeitos + Vereadores (Eleições Municipais)
 Fase 8: Senado Federal — Perfil de Senadores
+Fase 9: Discursos da Câmara dos Deputados
 """
 
 import argparse
@@ -68,16 +69,17 @@ def fase3_vinculacao(dry_run: bool):
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""
             INSERT INTO parlamentar_beneficiario
-                (parlamentar_nome, beneficiario_id, emenda_codigo, valor_total, plano_acao_situacao)
-            SELECT parlamentar_nome, beneficiario_id, emenda_codigo,
+                (parlamentar_nome, parlamentar_id, beneficiario_id, emenda_codigo, valor_total, plano_acao_situacao)
+            SELECT parlamentar_nome, parlamentar_id, beneficiario_id, emenda_codigo,
                 SUM(valor_total), MAX(plano_acao_situacao)
             FROM planos_acao
             WHERE parlamentar_nome IS NOT NULL AND parlamentar_nome != ''
               AND beneficiario_id IS NOT NULL
-            GROUP BY parlamentar_nome, beneficiario_id, emenda_codigo
-            ON CONFLICT (parlamentar_nome, beneficiario_id, emenda_codigo) DO UPDATE SET
+            GROUP BY parlamentar_nome, parlamentar_id, beneficiario_id, emenda_codigo
+            ON CONFLICT (parlamentar_id, beneficiario_id, emenda_codigo) DO UPDATE SET
                 valor_total = EXCLUDED.valor_total,
-                plano_acao_situacao = EXCLUDED.plano_acao_situacao
+                plano_acao_situacao = EXCLUDED.plano_acao_situacao,
+                parlamentar_id = EXCLUDED.parlamentar_id
         """)
         vinculados = cur.rowcount
         conn.commit()
@@ -147,12 +149,25 @@ def fase8_senado(dry_run: bool, limit: int):
         print(f"AVISO: senado retornou código {rc}")
 
 
+def fase9_discursos(dry_run: bool, ano: int):
+    """Fase 9: Discursos da Câmara dos Deputados."""
+    print("\n\n>>> FASE 9: Discursos da Câmara dos Deputados")
+
+    if dry_run:
+        rc = run_script("camara_discursos", ["--ano", str(ano), "--resumo"])
+    else:
+        rc = run_script("camara_discursos", ["--ano", str(ano)])
+
+    if rc != 0:
+        print(f"AVISO: camara_discursos retornou código {rc}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pipeline de enriquecimento")
-    parser.add_argument("--fase", default="all", help="Fase a executar: 1-8 ou all")
+    parser.add_argument("--fase", default="all", help="Fase a executar: 1-9 ou all")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N items por fase")
-    parser.add_argument("--ano", type=int, default=2026, help="Ano para compras públicas (fase 5)")
+    parser.add_argument("--ano", type=int, default=2026, help="Ano para compras públicas (fase 5) e discursos (fase 9)")
     args = parser.parse_args()
 
     inicio = time.time()
@@ -180,6 +195,9 @@ def main():
 
     if args.fase in ("8", "all"):
         fase8_senado(args.dry_run, args.limit)
+
+    if args.fase in ("9", "all"):
+        fase9_discursos(args.dry_run, args.ano)
 
     duracao = time.time() - inicio
     print(f"\nPipeline concluído em {duracao:.1f}s")

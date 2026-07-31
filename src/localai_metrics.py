@@ -25,8 +25,12 @@ class _ModelStats:
     """Estatísticas acumuladas para um modelo."""
 
     __slots__ = (
-        "total_calls", "error_calls", "total_latency_ms",
-        "total_tokens", "min_latency_ms", "max_latency_ms",
+        "total_calls",
+        "error_calls",
+        "total_latency_ms",
+        "total_tokens",
+        "min_latency_ms",
+        "max_latency_ms",
     )
 
     def __init__(self) -> None:
@@ -49,25 +53,15 @@ class _ModelStats:
             self.max_latency_ms = latency_ms
 
     def to_dict(self) -> dict:
-        avg = (
-            self.total_latency_ms / self.total_calls
-            if self.total_calls
-            else 0
-        )
-        error_rate = (
-            self.error_calls / self.total_calls * 100
-            if self.total_calls
-            else 0
-        )
+        avg = self.total_latency_ms / self.total_calls if self.total_calls else 0
+        error_rate = self.error_calls / self.total_calls * 100 if self.total_calls else 0
         return {
             "calls": self.total_calls,
             "errors": self.error_calls,
             "error_rate_pct": round(error_rate, 1),
             "avg_latency_ms": round(avg, 1),
             "min_latency_ms": (
-                round(self.min_latency_ms, 1)
-                if self.min_latency_ms != float("inf")
-                else 0
+                round(self.min_latency_ms, 1) if self.min_latency_ms != float("inf") else 0
             ),
             "max_latency_ms": round(self.max_latency_ms, 1),
             "total_tokens": self.total_tokens,
@@ -102,12 +96,8 @@ class LocalAIMetrics:
             uptime_s = time.monotonic() - self._start_time
             return {
                 "uptime_s": round(uptime_s, 1),
-                "by_model": {
-                    k: v.to_dict() for k, v in sorted(self._by_model.items())
-                },
-                "by_endpoint": {
-                    k: v.to_dict() for k, v in sorted(self._by_endpoint.items())
-                },
+                "by_model": {k: v.to_dict() for k, v in sorted(self._by_model.items())},
+                "by_endpoint": {k: v.to_dict() for k, v in sorted(self._by_endpoint.items())},
             }
 
     def summary_log(self) -> str:

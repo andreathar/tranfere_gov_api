@@ -38,6 +38,29 @@ def fetch_emendas_transparencia(api_key: str, pagina: int = 1) -> list[dict[str,
     return response.json()
 
 
+def lookup_parlamentar_id(nome: str) -> int | None:
+    """Resolve parlamentar_nome to parlamentar_id via exact match."""
+    if not nome:
+        return None
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT parlamentar_id FROM planos_acao WHERE parlamentar_nome = %s AND parlamentar_id IS NOT NULL LIMIT 1",
+            (nome,),
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        # Fallback: try parlamentares table
+        cur.execute(
+            "SELECT parlamentar_id FROM parlamentares WHERE nome = %s LIMIT 1",
+            (nome,),
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0]
+    return None
+
+
 def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
     """Insere ou atualiza registros na tabela emendas_discricionarias."""
     if not emendas:
@@ -46,15 +69,16 @@ def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
     query = """
         INSERT INTO emendas_discricionarias (
             codigo_emenda, numero_convenio, ano, parlamentar_nome,
-            beneficiario_nome, beneficiario_cnpj, valor_total,
-            status_execucao, data_assinatura, objeto
+            parlamentar_id, beneficiario_nome, beneficiario_cnpj,
+            valor_total, status_execucao, data_assinatura, objeto
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         ON CONFLICT (codigo_emenda) DO UPDATE SET
             numero_convenio = EXCLUDED.numero_convenio,
             ano = EXCLUDED.ano,
             parlamentar_nome = EXCLUDED.parlamentar_nome,
+            parlamentar_id = EXCLUDED.parlamentar_id,
             beneficiario_nome = EXCLUDED.beneficiario_nome,
             beneficiario_cnpj = EXCLUDED.beneficiario_cnpj,
             valor_total = EXCLUDED.valor_total,
@@ -76,6 +100,7 @@ def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
                 # Para convênios, o Portal da Transparência retorna objetos compostos
                 autor = emenda.get("autor", {})
                 parlamentar_nome = autor.get("nomeAutor")
+                parlamentar_id = lookup_parlamentar_id(parlamentar_nome)
 
                 beneficiario = emenda.get("beneficiario", {})
                 beneficiario_nome = beneficiario.get("nome")
@@ -91,6 +116,7 @@ def upsert_emendas_discricionarias(emendas: list[dict[str, Any]]) -> None:
                         None,  # numero_convenio
                         emenda.get("ano"),
                         parlamentar_nome,
+                        parlamentar_id,
                         beneficiario_nome,
                         beneficiario_cnpj,
                         valor_total,

@@ -91,6 +91,7 @@ def wrap_no_ctx(fn: Callable) -> Callable:
     # Mock mínimo do Context do FastMCP
     _mock_ctx = None
     if has_ctx:
+
         class _MockCtx:
             async def info(self, *a, **kw):
                 pass

@@ -23,7 +23,9 @@ def _sync_get_party_efficiency() -> list[dict[str, Any]]:
                     COUNT(vu.codigo_emenda) as total_emendas,
                     COALESCE(SUM(vu.valor_total), 0) as valor_total
                 FROM v_emendas_unificadas vu
-                JOIN parlamentares_dados pd ON vu.parlamentar_nome = pd.nome
+                JOIN planos_acao pa ON vu.codigo_emenda = pa.emenda_codigo AND vu.ano = pa.emenda_ano
+                JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
+                JOIN parlamentares_dados pd ON p.nome = pd.nome OR p.nome = pd.nome_urna
                 WHERE pd.sigla_partido IS NOT NULL
                 GROUP BY pd.sigla_partido, vu.status_execucao
                 ORDER BY pd.sigla_partido, vu.status_execucao
@@ -85,7 +87,9 @@ async def get_deputy_roi() -> list[dict[str, Any]]:
                     COALESCE(SUM(vu.valor_total), 0) as valor_emendas,
                     COUNT(vu.codigo_emenda) as qtd_emendas
                 FROM v_emendas_unificadas vu
-                JOIN parlamentares_dados pd ON vu.parlamentar_nome = pd.nome
+                JOIN planos_acao pa ON vu.codigo_emenda = pa.emenda_codigo AND vu.ano = pa.emenda_ano
+                JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
+                JOIN parlamentares_dados pd ON p.nome = pd.nome OR p.nome = pd.nome_urna
                 GROUP BY pd.deputado_id, pd.nome_urna, pd.sigla_partido
                 ORDER BY valor_emendas DESC
                 LIMIT 20

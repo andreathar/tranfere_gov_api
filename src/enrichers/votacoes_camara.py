@@ -177,6 +177,12 @@ def main():
     conn = get_connection()
     cur = conn.cursor()
 
+    # pré-carregar mapeamento deputado_id → parlamentar_id para evitar N queries
+    cur.execute(
+        "SELECT deputado_id, parlamentar_id FROM parlamentares_dados WHERE parlamentar_id IS NOT NULL"
+    )
+    dep_to_parl = dict(cur.fetchall())
+
     total_votos_salvos = 0
 
     for i, raw in enumerate(votacoes, 1):
@@ -237,19 +243,22 @@ def main():
             for voto in votos:
                 if not voto["deputado_id"]:
                     continue
+                parlamentar_id = dep_to_parl.get(voto["deputado_id"])
                 cur.execute(
                     """
                     INSERT INTO votos_camara
                         (votacao_id, deputado_id, deputado_nome, deputado_urna,
-                         sigla_partido, sigla_uf, tipo_voto, em_segredo)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         sigla_partido, sigla_uf, tipo_voto, em_segredo,
+                         parlamentar_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (votacao_id, deputado_id) DO UPDATE SET
                         deputado_nome = EXCLUDED.deputado_nome,
                         deputado_urna = EXCLUDED.deputado_urna,
                         sigla_partido = EXCLUDED.sigla_partido,
                         sigla_uf = EXCLUDED.sigla_uf,
                         tipo_voto = EXCLUDED.tipo_voto,
-                        em_segredo = EXCLUDED.em_segredo
+                        em_segredo = EXCLUDED.em_segredo,
+                        parlamentar_id = EXCLUDED.parlamentar_id
                     """,
                     (
                         voto["votacao_id"],
@@ -260,6 +269,7 @@ def main():
                         voto["sigla_uf"],
                         voto["tipo_voto"],
                         voto["em_segredo"],
+                        parlamentar_id,
                     ),
                 )
             total_votos_salvos += len(votos)

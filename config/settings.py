@@ -8,6 +8,11 @@ Import via: from config.settings import API_URL, SITUACOES_NEGADAS, etc.
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Carrega variáveis do .env
+load_dotenv()
+
 # ---------------------------------------------------------------------------
 # Paths do projeto
 # ---------------------------------------------------------------------------
@@ -137,74 +142,169 @@ SENADO_API_BASE = "https://legis.senado.leg.br/dadosabertos"
 # ---------------------------------------------------------------------------
 # LocalAI — Modelos locais via API compatível OpenAI
 # ---------------------------------------------------------------------------
-LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080/v1")
+LOCALAI_BASE_URL = os.getenv("LOCALAI_BASE_URL", "http://localhost:8080")
 LOCALAI_TIMEOUT = int(os.getenv("LOCALAI_TIMEOUT", "300"))  # segundos
 LOCALAI_MAX_RETRIES = int(os.getenv("LOCALAI_MAX_RETRIES", "3"))
 
-# Modelos categorizados por tarefa (validados via benchmark)
+# Modal vLLM (Cloud GPU)
+MODAL_VLLM_URL = os.getenv("MODAL_VLLM_URL", None)
+MODAL_VLLM_TOKEN = os.getenv("MODAL_VLLM_TOKEN", None)
+USE_MODAL_VLLM = os.getenv("USE_MODAL_VLLM", "false").lower() == "true"
+
+# Modelos categorizados por tarefa (validados via benchmark de qualidade/desempenho)
 LOCALAI_MODELS = {
-    # Análise de dossiês (qualidade e redação em PT-BR ideal — 36.8 tok/s)
-    "gemma": "gemma-4-e2b-it",
-    # Análise profunda / auditoria pesada (7.7 tok/s)
-    "analysis": "llama-3.1-8b-q4-k-m",
+    # Dossiê comportamental RAG (Melhor qualidade 100/100, 18.3s, 24 tok/s)
+    "dossie": "llama-3.2-3b-instruct:q4_k_m",
+    # Análise profunda / auditoria pesada (agente customizado)
+    "analysis": "agente-dossie-investigativo",
+    # Tarefas ultra-rápidas / Triagem (agente rápido — 7.4s, 83.9 tok/s)
+    "fast": "agente-dossie-rapido",
+    # Modelo Gemma em PT-BR
+    "gemma": "zero-gemma4-e4b-openzero-q5-k-m",
     # Código
     "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
-    # Tarefas ultra-rápidas / NER (88.9 tok/s - resposta em 11s)
-    "fast": "qwen2.5-1.5b-instruct-q4-k-m",
     # Uso geral
-    "general": "gemma-4-e2b-it",
+    "general": "llama-3.2-3b-instruct:q4_k_m",
     # Embeddings
-    "embedding": "nomic-embed-text-v1.5",
+    "embedding": "embeddinggemma-300m",
     # Roteamento inteligente
     "router": "intelligent-router",
 }
 
 # Modelo padrão para jobs de pipeline
-LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["gemma"]
+LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["dossie"]
+
+# ---------------------------------------------------------------------------
+# vLLM Local — Engine de inferência local alternativa (GGUF models)
+# ---------------------------------------------------------------------------
+# Permite usar o vLLM (fork local em /mnt/data/Projects_SSD/vllm) no lugar do
+# LocalAI para servir modelos GGUF, aproveitando PagedAttention, continuous
+# batching, prefix caching, etc.
+# Ativar: USE_LOCAL_VLLM=true LOCAL_VLLM_BASE_URL=http://localhost:8001
+USE_LOCAL_VLLM = os.getenv("USE_LOCAL_VLLM", "false").lower() == "true"
+LOCAL_VLLM_FORK_DIR = os.getenv("LOCAL_VLLM_FORK_DIR", str(PROJECT_ROOT.parent / "vllm"))
+LOCAL_VLLM_BASE_URL = os.getenv("LOCAL_VLLM_BASE_URL", "http://localhost:8001")
+LOCAL_VLLM_MODELS_DIR = os.getenv("LOCAL_VLLM_MODELS_DIR", "/mnt/data/models")
+LOCAL_VLLM_TIMEOUT = int(os.getenv("LOCAL_VLLM_TIMEOUT", "300"))
+LOCAL_VLLM_GPU_MEM_UTIL = float(os.getenv("LOCAL_VLLM_GPU_MEM_UTIL", "0.88"))
+LOCAL_VLLM_MAX_MODEL_LEN = int(os.getenv("LOCAL_VLLM_MAX_MODEL_LEN", "8192"))
+LOCAL_VLLM_PORT = int(os.getenv("LOCAL_VLLM_PORT", "8001"))
+
+# Mapeamento modelos → vLLM. Cada entry pode ter:
+#   hf_model_id:  HF model ID (prioritário, usa cache HuggingFace)
+#   gguf_path:    path .gguf (fallback) + tokenizer_id
+#   quantization: "bitsandbytes" para BNB 4bit
+LOCAL_VLLM_MODEL_MAP: dict[str, dict[str, str]] = {
+    "llama-3.2-3b": {
+        "hf_model_id": "unsloth/llama-3.2-3b-unsloth-bnb-4bit",
+        "quantization": "bitsandbytes",
+        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/llama-3.2-3b/llama-3.2-3b-instruct-q4_k_m.gguf",
+        "tokenizer_id": "hugging-quants/Llama-3.2-3B-Instruct-GGUF",
+    },
+    "llama-3.2-3b-instruct:q4_k_m": {
+        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/llama-3.2-3b/llama-3.2-3b-instruct-q4_k_m.gguf",
+        "tokenizer_id": "hugging-quants/Llama-3.2-3B-Instruct-GGUF",
+    },
+    "gemma-4-e2b-it": {
+        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/gemma-4/gemma-4-E2B-it-Q8_0.gguf",
+        "tokenizer_id": "google/gemma-4-e2b-it",
+    },
+    "qwen2.5-1.5b-instruct-q4-k-m": {
+        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "tokenizer_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    },
+    "Qwen2.5-Coder-7B-Instruct-GGUF": {
+        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/lmstudio-community/Qwen2.5-Coder-7B-Instruct-GGUF/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+        "tokenizer_id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+    },
+}
 
 # Timeouts por modelo (em segundos) — sobrescrevem LOCALAI_TIMEOUT geral
-# Modelos menores são mais rápidos; 8B pode demorar muito em prompts grandes
 LOCALAI_MODEL_TIMEOUTS: dict[str, int] = {
-    "gemma-4-e2b-it": 120,                 # 2B params, rápido
-    "qwen2.5-1.5b-instruct-q4-k-m": 60,  # 1.5B, ultra-rápido
-    "llama-3.1-8b-q4-k-m": 300,           # 8B, lento mas robusto
+    "llama-3.2-3b-instruct:q4_k_m": 120,  # 3B, rápido e estável
+    "agente-dossie-rapido": 60,  # Agente rápido, 7s
+    "agente-dossie-investigativo": 240,  # Agente investigativo profundo
+    "gemma-4-e2b-it": 300,  # 2B params, thinking model: load 60-90s + reasoning + briefing
+    "zero-gemma4-e4b-openzero-q5-k-m": 300,  # 4B reasoning, 21.9 tok/s: load + thinking + briefing
+    "qwen2.5-1.5b-instruct-q4-k-m": 180,  # 1.5B, prompt longo ~7k chars pode demorar >60s
+    "llama-3.1-8b-dossie": 300,  # 8B, denso
     "Qwen2.5-Coder-7B-Instruct-GGUF": 180,  # 7B, código
-    "nomic-embed-text-v1.5": 30,           # embeddings, rápido
-    "intelligent-router": 15,              # roteamento, simples
+    "nomic-embed-text-v1.5": 30,  # emb., rápido
+    "embeddinggemma-300m": 30,  # 300M, rápido
+    "intelligent-router": 15,  # roteamento, simples
 }
+
+# ---------------------------------------------------------------------------
+# Cloud Proxy LocalAI — Roteia requests para LLMs cloud via backend cloud-proxy
+# ---------------------------------------------------------------------------
+# O cloud proxy é um backend nativo do LocalAI que recebe requests
+# OpenAI-compatíveis e as encaminha para provedores cloud (OpenAI, Anthropic).
+#
+# Cada chave é o nome do modelo configurado no LocalAI com backend: cloud-proxy.
+# O cliente Python usa LOCALAI_BASE_URL + model name (auth é server-side).
+#
+# Configuração de exemplo no LocalAI (model.yaml):
+#   backend: cloud-proxy
+#   upstream_url: https://api.openai.com/v1
+#   upstream_model: gpt-4o-mini
+#   api_key_env: OPENAI_API_KEY
+#   mode: translate
+#   provider: openai
+CLOUD_PROXY_MODELS: dict[str, dict[str, str | int]] = {
+    # Exemplo (descomentar para usar):
+    # "gpt-4o-mini": {
+    #     "upstream_url": "https://api.openai.com/v1",
+    #     "upstream_model": "gpt-4o-mini",
+    #     "api_key_env": "OPENAI_API_KEY",
+    #     "provider": "openai",
+    #     "mode": "translate",
+    #     "timeout": 300,
+    # },
+}
+
+# Nomes dos modelos que rodam via cloud proxy (para detecção rápida)
+CLOUD_PROXY_MODEL_NAMES: set[str] = set(CLOUD_PROXY_MODELS.keys())
 
 # ---------------------------------------------------------------------------
 # RAG — Qdrant + Embeddings + Persona
 # ---------------------------------------------------------------------------
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = "deputados_perfis"
-EMBEDDER_MODEL = "nomic-embed-text-v1.5"
+EMBEDDER_MODEL = "embeddinggemma-300m"
 EMBEDDING_DIM = 768
-RAG_LLM_MODEL = os.getenv(
-    "RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m"
-)
-RAG_PERSONA_VERSION = 3  # Incrementar para a nova versão enriquecida
+RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m")
+# Fallback: se o modelo principal falhar ou quality check reprovar, tenta este
+RAG_FALLBACK_MODEL = os.getenv("RAG_FALLBACK_MODEL", "llama-3.2-3b-instruct:q4_k_m")
+RAG_PERSONA_VERSION = 7  # v7: 7 analistas especialistas + PromptPreparer, 14 queries tematicas, RRF k=60
 RAG_MIN_CHUNKS = 3  # Mínimo de chunks para gerar persona (evitar análises vazias)
 RAG_MAX_CHUNKS = 30  # Máximo de chunks por deputado no contexto final
 RAG_BATCH_SIZE = 50  # Tamanho do batch para embedding em lote
+RAG_MAX_RETRIES = 2  # Tentativas com fallback se quality check reprovar
 
 # --- RAG v3: Parâmetros de Qualidade ---
-RAG_RRF_K: int = 60                    # Constante para Reciprocal Rank Fusion
-RAG_PROMPT_TOKEN_LIMIT: int = 7000     # Limite de tokens antes de truncar
-RAG_CHARS_PER_TOKEN: int = 4           # Estimativa de caracteres por token
-RAG_DEDUP_ALGO: str = "md5"            # Algoritmo de deduplicação ("prefix" ou "md5")
+RAG_RRF_K: int = 60  # Constante para Reciprocal Rank Fusion
+RAG_PROMPT_TOKEN_LIMIT: int = 7000  # Limite de tokens antes de truncar
+RAG_CHARS_PER_TOKEN: int = 4  # Estimativa de caracteres por token
+RAG_DEDUP_ALGO: str = "md5"  # Algoritmo de deduplicação ("prefix" ou "md5")
 
-# --- RAG v3: Tipos de Chunk ---
+# --- RAG v5: Tipos de Chunk (18 tipos — sync com rag_qdrant_indexer.py) ---
 RAG_CHUNK_TYPES: dict[str, str] = {
-    "perfil": "Dados pessoais do deputado",
-    "proposicao": "Proposições legislativas",
-    "emenda": "Emendas PIX com dados financeiros",
-    "emenda_discricionaria": "Emendas discricionárias",
+    "perfil": "Perfil enriquecido (escolaridade, naturalidade, situacao)",
+    "proposicao": "Proposições legislativas com resumo_ia (LIMIT 30)",
+    "emenda": "Emendas PIX com contexto demografico inline",
+    "emenda_discricionaria": "Emendas discricionarias com CNPJ beneficiario",
     "voto": "Padrão de votação nominal",
-    "diario_oficial": "Atos do Diário Oficial",
+    "diario_oficial": "Atos DOU com nivel_relevancia (LIMIT 20)",
     "conexao_politica": "Conexões Deputado→Prefeito→Vereador",
     "compras_municipio": "Compras públicas do município",
-    "indicadores_sociais": "Saúde e educação do município",
+    "indicadores_sociais": "Saude + educacao + IDHM + populacao (fundido)",
     "risco_judicial": "Processos judiciais vinculados",
     "demografia_municipio": "Dados demográficos IBGE",
+    "municipio_financeiro": "Dados financeiros SICONFI (UF corrigida)",
+    "parlamentar_resumo": "Resumo consolidado do deputado",
+    "beneficiario": "Perfil de beneficiários diretos",
+    "prefeito": "Perfil do prefeito municipal",
+    "senador": "Senadores em exercício no estado",
+    "fnde_repasses": "Repasses educacionais FNDE",
+    "vereadores_resumo": "Rede política local (vereadores)",
 }

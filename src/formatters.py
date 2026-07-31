@@ -1,12 +1,39 @@
 """
-formatters — Funções de formatação para BRL, numéricos e porcentagens.
+formatters — Funções de formatação para BRL, numéricos, porcentagens e acentos.
 
 Substitui as 18+ cópias espalhadas de fmt_brl/fmt_num/fmt_pct/format_brl.
+Centraliza strip_accents() para uso em todos os enrichers e dashboards.
 """
 
 from __future__ import annotations
 
+import unicodedata
+
 import pandas as pd
+
+
+def strip_accents(s: str | None) -> str:
+    """Remove acentos de uma string (NFKD decomposition + strip combining).
+
+    Usa o mesmo algoritmo da função f_unaccent() do PostgreSQL (migration 021)
+    para consistência entre Python e SQL.
+
+    Args:
+        s: String com possíveis acentos (ex: "João", "São Paulo")
+
+    Returns:
+        String sem acentos em lowercase (ex: "joao", "sao paulo")
+    """
+    if s is None:
+        return ""
+    return (
+        "".join(
+            c for c in unicodedata.normalize("NFKD", str(s)) if unicodedata.category(c) != "Mn"
+        )
+        .lower()
+        .replace("  ", " ")
+        .strip()
+    )
 
 
 def fmt_brl(valor) -> str:

@@ -72,31 +72,49 @@ python3 -m src.enrichers.rag_qdrant_indexer [flags]
 
 1. Conecta ao Qdrant (via `QDRANT_URL`) e assegura que a colecao
    `deputados_perfis` existe.
-2. Para cada deputado, coleta dados de 6 fontes distintas no PostgreSQL.
-3. Gera embeddings usando `nomic-embed-text-v1.5` (768 dimensoes, metrica Cosine)
+2. Para cada deputado, coleta dados de 22 fontes distintas no PostgreSQL.
+3. Gera embeddings usando `embeddinggemma-300m` (768 dimensoes, metrica Cosine)
    via LocalAI.
 4. Insere os chunks vetoriais no Qdrant com metadados (tipo, deputado_id, etc.).
 5. O `LocalAIManager` garante exclusividade de VRAM — descarrega modelos inativos
    antes de invocar o modelo de embeddings.
+6. No modo `--diff`, compara o hash dos dados com a tabela `qdrant_index_checkpoint`
+   e pula chunks inalterados (modo incremental).
 
-### 6 tipos de chunks indexados
+### 22 tipos de chunks indexados (principais)
 
 | Tipo | Conteudo | Fonte no DB |
 |------|----------|-------------|
 | `perfil` | Nome, partido, UF do deputado | `parlamentares_dados` |
+| `parlamentar_resumo` | Resumo consolidado | `parlamentares_dados` |
 | `proposicao` | PLs e proposicoes legislativas | `parlamentar_proposicoes` |
 | `emenda` | Emendas Pix com dados financeiros do municipio | `planos_acao` + `municipios_financeiro` |
+| `emenda_discricionaria` | Emendas do Portal Transparencia | `emendas_discricionarias` |
+| `beneficiario` | Beneficiarios com CNPJ | `beneficiarios` + `validacao_cnpj` |
 | `voto` | Padrao de voto em votacoes nominais | `votacoes_camara` + `votos_camara` |
-| `diario_oficial` | Atos do Diario Oficial da Uniao | `diario_oficial_atos` |
+| `discurso_plenario` | Discursos em plenario/comissoes | `parlamentar_discursos` |
 | `conexao_politica` | Partido do prefeito beneficiado x partido do deputado | `prefeitos_dados` + `parlamentares_dados` |
+| `risco_judicial` | Processos judiciais dos beneficiarios | `beneficiario_processos` (DataJud) |
+| `compras_municipio` | Compras publicas municipais | `compras_municipios` |
+| `demografia_municipio` | Populacao, PIB, IDHM | `municipios_ibge` |
+| `municipio_financeiro` | Dados SICONFI (receitas/despesas) | `municipios_financeiro` |
+| `indicadores_sociais` | Saude + educacao | `saude_municipios` + `educacao_municipios` |
+| `fnde_repasses` | Repasses educacionais FNDE | `fnde_repasses` |
+| `diario_oficial` | Atos do Diario Oficial da Uniao | `diario_oficial_atos` |
+| `senador` | Senadores em exercicio | `senadores_dados` |
+| `prefeito` | Prefeitos eleitos | `prefeitos_dados` |
+| `vereadores_resumo` | Candidatos a vereador | `vereadores_dados` |
+| `parlamentar_alertas` | Alertas gerados | `parlamentar_alertas` |
+| `persona_existente` | Personas anteriores | `parlamentares_personas_v2` |
+| `indicadores_municipal` | Indicadores municipais diversos | `municipios_ibge` + `violencia_municipios` |
 
 ### Dependencias
 
 | Componente | Descricao |
 |------------|-----------|
-| PostgreSQL | Tabelas: `parlamentares_dados`, `parlamentar_proposicoes`, `planos_acao`, `municipios_financeiro`, `votacoes_camara`, `votos_camara`, `diario_oficial_atos`, `prefeitos_dados` |
+| PostgreSQL | Tabelas: `parlamentares_dados`, `parlamentar_proposicoes`, `planos_acao`, `municipios_financeiro`, `votacoes_camara`, `votos_camara`, `diario_oficial_atos`, `prefeitos_dados`, `parlamentar_discursos`, `fnde_repasses`, `beneficiario_processos`, `compras_municipios`, `saude_municipios`, `educacao_municipios`, `senadores_dados`, `vereadores_dados` |
 | Qdrant | Servidor ativo em `QDRANT_URL` |
-| LocalAI | Modelo `nomic-embed-text-v1.5` carregado para geracao de embeddings |
+| LocalAI | Modelo `embeddinggemma-300m` carregado para geracao de embeddings |
 
 ### Tabela de saida
 
@@ -113,6 +131,9 @@ Cada ponto vetorial contem:
 | `--rebuild` | Limpa a colecao e reindexa tudo do zero |
 | `--limit N` | Processa no maximo N deputados |
 | `--nome NOME` | Indexa apenas o deputado com o nome informado |
+| `--diff` | Modo incremental: pula chunks com hash inalterado (checkpoint) |
+| `--types voto,emenda` | Indexa apenas tipos de chunk especificos |
+| `--checkpoint` | Forca criacao da tabela de checkpoint |
 
 ---
 
@@ -128,30 +149,46 @@ python3 -m src.enrichers.rag_persona [flags]
 
 ### O que faz
 
-1. Para cada deputado, executa 5 queries tematicas no Qdrant (Multi-Query RAG).
-2. Coleta os chunks mais relevantes (top-k por query) com seus metadados.
-3. Monta um prompt adaptativo: a complexidade do prompt varia conforme o volume
-   de dados disponiveis para o deputado.
-4. Envia ao LLM local (Gemma/Qwen) para gerar um dossier analitico completo.
-5. Salva o resultado no PostgreSQL com contexto_rag (trechos recuperados) e
-   fontes_usadas (auditoria rastreavel).
+1. Para cada deputado, executa 14 queries tematicas no Qdrant (Multi-Query RAG v7,
+   batch embedding) cobrindo todos os 22 chunk types.
+2. Coleta os chunks mais relevantes por query e aplica Reciprocal Rank Fusion (k=60).
+3. **PromptPreparer** (`src/analysts/preparer.py`) sintetiza ate 8 chunks brutos em
+   Briefing estruturado + Fact Table + Insights (valida fidelidade numerica R$).
+4. Envia o briefing aos **7 analistas especialistas** (`src/analysts/`), cada um com
+   prompt focado e quality check proprio: classificador, perfil, tematicas, cruzamento,
+   alinhamento, discursos, anomalias. Analistas sem dados suficientes sao pulados
+   (`get_active_analysts()`).
+5. `assemble_dossier()` concatena as secoes + `calculate_global_score()` (media
+   ponderada 0-100, aprovacao >= 70). Se o modelo falhar ou reprovar no QC, tenta
+   `RAG_FALLBACK_MODEL` automaticamente.
+6. Salva o resultado no PostgreSQL com contexto_rag (trechos recuperados),
+   fontes_usadas (auditoria rastreavel), modelo_usado e score_qualidade.
 
-### 5 queries tematicas do Multi-Query RAG
+### 14 queries tematicas do Multi-Query RAG
 
 | # | Perspectiva | O que busca |
 |---|-------------|-------------|
-| 1 | Voto e alinhamento | Padrao de voto em votacoes nominais e posicao politica |
-| 2 | Emendas PIX | Emendas parlamentares, municipios beneficiarios e valores |
-| 3 | Proposicoes | PLs apresentadas e areas tematicas de foco |
-| 4 | Diario Oficial | Atos, fiscalizacao, decretos e movimentacoes relevantes |
-| 5 | Conexao politica | Partido do prefeito beneficiado x partido do deputado (fisiologismo) |
+| 1 | Voto e alinhamento | Padrao de votos, dissenso partidario e obstrucao |
+| 2 | Proposicoes | PLs, PECs, PDLs e produtividade legislativa |
+| 3 | Emendas PIX | Emendas parlamentares, municipios beneficiarios, situacao dos planos |
+| 4 | Discricionarias | Emendas do Portal Transparencia (convenios, CNPJ) |
+| 5 | Resumo consolidado | Total de emendas, beneficiarios unicos, valor global |
+| 6 | SICONFI | Receitas, despesas, FPM/ICMS/ISS dos municipios |
+| 7 | Demografia | Populacao, PIB per capita, IDHM, area |
+| 8 | Saude e educacao | Leitos SUS, UBS, IDEB, matriculas |
+| 9 | FNDE | Repasses FUNDEB, PNAE, PNLD, PNATE |
+| 10 | Conexao politica | Partido dos prefeitos, vereadores aliados, fisiologismo |
+| 11 | Risco judicial | Processos DataJud, fraudes, irregularidades |
+| 12 | Compras publicas | Licitacoes, fornecedores, contratos homologados |
+| 13 | Ideologia | Posicionamento politico nos discursos de plenario |
+| 14 | Bandeiras | Topicos recorrentes e palavras-chave dos discursos |
 
 ### Dependencias
 
 | Componente | Descricao |
 |------------|-----------|
 | Qdrant | Colecao `deputados_perfis` indexada (requer `cron-qdrant` antes) |
-| LocalAI | Modelo `gemma` (ou `RAG_LLM_MODEL`) carregado para geracao do dossier |
+| LocalAI | Modelo `RAG_LLM_MODEL` (llama-3.2-3b-instruct:q4_k_m) + `PREPARER_MODEL` (zero-gemma4) carregados |
 | PostgreSQL | Tabela `parlamentares_dados` (leitura) + `parlamentares_personas_v2` (escrita) |
 
 ### Tabela de saida
@@ -166,6 +203,8 @@ python3 -m src.enrichers.rag_persona [flags]
 | contexto_rag | JSONB | Trechos recuperados do Qdrant (auditoria) |
 | fontes_usadas | JSONB | Fontes consultadas por tipo de chunk |
 | versao_prompt | TEXT | Versao do prompt utilizado |
+| modelo_usado | VARCHAR | Modelo LocalAI utilizado na geracao |
+| score_qualidade | NUMERIC | Pontuacao de qualidade (0 a 100) |
 | criado_em | TIMESTAMP | Data/hora de geracao |
 
 ### Flags

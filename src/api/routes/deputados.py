@@ -71,6 +71,9 @@ async def get_perfil(deputado_id: int):
 
 @router.get("/{deputado_id}/emendas")
 async def get_emendas(deputado_id: int):
+    pid = db_service.get_parlamentar_id(deputado_id)
+    if pid:
+        return db_service.get_emendas_por_parlamentar_id(pid)
     nome = db_service.get_nome_by_id(deputado_id)
     if not nome:
         try:
@@ -86,6 +89,9 @@ async def get_emendas(deputado_id: int):
 
 @router.get("/{deputado_id}/emendas/resumo")
 async def get_resumo_emendas(deputado_id: int):
+    pid = db_service.get_parlamentar_id(deputado_id)
+    if pid:
+        return db_service.get_resumo_emendas_por_parlamentar_id(pid)
     nome = db_service.get_nome_by_id(deputado_id)
     if not nome:
         try:

@@ -24,14 +24,18 @@ from src.graphs.theme import CORES_SITUACAO, TODAS_UFS, aplicar_tema
 def chart_eficiencia_partidos(uf_filter: str = "TODOS") -> go.Figure:
     query = """
         SELECT
-            p.sigla_partido,
+            pd.sigla_partido,
             v.status_execucao,
             COUNT(*) as total_planos,
             SUM(v.valor_total) as valor_total
         FROM v_emendas_unificadas v
-        JOIN parlamentares_dados p ON v.parlamentar_nome ILIKE CONCAT('%%', p.nome_urna, '%%')
-        WHERE (%s = 'TODOS' OR p.uf = %s)
-        GROUP BY p.sigla_partido, v.status_execucao
+        LEFT JOIN parlamentares p ON v.parlamentar_id = p.parlamentar_id
+        LEFT JOIN parlamentares_dados pd ON (
+            p.nome = pd.nome OR p.nome_urna = pd.nome_urna
+            OR (v.parlamentar_id IS NULL AND v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%'))
+        )
+        WHERE (%s = 'TODOS' OR pd.uf = %s)
+        GROUP BY pd.sigla_partido, v.status_execucao
         ORDER BY valor_total DESC
         LIMIT 50;
     """
@@ -114,7 +118,8 @@ def chart_impedimentos_por_partido() -> go.Figure:
             SUM(CASE WHEN pa.plano_acao_situacao IN ('IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO', 'REPROVADO') THEN 1 ELSE 0 END) as impedidos,
             ROUND(100.0 * SUM(CASE WHEN pa.plano_acao_situacao IN ('IMPEDIDO', 'IMPEDIDO_REJEICAO_PLANO_TRABALHO', 'REPROVADO') THEN 1 ELSE 0 END) / COUNT(*), 1) as taxa_impedimento_pct
         FROM planos_acao pa
-        JOIN parlamentares_dados pd ON pa.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%')
+        LEFT JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
+        JOIN parlamentares_dados pd ON p.nome = pd.nome OR p.nome = pd.nome_urna
         GROUP BY pd.sigla_partido
         HAVING COUNT(*) >= 10
         ORDER BY valor_total DESC;

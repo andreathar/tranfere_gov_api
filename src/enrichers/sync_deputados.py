@@ -20,8 +20,7 @@ log = logging.getLogger(__name__)
 
 # Campos relevantes do endpoint /deputados/{id}
 _PERFIL_FIELDS = (
-    "id, nome, nomeCivil, siglaUfNascimento, municipioNascimento, "
-    "dataNascimento, escolaridade"
+    "id, nome, nomeCivil, siglaUfNascimento, municipioNascimento, dataNascimento, escolaridade"
 )
 
 
@@ -63,7 +62,11 @@ def upsert_deputado(cur, dep: dict, detail: dict | None = None) -> bool:
     nome = dep["nome"]
     sigla_partido = dep.get("siglaPartido")
     uf = dep.get("siglaUf")
-    situacao = dep.get("ultimoStatus", {}).get("situacao") if isinstance(dep.get("ultimoStatus"), dict) else None
+    situacao = (
+        dep.get("ultimoStatus", {}).get("situacao")
+        if isinstance(dep.get("ultimoStatus"), dict)
+        else None
+    )
     ultimo_status = str(dep.get("ultimoStatus", ""))[:500]
 
     # Dados do detalhe (mais completos)
@@ -73,7 +76,11 @@ def upsert_deputado(cur, dep: dict, detail: dict | None = None) -> bool:
     escolaridade = None
     nome_urna = None
     if detail:
-        data_nasc = detail.get("dataNascimento", "").split("T")[0] if detail.get("dataNascimento") else None
+        data_nasc = (
+            detail.get("dataNascimento", "").split("T")[0]
+            if detail.get("dataNascimento")
+            else None
+        )
         municipio_nasc = detail.get("municipioNascimento")
         uf_nasc = detail.get("siglaUfNascimento")
         escolaridade = detail.get("escolaridade")
@@ -85,7 +92,8 @@ def upsert_deputado(cur, dep: dict, detail: dict | None = None) -> bool:
 
     if exists:
         # Atualizar dados que podem mudar (partido, situação)
-        cur.execute("""
+        cur.execute(
+            """
             UPDATE parlamentares_dados
             SET sigla_partido = %s, situacao = %s, ultimo_status = %s,
                 data_nascimento = COALESCE(%s, data_nascimento),
@@ -94,25 +102,52 @@ def upsert_deputado(cur, dep: dict, detail: dict | None = None) -> bool:
                 escolaridade = COALESCE(%s, escolaridade),
                 nome_urna = COALESCE(%s, nome_urna)
             WHERE deputado_id = %s
-        """, (sigla_partido, situacao, ultimo_status, data_nasc,
-              municipio_nasc, uf_nasc, escolaridade, nome_urna, dep_id))
+        """,
+            (
+                sigla_partido,
+                situacao,
+                ultimo_status,
+                data_nasc,
+                municipio_nasc,
+                uf_nasc,
+                escolaridade,
+                nome_urna,
+                dep_id,
+            ),
+        )
         return False
     else:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO parlamentares_dados
             (deputado_id, nome, nome_urna, sigla_partido, uf, situacao,
              data_nascimento, municipio_nascimento, uf_nascimento, escolaridade,
              ultimo_status, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        """, (dep_id, nome, nome_urna, sigla_partido, uf, situacao,
-              data_nasc, municipio_nasc, uf_nasc, escolaridade, ultimo_status))
+        """,
+            (
+                dep_id,
+                nome,
+                nome_urna,
+                sigla_partido,
+                uf,
+                situacao,
+                data_nasc,
+                municipio_nasc,
+                uf_nasc,
+                escolaridade,
+                ultimo_status,
+            ),
+        )
         return True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sincronizar deputados da API da Câmara.")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N deputados (0=todos)")
-    parser.add_argument("--force", action="store_true", help="Re-sincronizar todos (UPDATE mesmo existentes)")
+    parser.add_argument(
+        "--force", action="store_true", help="Re-sincronizar todos (UPDATE mesmo existentes)"
+    )
     args = parser.parse_args()
 
     log.info("Buscando lista completa de deputados da API da Câmara...")
@@ -120,7 +155,7 @@ def main() -> None:
     log.info("Total de deputados na API: %d", len(all_deps))
 
     if args.limit > 0:
-        all_deps = all_deps[:args.limit]
+        all_deps = all_deps[: args.limit]
 
     with get_connection() as conn, conn.cursor() as cur:
         # IDs existentes
@@ -151,14 +186,18 @@ def main() -> None:
 
             if i % 25 == 0:
                 conn.commit()
-                log.info("[%d/%d] +%d novos, %d atualizados", i, len(missing), inseridos, atualizados)
+                log.info(
+                    "[%d/%d] +%d novos, %d atualizados", i, len(missing), inseridos, atualizados
+                )
 
             time.sleep(ENRICH_RATE_LIMIT)
 
         conn.commit()
         log.info(
             "Concluído! +%d novos, %d atualizados de %d processados",
-            inseridos, atualizados, len(missing),
+            inseridos,
+            atualizados,
+            len(missing),
         )
 
 

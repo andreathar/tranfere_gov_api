@@ -45,6 +45,7 @@ async def process_diario_oficial(
     query: str,
     escopo: str = "ambos",
     parlamentar_nome: str | None = None,
+    parlamentar_id: int | None = None,
     data_inicio: str | None = None,
     data_fim: str | None = None,
 ) -> list[dict]:
@@ -147,10 +148,10 @@ async def process_diario_oficial(
             if parlamentar_nome:
                 cur.execute(
                     """
-                        INSERT INTO parlamentar_alertas (parlamentar_nome, ato_id)
-                        VALUES (%s, %s)
+                        INSERT INTO parlamentar_alertas (parlamentar_nome, parlamentar_id, ato_id)
+                        VALUES (%s, %s, %s)
                     """,
-                    (parlamentar_nome, ato_id),
+                    (parlamentar_nome, parlamentar_id, ato_id),
                 )
 
         conn.commit()
@@ -159,7 +160,7 @@ async def process_diario_oficial(
     return novos_atos
 
 
-async def process_proposicoes(deputado_id: int, nome: str) -> None:
+async def process_proposicoes(deputado_id: int, nome: str, parlamentar_id: int | None = None) -> None:
     """Busca proposições recentes do deputado via API da Câmara e salva no banco de dados."""
     log.info(f"Buscando proposições para: {nome} (ID: {deputado_id})")
 
@@ -223,23 +224,44 @@ async def process_proposicoes(deputado_id: int, nome: str) -> None:
             except Exception:
                 data_prop = datetime.today().strftime("%Y-%m-%d")
 
-            cur.execute(
-                """
-                INSERT INTO parlamentar_proposicoes
-                (proposicao_id, deputado_id, parlamentar_nome, sigla_tipo, numero, ano, ementa, data_apresentacao)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    item.get("id"),
-                    deputado_id,
-                    nome,
-                    item.get("sigla_tipo"),
-                    item.get("numero"),
-                    item.get("ano"),
-                    item.get("ementa"),
-                    data_prop,
-                ),
-            )
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO parlamentar_proposicoes
+                    (proposicao_id, deputado_id, parlamentar_nome, parlamentar_id, sigla_tipo, numero, ano, ementa, data_apresentacao)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        item.get("id"),
+                        deputado_id,
+                        nome,
+                        parlamentar_id,
+                        item.get("sigla_tipo"),
+                        item.get("numero"),
+                        item.get("ano"),
+                        item.get("ementa"),
+                        data_prop,
+                    ),
+                )
+            except Exception:
+                # Fallback: coluna parlamentar_id pode não existir ainda
+                cur.execute(
+                    """
+                    INSERT INTO parlamentar_proposicoes
+                    (proposicao_id, deputado_id, parlamentar_nome, sigla_tipo, numero, ano, ementa, data_apresentacao)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        item.get("id"),
+                        deputado_id,
+                        nome,
+                        item.get("sigla_tipo"),
+                        item.get("numero"),
+                        item.get("ano"),
+                        item.get("ementa"),
+                        data_prop,
+                    ),
+                )
         conn.commit()
     log.info(f"{len(itens)} proposições salvas para {nome}.")
 
@@ -274,12 +296,21 @@ async def main():
 
         # Puxa N deputados priorizando os que não são checados há mais tempo
         cur.execute(
-            "SELECT deputado_id, nome FROM parlamentares_dados ORDER BY ultimo_check_diario ASC NULLS FIRST LIMIT %s",
+            """
+            SELECT pd.deputado_id, pd.nome,
+                   COALESCE(pl.parlamentar_id, (
+                       SELECT parlamentar_id FROM planos_acao
+                       WHERE parlamentar_nome = pd.nome OR parlamentar_nome = pd.nome_urna LIMIT 1
+                   )) AS parlamentar_id
+            FROM parlamentares_dados pd
+            LEFT JOIN parlamentares pl ON pd.nome = pl.nome OR pd.nome_urna = pl.nome_urna
+            ORDER BY pd.ultimo_check_diario ASC NULLS FIRST LIMIT %s
+            """,
             (args.limit,),
         )
         deputados = cur.fetchall()
 
-    for dep_id, nome in deputados:
+    for dep_id, nome, parlamentar_id in deputados:
         log.info(f"=== Processando {nome} ===")
         try:
             # 1. Busca Diários Oficiais (restrito aos últimos 90 dias)
@@ -287,12 +318,13 @@ async def main():
                 query=nome,
                 escopo="ambos",
                 parlamentar_nome=nome,
+                parlamentar_id=parlamentar_id,
                 data_inicio=noventa_dias_atras,
                 data_fim=hoje,
             )
 
             # 2. Busca Proposições da Câmara
-            await process_proposicoes(dep_id, nome)
+            await process_proposicoes(dep_id, nome, parlamentar_id=parlamentar_id)
 
             # Atualiza a data de checagem com sucesso
             with get_connection() as conn, conn.cursor() as cur:

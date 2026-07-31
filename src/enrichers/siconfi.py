@@ -202,6 +202,13 @@ def buscar_dca_municipio(
         return []
 
 
+def _strip_accents(s: str) -> str:
+    """Remove acentos de uma string (NFKD decomposition + strip)."""
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if unicodedata.category(c) != "Mn")
+
+
 def _extrair_valor_conta(
     itens: Sequence[_ItemDCA],
     texto_conta: str,
@@ -209,12 +216,13 @@ def _extrair_valor_conta(
     """Extrai o valor de uma conta especifica da lista de itens DCA.
 
     Busca case-insensitive por substring no campo 'conta'.
+    Normaliza acentos (NFKD) para lidar com a acentuacao da API SICONFI.
     Retorna o primeiro match encontrado (ultimo periodo disponivel).
     """
-    texto_lower = texto_conta.lower()
+    texto_normalizado = _strip_accents(texto_conta.lower())
     for item in itens:
-        conta = str(item.get("conta", "")).lower()
-        if texto_lower in conta:
+        conta = _strip_accents(str(item.get("conta", "")).lower())
+        if texto_normalizado in conta:
             valor = item.get("valor")
             if valor is not None:
                 try:
@@ -321,14 +329,6 @@ def parse_rreo_a03_itens(
     os periodos (bimestres) para a mesma conta, retornando o total anual.
     Usa normalizacao ASCII para lidar com acentos da API SICONFI.
     """
-    import unicodedata
-
-    def _strip_accents(s: str) -> str:
-        """Remove acentos de uma string (NFKD decomposition + strip)."""
-        return "".join(
-            c for c in unicodedata.normalize("NFKD", s) if unicodedata.category(c) != "Mn"
-        )
-
     resultado: dict[str, float | None] = {col: None for col in ARREC_DB_COLUMNS}
 
     for texto_conta, coluna_banco in RREO_A03_CONTA_MAP:

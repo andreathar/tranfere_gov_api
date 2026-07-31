@@ -113,28 +113,6 @@ def import_file(conn, filepath):
 
     conn.commit()
 
-    # Parsear emendas
-    try:
-        cur.execute("""
-            UPDATE planos_acao SET
-                emenda_codigo = split_part(codigo_emenda_formatado, '-', 1),
-                parlamentar_nome = TRIM(split_part(codigo_emenda_formatado, '-', 2)),
-                emenda_ano = CASE
-                    WHEN length(split_part(codigo_emenda_formatado, '-', 1)) >= 4
-                    THEN SUBSTRING(split_part(codigo_emenda_formatado, '-', 1) FROM 1 FOR 4)::INTEGER
-                    ELSE NULL
-                END
-            WHERE codigo_emenda_formatado IS NOT NULL AND codigo_emenda_formatado != ''
-              AND (emenda_codigo IS NULL OR emenda_codigo = '')
-        """)
-        parsed = cur.rowcount
-        if parsed:
-            print(f"  Emendas parseadas: {parsed}")
-    except Exception as e:
-        print(f"  Aviso parse emendas: {e}")
-
-    conn.commit()
-
     # Log
     ano = None
     for rec in data[:1]:

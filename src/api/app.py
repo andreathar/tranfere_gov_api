@@ -26,6 +26,7 @@ from src.api.routes import (
     deputados,
     diario,
     fnde,
+    governadores,
     prefeitos,
     vereadores,
 )
@@ -93,6 +94,13 @@ app.include_router(
     fnde.router,
     prefix="/api/v1/fnde",
     tags=["fnde", "educação"],
+)
+
+# Register governadores estaduais routes
+app.include_router(
+    governadores.router,
+    prefix="/api/v1/governadores",
+    tags=["governadores"],
 )
 
 # ---------------------------------------------------------------------------

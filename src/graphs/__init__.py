@@ -17,6 +17,7 @@ import src.graphs.economico  # noqa: F401, E501
 import src.graphs.financas  # noqa: F401, E501
 import src.graphs.fiscal  # noqa: F401, E501
 import src.graphs.geoespacial  # noqa: F401, E501
+import src.graphs.governadores  # noqa: F401, E501
 import src.graphs.hierarquico  # noqa: F401, E501
 import src.graphs.impacto_social  # noqa: F401, E501
 import src.graphs.intel_politica  # noqa: F401, E501

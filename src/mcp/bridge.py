@@ -174,7 +174,9 @@ class MCPToolBridge:
 
         logger.info(
             "Convertidas %d tools para OpenAI format (meta=%d, categories=%s)",
-            len(openai_tools), len(meta_names), categories,
+            len(openai_tools),
+            len(meta_names),
+            categories,
         )
         return openai_tools
 

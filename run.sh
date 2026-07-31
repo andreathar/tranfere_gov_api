@@ -37,10 +37,17 @@ Comandos:
   validate           Validar CNPJs via BrasilAPI
   ibge               Enriquecer municípios via IBGE
   camara             Perfil de parlamentares via Câmara
+  governadores       Sincronizar governadores estaduais 2022 (TSE)
   votacoes           Votações e votos nominais da Câmara (por ano)
   cron-diario        Roda o worker do Diário Oficial (baixa DOU e gera resumo)
-  cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
+   qdrant-status      Status da indexação no Qdrant (vetores, deputados, cobertura)
+   qdrant-staleness   Staleness do Qdrant — deputados desatualizados vs checkpoint
+   cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
+   vllm               Gerencia servidor vLLM local (start|stop|status|chat) — ver scripts/serve_vllm.sh
+   vllm-bench         Benchmark comparativo vLLM vs LocalAI — ver scripts/benchmark_vllm_vs_localai.py
+   discursos          Extrai discursos da Câmara dos Deputados (--ano, --resumo)
   redator            Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
+  transparencia      Buscar emendas no Portal da Transparência (--nome-autor, --ano, --db, --csv, --json)
   all                Extrair TODOS os objetos de 2026
   help               Mostrar esta ajuda
 
@@ -83,7 +90,13 @@ case "${1:-help}" in
         $PYTHON "$SRC/db_report.py" "${@:2}"
         ;;
     dashboard)
-        $PYTHON "$SRC/dashboard.py" "${@:2}"
+        echo "📊 Iniciando Dashboard em http://localhost:8050 ..."
+        $PYTHON "$SRC/dash_app.py" "${@:2}"
+        ;;
+
+    dash)
+        echo "📊 Iniciando Dashboard em http://localhost:8050 ..."
+        $PYTHON "$SRC/dash_app.py" "${@:2}"
         ;;
     web)
         echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8000 ..."
@@ -104,6 +117,16 @@ case "${1:-help}" in
     votacoes)
         $PYTHON -m src.enrichers.votacoes_camara "${@:2}"
         ;;
+    governadores)
+        echo "🏛️ Sincronizando governadores estaduais (TSE 2022)..."
+        $PYTHON -m src.enrichers.governadores "${@:2}"
+        ;;
+    qdrant-status)
+        $PYTHON src/qdrant_status.py
+        ;;
+    qdrant-staleness)
+        $PYTHON src/qdrant_staleness.py "${@:2}"
+        ;;
     cron-diario)
         $PYTHON -m src.enrichers.diario_oficial_worker "${@:2}"
         ;;
@@ -112,6 +135,18 @@ case "${1:-help}" in
         ;;
     cron-dossie)
         $PYTHON -m src.enrichers.rag_persona "${@:2}"
+        ;;
+    discursos)
+        $PYTHON -m src.enrichers.camara_discursos "${@:2}"
+        ;;
+    transparencia)
+        $PYTHON "$SRC/extrator_transparencia.py" "${@:2}"
+        ;;
+    vllm)
+        $PYTHON "$SRC/local_vllm.py" "${@:2}"
+        ;;
+    vllm-bench)
+        $PYTHON "$SRC/../scripts/benchmark_vllm_vs_localai.py" "${@:2}"
         ;;
     redator)
         $PYTHON "$SRC/redator_transferegov.py" "${@:2}"

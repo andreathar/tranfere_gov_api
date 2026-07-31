@@ -96,6 +96,7 @@ def _run_async(coro):
         # Já estamos dentro de um event loop (ex: FastAPI, Jupyter).
         # Não podemos bloquear — usar thread.
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(asyncio.run, coro).result()
     else:
@@ -135,8 +136,5 @@ def list_tools_sync(
         tools = [t for t in tools if t["category"] == category]
     if search:
         q = search.lower()
-        tools = [
-            t for t in tools
-            if q in t["name"].lower() or q in t["description"].lower()
-        ]
+        tools = [t for t in tools if q in t["name"].lower() or q in t["description"].lower()]
     return tools

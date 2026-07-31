@@ -103,9 +103,7 @@ async def sync_vereadors(
         print("    Os votos ficarão zerados. O enriquecedor continua normalmente.")
 
     # ── 4. Mapear candidatos → municípios IBGE ────────────────────────
-    matched_records: list[
-        tuple[int, int, str, str, str, str, str, str, int, int, str, str]
-    ] = []
+    matched_records: list[tuple[int, int, str, str, str, str, str, str, int, int, str, str]] = []
     unmatched_count = 0
 
     for r in tse_cand:

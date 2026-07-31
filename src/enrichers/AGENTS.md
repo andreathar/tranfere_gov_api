@@ -7,7 +7,7 @@ Pipeline de enriquecimento de dados do TransfereGov. Cada script roda como módu
 ## Arquitetura
 
 ```
-pipeline.py  ← orquestrador, executa fases via subprocess (1-8)
+pipeline.py  ← orquestrador, executa fases via subprocess (1-9)
     │
     ├── Fase 1: validacao.py → ibge.py → mapear_municipios.py → ibge_agregados.py
     ├── Fase 1e: siconfi.py (dados financeiros municipais)
@@ -17,7 +17,8 @@ pipeline.py  ← orquestrador, executa fases via subprocess (1-8)
     ├── Fase 5: compras.py (licitacoes PNCP)
     ├── Fase 6: saude_educacao.py (CNES/INEP)
     ├── Fase 7: tse_prefeitos.py + tse_vereadors.py
-    └── Fase 8: senado.py (perfil senadores)
+    ├── Fase 8: senado.py (perfil senadores)
+    └── Fase 9: camara_discursos.py (discursos plenários)
 ```
 
 Scripts auxiliares rodam fora do pipeline: `completar_deputados.py`, `discricionarias_sync.py`, `sync_proposicoes.py`, `votacoes_camara.py`, `votacoes_temas.py`, `fnde.py`, `diario_oficial_worker.py`, `tse_deputados.py`, `tcu_compras.py`, `rag_qdrant_indexer.py`, `rag_persona.py`.
@@ -43,6 +44,7 @@ Scripts auxiliares rodam fora do pipeline: `completar_deputados.py`, `discricion
 | 7 | `tse_prefeitos.py` | TSE (DuckDB local) | `prefeitos_dados` | Prefeitos eleitos (2020/2024) |
 | 7 | `tse_vereadors.py` | TSE (DuckDB local) | `vereadores_dados` | Vereadores candidatos (2020/2024) |
 | 8 | `senado.py` | Senado API REST | `senadores_dados` | Perfil completo senadores em exercicio |
+| 9 | `camara_discursos.py` | Câmara Dados Abertos | `parlamentar_discursos` | Discursos de deputados em plenário (transcrições) |
 
 ### Scripts auxiliares
 
@@ -57,8 +59,10 @@ Scripts auxiliares rodam fora do pipeline: `completar_deputados.py`, `discricion
 | `diario_oficial_worker.py` | DOU (web) + LocalAI | `diario_oficial_atos` | Busca atos no Diario Oficial e extrai dados via NER com LLM |
 | `tse_deputados.py` | TSE (DuckDB local) | `parlamentares_dados` (campos extras) | Enriquece perfil eleitoral de deputados federais |
 | `tcu_compras.py` | TCU + Compras.gov + INEP | Audit/consulta | Audita parlamentares contra sancoes TCU e rastreia contratos |
+| `governadores.py` | TSE 2022 (mapeamento manual) | `governadores_dados` | Governadores eleitos: votos 1º/2º turno, partido, coligação (27 UFs) |
+| `violencia.py` | ISP-RJ (DuckDB) + Atlas da Violência (IPEA) | `violencia_municipios` | Indicadores criminais por município (RJ + demais UFs) |
 | `rag_qdrant_indexer.py` | PostgreSQL -> Qdrant | Qdrant (colecao vetorial) | Indexa dados de deputados no Qdrant para busca semantica (RAG) |
-| `rag_persona.py` | Qdrant + LocalAI | `parlamentares_personas_v2` | Gera dossies/ personas analiticas de deputados via RAG v2 |
+| `rag_persona.py` | Qdrant + LocalAI | `parlamentares_personas_v2` | Gera dossies/ personas analiticas de deputados via RAG v7 (multi-analista) |
 
 ---
 
@@ -68,35 +72,44 @@ O pipeline RAG (Retrieval-Augmented Generation) indexa dados de deputados no Qdr
 
 ### Indexador (`rag_qdrant_indexer.py`)
 
-Modelo de embeddings: `nomic-embed-text-v1.5` (768d) | Metrica: Cosine
+Modelo de embeddings: `embeddinggemma-300m` (768d) | Metrica: Cosine | Checkpoint: tabela `qdrant_index_checkpoint`
 
-**6 tipos de chunks indexados**:
+**22 tipos de chunks indexados** (exemplos): `perfil`, `parlamentar_resumo`, `emenda`, `emenda_discricionaria`, `beneficiario`, `voto`, `proposicao`, `discurso_plenario`, `conexao_politica`, `risco_judicial`, `compras_municipio`, `demografia_municipio`, `municipio_financeiro`, `indicadores_sociais`, `indicadores_municipal`, `fnde_repasses`, `diario_oficial`, `senador`, `prefeito`, `vereadores_resumo`, `parlamentar_alertas`, `persona_existente`.
 
-| Tipo | Conteudo | Fonte |
-|------|----------|-------|
-| `perfil` | Nome, partido, UF do deputado | `parlamentares_dados` |
-| `proposicao` | PLs e proposicoes legislativas | `parlamentar_proposicoes` |
-| `emenda` | Emendas Pix com dados financeiros do municipio | `planos_acao` + `municipios_financeiro` |
-| `voto` | Padrao de voto em votacoes nominais | `votacoes_camara` + `votos_camara` |
-| `diario_oficial` | Atos do Diario Oficial da Uniao | `diario_oficial_atos` |
-| `conexao_politica` | Partido do prefeito beneficiado x partido do deputado | `prefeitos_dados` + `parlamentares_dados` |
+Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types voto,emenda`, `--rebuild`, `--checkpoint`. Cada chunk type é isolado em try/except — falha em um não aborta os demais.
 
-### Gerador de Personas (`rag_persona.py`)
+### Gerador de Personas (`rag_persona.py`) — RAG v7 Multi-Analista
 
-**5 queries tematicas** usadas no Multi-Query RAG:
+**14 queries tematicas** (batch embedding, cobrindo todos os 22 chunk types) + Reciprocal Rank Fusion (k=60):
 
-1. Padrao de voto e alinhamento politico em votacoes nominais
-2. Emendas parlamentares Pix, municipios beneficiarios e valores transferidos
-3. Proposicoes legislativas apresentadas e areas tematicas de foco
-4. Atos no diario oficial, fiscalizacao, decretos e movimentacoes relevantes
-5. Conexao politica local, partido dos prefeitos beneficiados e alinhamento eleitoral municipal
+1. Padrão de votos, dissenso partidário e obstrução
+2. Proposições legislativas (PLs, PECs, PDLs)
+3. Emendas Pix por município e situação dos planos
+4. Emendas discricionárias (Portal Transparência)
+5. Resumo consolidado do deputado
+6. Dados financeiros SICONFI dos municípios
+7. Dados demográficos IBGE (população, PIB, IDHM)
+8. Indicadores de saúde e educação
+9. Repasses FNDE
+10. Conexão política local (apadrinhamento/fisiologismo)
+11. Risco judicial (DataJud)
+12. Compras públicas municipais
+13. Ideologia nos discursos de plenário
+14. Tópicos recorrentes e bandeiras públicas
 
-Fluxo: busca Qdrant (5 queries x top-k) -> prompt adaptativo -> LLM gera dossier -> salva no DB com contexto_rag e fontes_usadas.
+**7 analistas especialistas** (`src/analysts/`): `classificador`, `perfil`, `tematicas`, `cruzamento`, `alinhamento`, `discursos`, `anomalias` — cada um com prompt focado, subconjunto de chunks (`router.py`) e quality check próprio. Ativação adaptativa (`get_active_analysts()`): analistas sem dados suficientes são pulados. Falha de um analista não aborta os demais.
+
+**PromptPreparer** (`src/analysts/preparer.py`): sintetiza até 8 chunks → Briefing + Fact Table + Insights com `PREPARER_MODEL` (zero-gemma4-e4b-openzero-q5-k-m), com validação de fidelidade numérica R$ pós-geração.
+
+Fluxo: busca Qdrant (14 queries x top-k) -> PromptPreparer (briefing) -> 7 analistas (paralelo opcional) -> `assemble_dossier()` -> `calculate_global_score()` (≥ 70 aprova) -> salva no DB com contexto_rag, fontes_usadas e versao_prompt.
 
 Uso:
 ```bash
 ./run.sh cron-qdrant --limit 10          # indexar no Qdrant
 ./run.sh cron-qdrant --nome "AFONSO FLORENCE"  # indexar um deputado
+./run.sh cron-qdrant --diff --limit 50   # incremental
+./run.sh qdrant-status                   # status da indexação
+./run.sh qdrant-staleness                # deputados desatualizados
 ./run.sh cron-dossie --nome "AFONSO FLORENCE"   # gerar persona
 ./run.sh cron-dossie --lote 50                    # gerar personas em lote
 python3 -m src.enrichers.rag_qdrant_indexer --rebuild  # limpa e reindexa tudo
@@ -108,7 +121,7 @@ python3 -m src.enrichers.rag_persona --nome "AFONSO FLORENCE" --regerar
 ## Comandos
 
 ```bash
-# Pipeline completo (fases 1-8)
+# Pipeline completo (fases 1-9)
 python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 
 # Fases individuais
@@ -120,9 +133,13 @@ python3 -m src.enrichers.pipeline --fase 5 [--dry-run] [--ano 2026]  # Compras
 python3 -m src.enrichers.pipeline --fase 6 [--dry-run]  # Saude + Educacao
 python3 -m src.enrichers.pipeline --fase 7 [--dry-run]  # TSE
 python3 -m src.enrichers.pipeline --fase 8 [--dry-run]  # Senado
+python3 -m src.enrichers.pipeline --fase 9 [--dry-run] [--ano 2026]  # Discursos
 
 # Scripts avulsos - Fases principais
 python3 -m src.enrichers.validacao [--dry-run] [--limit N]
+python3 -m src.enrichers.camara_discursos [--ano ANO] [--limit N] [--resumo]
+python3 -m src.enrichers.governadores [--dry-run] [--limit N]
+python3 -m src.enrichers.violencia [--dry-run] [--uf UF] [--ano ANO]
 python3 -m src.enrichers.ibge [--dry-run] [--uf UF]
 python3 -m src.enrichers.ibge_agregados [--dry-run] [--uf UF] [--limit N]
 python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO] [--rreo]
@@ -192,10 +209,12 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 19. `votacoes_temas.py` depende do LocalAI com modelo `llama` carregado -- se o modelo nao estiver disponivel, o script falha ao classificar temas
 20. `fnde.py` depende de APIs OData v4 do FNDE (Olinda) -- se indisponiveis, nao ha fallback e a fase retorna vazio
 21. `diario_oficial_worker.py` usa MCP para busca + LLM para NER -- dupla dependencia externa (MCP server + LocalAI)
-22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` e modelo `nomic-embed-text-v1.5` carregado no LocalAI -- sem esses, indexacao falha
-23. `rag_persona.py` usa Multi-Query RAG com 5 queries tematicas -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes
+22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` e modelo `embeddinggemma-300m` carregado no LocalAI -- sem esses, indexacao falha (nomic-embed-text-v1.5 foi substituído)
+23. `rag_persona.py` usa Multi-Query RAG v7 (14 queries + 7 analistas + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
 24. `tcu_compras.py` e auditoria/consulta (nao enriquecimento) -- nao escreve tabelas novas, usa MCP para consultas sob demanda
 25. `tse_deputados.py` sincroniza dados eleitorais do TSE com `parlamentares_dados` -- requer que `camara.py` (fase 2) tenha rodado antes para popular a tabela base
+26. `governadores.py` usa mapeamento manual (TSE 2022) -- atualizar dados exige editar a lista `GOVERNADORES_2022` no script
+27. `violencia.py` depende dos datasets DuckDB do mcp-brasil (ISP-RJ) -- se o dataset nao estiver ativo, o enricher continua com Atlas da Violência ou pula
 
 ---
 
@@ -228,6 +247,9 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 | `votos_camara` | `votacoes_camara.py` | Votos nominais individuais por deputado |
 | `fnde_repasses` | `fnde.py` | Repasses educacionais do FNDE |
 | `diario_oficial_atos` | `diario_oficial_worker.py` | Atos publicados no Diario Oficial da Uniao |
+| `parlamentar_discursos` | `camara_discursos.py` | Discursos de deputados em plenário/comissões |
+| `governadores_dados` | `governadores.py` | Governadores eleitos (TSE 2022) |
+| `violencia_municipios` | `violencia.py` | Indicadores criminais municipais |
 | `parlamentares_personas_v2` | `rag_persona.py` | Personas/ dossies analiticos gerados por IA |
 
-Schema completo em `data/schema.sql` + migrations 002-015 (ver `docs/MIGRATIONS.md`).
+Schema completo em `data/schema.sql` + migrations 002-025 (ver `docs/MIGRATIONS.md`).

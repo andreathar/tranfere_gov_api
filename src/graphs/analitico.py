@@ -40,7 +40,7 @@ def chart_tendencia_temporal(ano_filter: str = "TODOS") -> go.Figure:
             TO_CHAR(DATE_TRUNC('month', pa.extracted_at), 'YYYY-MM') AS mes,
             COUNT(*)                          AS total_planos,
             COALESCE(SUM(pa.valor_total), 0)  AS valor_total,
-            COUNT(DISTINCT pa.parlamentar_nome) AS parlamentares
+            COUNT(DISTINCT COALESCE(pa.parlamentar_id, pa.parlamentar_nome)) AS parlamentares
         FROM planos_acao pa
         WHERE (%s = 'TODOS'
                OR EXTRACT(YEAR FROM pa.extracted_at) = %s::INTEGER)
@@ -141,6 +141,9 @@ def chart_tendencia_temporal(ano_filter: str = "TODOS") -> go.Figure:
     ],
 )
 def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
+    # Nota: esta query usa v_emendas_unificadas, que não tem parlamentar_id.
+    # Quando a view for migrada, trocar o ILIKE JOIN no line 157
+    # por ON v.parlamentar_id = pd.deputado_id (ou similar).
     query = """
         SELECT
             m.nome                                   AS municipio,
@@ -153,8 +156,11 @@ def chart_eleicao_emendas(uf_filter: str = "TODOS") -> go.Figure:
         FROM v_emendas_unificadas v
         JOIN municipios_ibge m
             ON v.beneficiario_ibge = m.municipio_id
-        LEFT JOIN parlamentares_dados pd
-            ON v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%')
+        LEFT JOIN parlamentares p ON v.parlamentar_id = p.parlamentar_id
+        LEFT JOIN parlamentares_dados pd ON (
+            p.nome = pd.nome OR p.nome_urna = pd.nome_urna
+            OR (v.parlamentar_id IS NULL AND v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%'))
+        )
         WHERE (%s = 'TODOS' OR m.uf = %s)
           AND v.beneficiario_ibge IS NOT NULL
         GROUP BY
