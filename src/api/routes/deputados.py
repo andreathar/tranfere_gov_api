@@ -172,3 +172,25 @@ async def get_dossie(deputado_id: int):
             detail="Dossiê não encontrado. É necessário rodar o pipeline RAG.",
         )
     return dossie
+
+
+@router.get("/{deputado_id}/discursos")
+async def get_discursos(deputado_id: int, limit: int = 50, tipo: str | None = None):
+    """Discursos em plenário/comissões do deputado (tabela parlamentar_discursos)."""
+    return db_service.get_discursos_deputado(deputado_id, limit=limit, tipo=tipo)
+
+
+@router.get("/{deputado_id}/alertas")
+async def get_alertas(deputado_id: int):
+    """Alertas automáticos do pipeline vinculados ao deputado."""
+    return db_service.get_alertas_deputado(deputado_id)
+
+
+@router.get("/{deputado_id}/emendas-discricionarias")
+async def get_emendas_discricionarias(
+    deputado_id: int, ano: int | None = None, limit: int = 100
+):
+    """Emendas discricionárias do parlamentar (Portal da Transparência)."""
+    return db_service.get_emendas_discricionarias_deputado(
+        deputado_id, ano=ano, limit=limit
+    )

@@ -10,6 +10,9 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from cachetools import cached
+
+from src.api.services.cache_utils import ANALYTICS_CACHE
 from src.db_utils import get_real_dict_connection
 
 log = logging.getLogger(__name__)
@@ -374,6 +377,7 @@ def get_perfil_prefeito(municipio_id: int) -> dict | None:
         return res
 
 
+@cached(ANALYTICS_CACHE)
 def get_ranking_prefeitos(limit: int = 20) -> list[dict]:
     """Retorna ranking de prefeituras por captação de emendas."""
     with _get_connection() as conn, conn.cursor() as cur:
@@ -510,6 +514,7 @@ def get_resumo_votacao(votacao_id: str) -> dict:
         return _row_to_dict(cur.fetchone()) or {}
 
 
+@cached(ANALYTICS_CACHE)
 def get_votacoes_recentes(ano: int | None = None, limit: int = 20) -> list[dict]:
     """Retorna as votações mais recentes."""
     with _get_connection() as conn, conn.cursor() as cur:
@@ -605,6 +610,7 @@ def get_ranking_vereadores(
         return _rows_to_list(cur.fetchall())
 
 
+@cached(ANALYTICS_CACHE)
 def get_resumo_vereadores() -> dict:
     """Retorna KPIs agregados dos vereadores eleitos."""
     with _get_connection() as conn, conn.cursor() as cur:
@@ -980,6 +986,7 @@ def get_perfil_governador(uf: str) -> dict | None:
         return result
 
 
+@cached(ANALYTICS_CACHE)
 def get_ranking_governadores_emendas(limit: int = 27) -> list[dict]:
     """Ranking de estados por volume total de emendas Pix captadas na UF."""
     with _get_connection() as conn, conn.cursor() as cur:
@@ -1001,6 +1008,7 @@ def get_ranking_governadores_emendas(limit: int = 27) -> list[dict]:
         return _rows_to_list(cur.fetchall())
 
 
+@cached(ANALYTICS_CACHE)
 def get_ranking_alinhamento_governador(limit: int = 27) -> list[dict]:
     """Ranking de governadores por percentual de deputados aliados na bancada federal."""
     with _get_connection() as conn, conn.cursor() as cur:
@@ -1095,8 +1103,52 @@ def get_emendas_estado(uf: str, ano: int | None = None, limit: int = 200) -> dic
 
 
 def get_financeiro_estado(uf: str) -> dict | None:
-    """Retorna dados financeiros SICONFI do estado (DCA + arrecadação)."""
+    """Retorna dados financeiros SICONFI do estado.
+
+    Prioriza a tabela `estados_financeiro` (esfera ESTADUAL — dados do governo
+    do estado em si, populada por src/enrichers/estados_financeiro.py).
+    Fallback: soma dos municipios da UF (municipios_financeiro) quando a
+    tabela estadual ainda nao foi populada.
+    """
     with _get_connection() as conn, conn.cursor() as cur:
+        # 1. Tabela estadual (dados reais do governo do estado)
+        cur.execute(
+            """
+                SELECT
+                    ef.uf,
+                    ef.exercicio,
+                    ef.receitas_correntes,
+                    ef.despesas_totais,
+                    ef.resultado_primario,
+                    ef.resultado_orcamentario,
+                    ef.arrec_icms            AS icms_arrecadado,
+                    ef.arrec_cota_fpe        AS fpe_recebido,
+                    ef.arrec_impostos_geral  AS arrecadacao_total,
+                    ef.arrec_ipva            AS arrec_ipva,
+                    ef.arrec_itcd            AS arrec_itcd,
+                    ef.arrec_irrf            AS arrec_irrf,
+                    ef.arrec_fundeb          AS arrec_fundeb,
+                    ef.arrec_rcl             AS arrec_rcl,
+                    ef.arrec_receitas_correntes AS arrec_receitas_correntes,
+                    ef.arrec_transferencias  AS arrec_transferencias,
+                    ef.divida_ativa          AS divida_ativa,
+                    ef.divida_passiva        AS divida_passiva,
+                    ef.patrimonio_liquido    AS patrimonio_liquido,
+                    ef.ativo_imobilizado     AS ativo_imobilizado,
+                    ef.atualizado_em,
+                    'ESTADUAL' AS esfera
+                FROM estados_financeiro ef
+                WHERE ef.uf = %s
+                ORDER BY ef.exercicio DESC
+                LIMIT 1
+            """,
+            (uf,),
+        )
+        row = cur.fetchone()
+        if row:
+            return _row_to_dict(row)
+
+        # 2. Fallback: soma dos municipios da UF (comportamento historico)
         cur.execute(
             """
                 SELECT
@@ -1116,7 +1168,8 @@ def get_financeiro_estado(uf: str) -> dict | None:
                     SUM(mf.divida_ativa)          AS divida_ativa,
                     SUM(mf.divida_passiva)        AS divida_passiva,
                     SUM(mf.patrimonio_liquido)    AS patrimonio_liquido,
-                    SUM(mf.ativo_imobilizado)     AS ativo_imobilizado
+                    SUM(mf.ativo_imobilizado)     AS ativo_imobilizado,
+                    'MUNICIPIOS' AS esfera
                 FROM municipios_financeiro mf
                 JOIN municipios_ibge mi ON mi.municipio_id = mf.municipio_id
                 WHERE mi.uf = %s
@@ -1186,3 +1239,319 @@ def get_triangulo_politico(uf: str | None = None, limit: int = 100) -> list[dict
             params,
         )
         return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Senadores (senadores_dados — API Senado)
+# ---------------------------------------------------------------------------
+
+
+def search_senadores(query: str) -> list[dict]:
+    """Busca senadores por nome de urna ou nome completo (ILIKE)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT senador_codigo, nome_parlamentar, nome_completo,
+                      sigla_partido, uf, situacao, foto_url, legislatura
+               FROM senadores_dados
+               WHERE nome_parlamentar ILIKE %s OR nome_completo ILIKE %s
+               ORDER BY nome_parlamentar
+               LIMIT 50""",
+            (f"%{query}%", f"%{query}%"),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+@cached(ANALYTICS_CACHE)
+def get_ranking_senadores(
+    limit: int = 30, partido: str | None = None, uf: str | None = None
+) -> list[dict]:
+    """Ranking de senadores por atividade legislativa (votações + relatorias)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        wheres = []
+        params: list = []
+        if partido:
+            wheres.append("sigla_partido ILIKE %s")
+            params.append(f"%{partido}%")
+        if uf:
+            wheres.append("uf = %s")
+            params.append(uf.upper())
+        where_sql = "WHERE " + " AND ".join(wheres) if wheres else ""
+        params.append(limit)
+        cur.execute(
+            f"""
+                SELECT senador_codigo, nome_parlamentar, nome_completo,
+                       sigla_partido, uf, situacao, legislatura,
+                       total_votacoes, total_relatorias,
+                       (total_votacoes + total_relatorias) AS atividade_total
+                FROM senadores_dados
+                {where_sql}
+                ORDER BY atividade_total DESC NULLS LAST, nome_parlamentar
+                LIMIT %s
+            """,
+            params,
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+@cached(ANALYTICS_CACHE)
+def get_senadores_por_partido() -> list[dict]:
+    """Contagem de senadores por partido."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT sigla_partido, COUNT(*) AS total, COUNT(DISTINCT uf) AS ufs
+               FROM senadores_dados
+               WHERE sigla_partido IS NOT NULL
+               GROUP BY sigla_partido
+               ORDER BY total DESC"""
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+def get_perfil_senador(senador_codigo: int) -> dict | None:
+    """Perfil completo do senador."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM senadores_dados WHERE senador_codigo = %s",
+            (senador_codigo,),
+        )
+        return _row_to_dict(cur.fetchone())
+
+
+# ---------------------------------------------------------------------------
+# Discursos e alertas do deputado (parlamentar_discursos / parlamentar_alertas)
+# ---------------------------------------------------------------------------
+
+
+def get_discursos_deputado(
+    deputado_id: int, limit: int = 50, tipo: str | None = None
+) -> list[dict]:
+    """Discursos em plenário/comissões do deputado (tabela parlamentar_discursos)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        sql = """
+            SELECT id, data_hora_inicio, fase_evento, tipo_discurso,
+                   keywords, sumario, url_texto
+            FROM parlamentar_discursos
+            WHERE deputado_id = %s
+        """
+        params: list = [deputado_id]
+        if tipo:
+            sql += " AND tipo_discurso ILIKE %s"
+            params.append(f"%{tipo}%")
+        sql += " ORDER BY data_hora_inicio DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        return _rows_to_list(cur.fetchall())
+
+
+def get_alertas_deputado(deputado_id: int) -> list[dict]:
+    """Alertas automáticos do pipeline vinculados ao deputado."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT a.alerta_id, a.parlamentar_nome, a.ato_id,
+                      a.nivel_relevancia, a.notificado, a.criado_em
+               FROM parlamentar_alertas a
+               JOIN parlamentares_dados pd
+                 ON pd.parlamentar_id = a.parlamentar_id
+               WHERE pd.deputado_id = %s
+               ORDER BY a.criado_em DESC""",
+            (deputado_id,),
+        )
+        return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Emendas discricionárias (emendas_discricionarias — Portal da Transparência)
+# ---------------------------------------------------------------------------
+
+
+def get_emendas_discricionarias_deputado(
+    deputado_id: int, ano: int | None = None, limit: int = 100
+) -> list[dict]:
+    """Emendas discricionárias do parlamentar (parlamentar_id)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        sql = """
+            SELECT ed.codigo_emenda, ed.numero_convenio, ed.ano,
+                   ed.beneficiario_nome, ed.valor_total, ed.status_execucao,
+                   ed.data_assinatura, ed.objeto, ed.tipo_emenda
+            FROM emendas_discricionarias ed
+            JOIN parlamentares_dados pd
+              ON pd.parlamentar_id = ed.parlamentar_id
+            WHERE pd.deputado_id = %s
+        """
+        params: list = [deputado_id]
+        if ano:
+            sql += " AND ed.ano = %s"
+            params.append(ano)
+        sql += " ORDER BY ed.ano DESC, ed.valor_total DESC NULLS LAST LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        return _rows_to_list(cur.fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Financeiro SICONFI (estados_financeiro + municipios_financeiro)
+# ---------------------------------------------------------------------------
+
+
+@cached(ANALYTICS_CACHE)
+def get_financeiro_estados(exercicio: int | None = None) -> list[dict]:
+    """Resumo financeiro das 27 UFs (esfera estadual, DCA + RREO A03)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        sql = """
+            SELECT ef.uf, ef.exercicio,
+                   ef.receitas_correntes, ef.despesas_totais,
+                   ef.resultado_orcamentario, ef.resultado_primario,
+                   ef.arrec_icms, ef.arrec_ipva, ef.arrec_itcd,
+                   ef.arrec_cota_fpe, ef.arrec_fundeb, ef.arrec_rcl,
+                   ef.arrec_impostos_geral AS arrecadacao_total,
+                   ef.divida_ativa, ef.divida_passiva, ef.atualizado_em
+            FROM estados_financeiro ef
+        """
+        params: list = []
+        if exercicio:
+            sql += " WHERE ef.exercicio = %s"
+            params.append(exercicio)
+        sql += " ORDER BY ef.uf"
+        cur.execute(sql, params)
+        return _rows_to_list(cur.fetchall())
+
+
+@cached(ANALYTICS_CACHE)
+def get_financeiro_municipios(
+    uf: str | None = None,
+    exercicio: int | None = None,
+    order_by: str = "despesas_totais",
+    limit: int = 100,
+) -> list[dict]:
+    """Ranking de municípios por receita/despesa/arrecadação (JOIN IBGE)."""
+    allowed = {
+        "despesas_totais", "receitas_orcamentarias", "resultado_orcamentario",
+        "arrec_iss", "arrec_iptu", "arrec_cota_icms", "arrec_cota_fpm",
+        "arrec_impostos_geral", "populacao",
+    }
+    order_col = order_by if order_by in allowed else "despesas_totais"
+    with _get_connection() as conn, conn.cursor() as cur:
+        sql = """
+            SELECT mi.municipio_id, mi.nome, mi.uf, mf.exercicio,
+                   mi.populacao, mi.idhm, mi.pib_per_capita,
+                   mf.receitas_orcamentarias, mf.receitas_correntes,
+                   mf.despesas_totais, mf.resultado_orcamentario,
+                   mf.resultado_primario,
+                   mf.arrec_iss, mf.arrec_iptu, mf.arrec_itbi,
+                   mf.arrec_cota_icms, mf.arrec_cota_fpm,
+                   mf.arrec_impostos_geral, mf.arrec_transferencias
+            FROM municipios_financeiro mf
+            JOIN municipios_ibge mi ON mi.municipio_id = mf.municipio_id
+            WHERE 1=1
+        """
+        params: list = []
+        if uf:
+            sql += " AND mi.uf = %s"
+            params.append(uf.upper())
+        if exercicio:
+            sql += " AND mf.exercicio = %s"
+            params.append(exercicio)
+        if order_col == "populacao":
+            sql += " ORDER BY mi.populacao DESC NULLS LAST LIMIT %s"
+        else:
+            sql += f" ORDER BY mf.{order_col} DESC NULLS LAST LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        return _rows_to_list(cur.fetchall())
+
+
+def get_financeiro_municipio(municipio_id: int) -> dict | None:
+    """Financeiro + indicadores IBGE de um município (exercício mais recente)."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT mi.municipio_id, mi.nome, mi.uf, mi.regiao,
+                      mi.populacao, mi.pib, mi.pib_per_capita, mi.idhm,
+                      mi.area_km2, mi.densidade_demografica,
+                      mf.exercicio, mf.receitas_correntes, mf.receitas_capital,
+                      mf.receitas_orcamentarias, mf.receitas_transferencias,
+                      mf.despesas_correntes, mf.despesas_capital,
+                      mf.despesas_totais, mf.resultado_orcamentario,
+                      mf.resultado_primario, mf.resultado_financeiro,
+                      mf.divida_ativa, mf.divida_passiva,
+                      mf.patrimonio_liquido, mf.ativo_imobilizado,
+                      mf.arrec_iptu, mf.arrec_iss, mf.arrec_itbi,
+                      mf.arrec_irrf, mf.arrec_cota_icms, mf.arrec_cota_ipva,
+                      mf.arrec_cota_itr, mf.arrec_cota_fpm,
+                      mf.arrec_impostos_geral, mf.arrec_transferencias,
+                      mf.arrec_receitas_correntes
+               FROM municipios_ibge mi
+               LEFT JOIN municipios_financeiro mf
+                 ON mf.municipio_id = mi.municipio_id
+                AND mf.exercicio = (SELECT MAX(mf2.exercicio)
+                                    FROM municipios_financeiro mf2
+                                    WHERE mf2.municipio_id = mi.municipio_id)
+               WHERE mi.municipio_id = %s""",
+            (municipio_id,),
+        )
+        return _row_to_dict(cur.fetchone())
+
+
+def get_comparativo_emendas_financeiro(uf: str | None = None) -> list[dict]:
+    """Emendas Pix recebidas × arrecadação própria (ICMS/IPTU/ISS/FPM) por UF."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        sql = """
+            SELECT mi.uf,
+                   COALESCE(em.total_planos, 0)          AS total_planos,
+                   COALESCE(em.valor_total, 0)           AS valor_emendas,
+                   COALESCE(fin.arrec_impostos_geral, 0) AS arrecadacao_propria,
+                   COALESCE(fin.arrec_cota_icms, 0)      AS arrec_icms,
+                   COALESCE(fin.arrec_iss, 0)            AS arrec_iss,
+                   COALESCE(fin.arrec_iptu, 0)           AS arrec_iptu,
+                   COALESCE(fin.arrec_cota_fpm, 0)       AS arrec_fpm,
+                   COALESCE(fin.despesas_totais, 0)      AS despesas_totais
+            FROM (SELECT DISTINCT uf FROM municipios_ibge) mi
+            LEFT JOIN (
+                SELECT b.uf, COUNT(*) AS total_planos, SUM(pa.valor_total) AS valor_total
+                FROM planos_acao pa
+                JOIN beneficiarios b ON b.beneficiario_id = pa.beneficiario_id
+                GROUP BY b.uf
+            ) em ON em.uf = mi.uf
+            LEFT JOIN (
+                SELECT m.uf,
+                       SUM(mf.arrec_impostos_geral) AS arrec_impostos_geral,
+                       SUM(mf.arrec_cota_icms)      AS arrec_cota_icms,
+                       SUM(mf.arrec_iss)            AS arrec_iss,
+                       SUM(mf.arrec_iptu)           AS arrec_iptu,
+                       SUM(mf.arrec_cota_fpm)       AS arrec_cota_fpm,
+                       SUM(mf.despesas_totais)      AS despesas_totais
+                FROM municipios_financeiro mf
+                JOIN municipios_ibge m ON m.municipio_id = mf.municipio_id
+                GROUP BY m.uf
+            ) fin ON fin.uf = mi.uf
+        """
+        params: list = []
+        if uf:
+            sql += " WHERE mi.uf = %s"
+            params.append(uf.upper())
+        sql += " ORDER BY mi.uf"
+        cur.execute(sql, params)
+        return _rows_to_list(cur.fetchall())
+
+
+def get_indicadores_municipio(municipio_id: int) -> dict | None:
+    """Indicadores locais do município: saúde, educação, violência, financeiro."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT mi.municipio_id, mi.nome, mi.uf, mi.populacao,
+                      mi.pib_per_capita, mi.idhm,
+                      sm.total_estabelecimentos, sm.estabelecimentos_ativos,
+                      sm.total_leitos, sm.leitos_sus, sm.total_profissionais,
+                      sm.hospitais, sm.ubs, sm.caps,
+                      em.ideb_initial_years, em.ideb_final_years,
+                      em.taxa_aprovacao, em.taxa_abandono,
+                      em.escolas_totais, em.matriculas_totais,
+                      vm.ano_referencia, vm.homicidios, vm.taxa_homicidios,
+                      vm.mortes_transito, vm.roubos, vm.violencia_genero
+               FROM municipios_ibge mi
+               LEFT JOIN saude_municipios sm ON sm.municipio_id = mi.municipio_id
+               LEFT JOIN educacao_municipios em ON em.municipio_id = mi.municipio_id
+               LEFT JOIN violencia_municipios vm ON vm.municipio_id = mi.municipio_id
+               WHERE mi.municipio_id = %s""",
+            (municipio_id,),
+        )
+        return _row_to_dict(cur.fetchone())

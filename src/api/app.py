@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,9 +26,12 @@ from src.api.routes import (
     compras,
     deputados,
     diario,
+    financeiro,
     fnde,
     governadores,
+    municipios,
     prefeitos,
+    senadores,
     vereadores,
 )
 
@@ -54,6 +58,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Compressão GZip para respostas JSON grandes (agregados, rankings)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Rotas da API
 app.include_router(
@@ -103,6 +110,27 @@ app.include_router(
     tags=["governadores"],
 )
 
+# Register senadores routes
+app.include_router(
+    senadores.router,
+    prefix="/api/v1/senadores",
+    tags=["senadores"],
+)
+
+# Register financeiro SICONFI routes (estados + municípios)
+app.include_router(
+    financeiro.router,
+    prefix="/api/v1/financeiro",
+    tags=["financeiro", "siconfi"],
+)
+
+# Register municípios routes (indicadores locais)
+app.include_router(
+    municipios.router,
+    prefix="/api/v1/municipios",
+    tags=["municipios"],
+)
+
 # ---------------------------------------------------------------------------
 # Arquivos estáticos e frontend
 # ---------------------------------------------------------------------------
@@ -110,6 +138,15 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def cache_static_assets(request, call_next):
+    """Cache-Control imutável para arquivos estáticos (versionados via ?v=)."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 @app.get("/", include_in_schema=False)

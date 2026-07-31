@@ -9,7 +9,6 @@ para evitar dependência com PostgreSQL ou APIs externas.
 from __future__ import annotations
 
 import os
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -148,6 +147,7 @@ class TestDeputadosRoutes:
         """GET /api/v1/deputados/{id}/emendas — retorna lista."""
         from src.api.routes import deputados
 
+        monkeypatch.setattr(deputados.db_service, "get_parlamentar_id", lambda _: None)
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: "Dep Teste")
         monkeypatch.setattr(
             deputados.db_service, "get_emendas_deputado",
@@ -175,6 +175,7 @@ class TestDeputadosRoutes:
         """GET /api/v1/deputados/{id}/emendas/resumo — KPIs."""
         from src.api.routes import deputados
 
+        monkeypatch.setattr(deputados.db_service, "get_parlamentar_id", lambda _: None)
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: "Dep Teste")
         monkeypatch.setattr(
             deputados.db_service, "get_resumo_emendas",

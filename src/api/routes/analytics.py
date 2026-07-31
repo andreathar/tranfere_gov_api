@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from src.api.services import analytics_service
+from src.api.services import analytics_service, db_service
 
 log = logging.getLogger(__name__)
 
@@ -36,3 +36,9 @@ async def top_municipios():
     """Returns the top municipalities by total emenda value."""
     data = await analytics_service.get_top_municipios()
     return {"status": "success", "data": data}
+
+
+@router.get("/votacoes-recentes")
+async def votacoes_recentes(ano: int | None = None, limit: int = 20):
+    """Últimas votações nominais da Câmara (tabela votacoes_camara)."""
+    return db_service.get_votacoes_recentes(ano=ano, limit=limit)

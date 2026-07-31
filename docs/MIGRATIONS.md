@@ -38,6 +38,10 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 023 | migration_023_discursos_parlamentar_id.sql | Adiciona parlamentar_id em parlamentar_discursos | 015/021, 022 |
 | 024 | migration_024_votos_personas_parlamentar_id.sql | Adiciona parlamentar_id em votos_camara + parlamentares_personas | 016, 017, 022 |
 | 025 | migration_025_deputados_faltantes_parlamentares.sql | Insere 130 deputados faltantes na tabela parlamentares (parlamentar_id) | 002, 022 |
+| 026 | migration_026_estados_financeiro.sql | Tabela estados_financeiro (SICONFI esfera estadual: DCA + RREO A03) | 003, 004 |
+| 026 | migration_026_pix_sync_fix.sql | Fix upsert_plano_acao: RETURNING beneficiario_id; emendas PIX sincronizadas | 002, 022 |
+| 027 | migration_027_upsert_parlamentar_resolve.sql | upsert_plano_acao resolve parlamentar_id canônico por NOME antes de gravar | 022, 026 |
+| 028 | migration_028_frontend_perf.sql | Índices de performance do frontend: vereadores (uf, partido, situação), discursos (parlamentar, data), emendas discricionárias (parlamentar, ano), votações (data) | 003, 015, 021 |
 
 ## Execução
 
