@@ -19,6 +19,7 @@ output/
 
 # Environment
 .env
+.env.*
 !.env.example
 
 # IDE
@@ -36,3 +37,22 @@ output/
 # External SDKs
 google-cloud-sdk/
 *.tar.gz
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Banco / dados locais
+*.sqlite3
+*.db
+
+# Credenciais e segredos (NUNCA commitar)
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.pgpass

@@ -3,11 +3,14 @@
 source .venv/bin/activate
 
 python3 << 'PYEOF'
+import os
 import psycopg2
 
 conn = psycopg2.connect(
-    host="127.0.0.1", dbname="transferegov_db",
-    user="cognee", password="cognee"
+    host=os.environ.get("PGHOST", "127.0.0.1"),
+    dbname=os.environ.get("PGDATABASE", "transferegov_db"),
+    user=os.environ.get("PGUSER", "cognee"),
+    password=os.environ.get("PGPASSWORD", "cognee"),
 )
 cur = conn.cursor()
 

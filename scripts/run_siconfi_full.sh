@@ -15,8 +15,9 @@ while true; do
   echo "=== Pass $PASS ==="
 
   DONE_BEFORE=$(python3 -c "
+import os
 import psycopg2
-conn = psycopg2.connect(host='127.0.0.1', dbname='transferegov_db', user='cognee', password='cognee')
+conn = psycopg2.connect(host=os.environ.get('PGHOST','127.0.0.1'), dbname=os.environ.get('PGDATABASE','transferegov_db'), user=os.environ.get('PGUSER','cognee'), password=os.environ.get('PGPASSWORD','cognee'))
 cur = conn.cursor()
 cur.execute('SELECT COUNT(DISTINCT municipio_id) FROM municipios_financeiro')
 print(cur.fetchone()[0])
@@ -26,8 +27,9 @@ conn.close()
   python3 -m src.enrichers.siconfi --limit $BATCH 2>&1 | tail -5
 
   DONE_AFTER=$(python3 -c "
+import os
 import psycopg2
-conn = psycopg2.connect(host='127.0.0.1', dbname='transferegov_db', user='cognee', password='cognee')
+conn = psycopg2.connect(host=os.environ.get('PGHOST','127.0.0.1'), dbname=os.environ.get('PGDATABASE','transferegov_db'), user=os.environ.get('PGUSER','cognee'), password=os.environ.get('PGPASSWORD','cognee'))
 cur = conn.cursor()
 cur.execute('SELECT COUNT(DISTINCT municipio_id) FROM municipios_financeiro')
 print(cur.fetchone()[0])
@@ -43,8 +45,9 @@ conn.close()
   fi
 
   TOTAL=$(python3 -c "
+import os
 import psycopg2
-conn = psycopg2.connect(host='127.0.0.1', dbname='transferegov_db', user='cognee', password='cognee')
+conn = psycopg2.connect(host=os.environ.get('PGHOST','127.0.0.1'), dbname=os.environ.get('PGDATABASE','transferegov_db'), user=os.environ.get('PGUSER','cognee'), password=os.environ.get('PGPASSWORD','cognee'))
 cur = conn.cursor()
 cur.execute('SELECT COUNT(*) FROM municipios_ibge')
 print(cur.fetchone()[0])
@@ -59,8 +62,9 @@ done
 echo ""
 echo "=== Final ==="
 python3 -c "
+import os
 import psycopg2
-conn = psycopg2.connect(host='127.0.0.1', dbname='transferegov_db', user='cognee', password='cognee')
+conn = psycopg2.connect(host=os.environ.get('PGHOST','127.0.0.1'), dbname=os.environ.get('PGDATABASE','transferegov_db'), user=os.environ.get('PGUSER','cognee'), password=os.environ.get('PGPASSWORD','cognee'))
 cur = conn.cursor()
 cur.execute('SELECT COUNT(DISTINCT municipio_id) FROM municipios_financeiro')
 done = cur.fetchone()[0]

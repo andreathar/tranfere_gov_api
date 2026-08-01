@@ -64,8 +64,9 @@ echo ""
 echo "=== Wave complete ==="
 source .venv/bin/activate
 python3 -c "
+import os
 import psycopg2
-conn = psycopg2.connect(host='127.0.0.1', dbname='transferegov_db', user='cognee', password='cognee')
+conn = psycopg2.connect(host=os.environ.get('PGHOST','127.0.0.1'), dbname=os.environ.get('PGDATABASE','transferegov_db'), user=os.environ.get('PGUSER','cognee'), password=os.environ.get('PGPASSWORD','cognee'))
 cur = conn.cursor()
 cur.execute('SELECT COUNT(DISTINCT municipio_id) FROM municipios_financeiro')
 done = cur.fetchone()[0]

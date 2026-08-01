@@ -40,7 +40,12 @@ def serve():
     escutando na porta 8000 (exigida pelo decorator @modal.web_server).
     Usa volume persistente para cache do modelo entre cold starts.
     """
-    api_key = os.environ.get("MODAL_VLLM_TOKEN", "super-secret-token")
+    api_key = os.environ.get("MODAL_VLLM_TOKEN")
+    if not api_key:
+        raise RuntimeError(
+            "MODAL_VLLM_TOKEN não definido. Configure o Secret no Modal "
+            "(ex.: modal.Secret.from_name('...')) antes de servir o endpoint."
+        )
 
     # Verifica se o modelo já está em cache (usa marker file pra evitar download parcial)
     model_path = os.path.join(CACHE_PATH, MODEL.replace("/", "--"))

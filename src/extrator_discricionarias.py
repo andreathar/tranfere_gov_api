@@ -32,8 +32,8 @@ Uso:
   # Buscar por emenda parlamentar
   python3 -m src.extrator_discricionarias buscar --emenda 11228
 
-  # Buscar por CNPJ do proponente
-  python3 -m src.extrator_discricionarias buscar --cnpj 11.337.750/0001-70
+  # Buscar por CNPJ do proponente (exemplo fictício, inválido em checksum)
+  python3 -m src.extrator_discricionarias buscar --cnpj 12.345.678/0001-90
 
   # Listar propostas encontrados e detalhar cada um
   python3 -m src.extrator_discricionarias buscar --uf SP --detalhar
