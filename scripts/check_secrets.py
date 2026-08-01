@@ -40,10 +40,10 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Segredos já vazados e purgados do histórico — re-incluir deve falhar no commit.
-KNOWN_LEAKS: list[tuple[str, str]] = [
-    # DATAJUD_API_KEY base64(usuario:senha) que existia no config/.env.example
-    ("DATAJUD key antiga (vazada)", "***REDACTED-DATAJUD-API-KEY***"),
-]
+# NOTA: nunca guardar aqui o valor literal de uma credencial real (não queremos
+# o segredo em texto puro no repositório). O formato base64(usuario:senha) usado
+# pelo DataJud/CNJ é coberto pela heurística `_detect_base64_creds`.
+KNOWN_LEAKS: list[tuple[str, str]] = []
 
 # Arquivos/prefixos que nunca devem conter credenciais (não é allowlist — é
 # apenas para ignorar binários e o próprio script).
@@ -52,7 +52,9 @@ SKIP_SUFFIXES = {".pyc", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".xlsx", ".ipy
 SKIP_PATHS = {"scripts/check_secrets.py"}
 
 # base64(usuario:senha) — formato usado por DataJud/CNJ e vários serviços.
-RE_B64_CRED = re.compile(r"\b[A-Za-z0-9+/]{16,}={1,2}\b")
+# Sem `\b` no final: `=` não é caractere de palavra, então o boundary quebraria
+# a detecção em strings com padding (ex.: "...dw==" com aspas na sequência).
+RE_B64_CRED = re.compile(r"\b[A-Za-z0-9+/]{16,}={1,2}")
 
 
 def _detect_base64_creds(linha: str) -> bool:
@@ -77,13 +79,14 @@ def _only_digits(n: str) -> str:
 
 
 def _valida_cpf(cpf: str) -> bool:
-    """Valida os dois dígitos verificadores do CPF."""
+    """Valida os dois dígitos verificadores do CPF (algoritmo da Receita Federal)."""
     if len(set(cpf)) == 1:
         return False
     for peso_inicial in (10, 11):
         soma = sum(int(cpf[i]) * (peso_inicial - i) for i in range(peso_inicial - 1))
-        resto = (soma * 10) % 11
-        if resto != int(cpf[peso_inicial - 1]):
+        resto = soma % 11
+        dv = 0 if resto < 2 else 11 - resto
+        if dv != int(cpf[peso_inicial - 1]):
             return False
     return True
 
