@@ -149,8 +149,8 @@ python3 -m src.enrichers.rag_persona [flags]
 
 ### O que faz
 
-1. Para cada deputado, executa 14 queries tematicas no Qdrant (Multi-Query RAG v7,
-   batch embedding) cobrindo todos os 22 chunk types.
+1. Para cada deputado, executa 15 queries tematicas no Qdrant (Multi-Query RAG v7,
+   batch embedding) cobrindo todos os 23 chunk types.
 2. Coleta os chunks mais relevantes por query e aplica Reciprocal Rank Fusion (k=60).
 3. **PromptPreparer** (`src/analysts/preparer.py`) sintetiza ate 8 chunks brutos em
    Briefing estruturado + Fact Table + Insights (valida fidelidade numerica R$).
@@ -164,7 +164,7 @@ python3 -m src.enrichers.rag_persona [flags]
 6. Salva o resultado no PostgreSQL com contexto_rag (trechos recuperados),
    fontes_usadas (auditoria rastreavel), modelo_usado e score_qualidade.
 
-### 14 queries tematicas do Multi-Query RAG
+### 15 queries tematicas do Multi-Query RAG
 
 | # | Perspectiva | O que busca |
 |---|-------------|-------------|

@@ -61,12 +61,21 @@ def parse_brl_token(raw: str) -> float | None:
         else:
             raw = raw.replace(",", "")
     elif "," in raw:
-        # So virgula: '123,45' decimal vs '1.234,56'... assumimos que virgula
-        # unica com <=2 casas é decimal, caso contrario é separador de milhar.
-        if raw.count(",") == 1 and len(raw.split(",")[1]) <= 2:
-            raw = raw.replace(",", ".")
+        # So virgula(s): se a ultima delimitar 1-2 casas, ela e decimal e as
+        # demais sao milhar (ex.: '123,45', '40,443,658,00' misto US+BR,
+        # '5,444,39'). Caso contrario, virgulas sao separadores de milhar.
+        partes = raw.split(",")
+        if len(partes[-1]) in (1, 2):
+            raw = "".join(partes[:-1]) + "." + partes[-1]
         else:
             raw = raw.replace(",", "")
+    else:
+        # So ponto(s): '1.234' (1 ponto, decimal) vs '40.443.658' (milhar BR
+        # sem decimal — multiplos pontos com grupos de 3 digitos).
+        if raw.count(".") >= 2:
+            partes = raw.split(".")
+            if all(len(p) == 3 for p in partes[1:]):
+                raw = "".join(partes)
     try:
         return float(raw)
     except ValueError:
@@ -106,9 +115,7 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
         for c in chunk_vals:
             if abs(v - c) <= max(tol * max(abs(v), abs(c)), 1.0):
                 return True
-        if total and abs(v - total) <= max(tol * max(abs(v), abs(total)), 1.0):
-            return True
-        return False
+        return bool(total and abs(v - total) <= max(tol * max(abs(v), abs(total)), 1.0))
 
     falsos = [v for v in out_vals if not fiel(v)]
     return len(falsos) / len(out_vals)
@@ -308,10 +315,16 @@ class AnalystBase(ABC):
         inicio = time.time()
 
         # 3. Chamar LLM com model_scope (refcount + VRAM inteligente)
+        #    temperature=0.1: mais deterministico, reduz alucinacao de valores
+        #    (taxa_invencao_rs e o QC penalizam fortemente R$ inventados).
         try:
             with localai_manager.model_scope(llm_model):
                 ai_client = LocalAIClient(model=llm_model)
-                resposta = ai_client.chat(prompt=prompt, system=self.system_prompt)
+                resposta = ai_client.chat(
+                    prompt=prompt,
+                    system=self.system_prompt,
+                    temperature=0.1,
+                )
                 duracao = time.time() - inicio
             log.info(
                 f"  [{self.analyst_id}] Gerado em {duracao:.1f}s "

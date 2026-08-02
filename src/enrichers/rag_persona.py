@@ -16,7 +16,7 @@ v6 (base):
   - RAG_FALLBACK_MODEL e RAG_MAX_RETRIES via settings.py
 
 v5 (base):
-  - Multi-query RAG (14 queries tematicas, batch embedding)
+  - Multi-query RAG (15 queries tematicas, batch embedding)
   - Reciprocal Rank Fusion (RRF) para re-ranking de chunks
   - Dedup via MD5 (nao por prefixo) para evitar falsos positivos
   - Validacao de tamanho do prompt (janela de contexto ~8K)
@@ -128,9 +128,12 @@ QUERIES_TEMATICAS = [
     "convenios, status de execucao orcamentaria, beneficiarios CNPJ",
     "Resumo consolidado do deputado: total de emendas, beneficiarios unicos, "
     "municipios atendidos e valor global alocado",
-    # === Contexto Municipal Financeiro e Demografico ===
+    # === Contexto Municipal/Estadual Financeiro e Demografico ===
     "Dados financeiros municipais SICONFI: receita orcamentaria, despesas totais, "
     "divida passiva, arrecadacao FPM, ICMS e ISS dos municipios receptores",
+    "Dados financeiros do governo estadual SICONFI: receitas, despesas, resultado "
+    "orcamentario, divida, ICMS, IPVA, ITCD, IRRF, FPE, FUNDEB e RCL do estado "
+    "onde o deputado atua",
     "Dados demograficos IBGE dos municipios receptores: populacao, PIB per capita, "
     "IDHM, area territorial, densidade demografica",
     # === Indicadores Sociais e Transparencia ===
@@ -293,7 +296,7 @@ def search_context_qdrant(
 def search_context_multiquery(
     deputado_id: int, top_k_per_query: int = 8
 ) -> tuple[list[str], list[tuple[str, float]]]:
-    """Executa 14 queries tematicas com batch embed, RRF merge + MD5 dedup.
+    """Executa 15 queries tematicas com batch embed, RRF merge + MD5 dedup.
 
     Returns:
         (context_list, scored_chunks):
@@ -1159,8 +1162,13 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
             log.error(f"Erro ao processar {nome_real} (ID: {dep_id}): {e}")
             return None
 
-    # 1.5: Paralelismo com 2 workers (evitar VRAM exhaustion)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+    # 1.5: Paralelismo com 1 worker — dossiers EM SÉRIE.
+    # Antes (max_workers=2): 2 dossiers × max_workers=3 do pipeline = até 6
+    # chamadas LLM simultâneas no LocalAI (GPU 6GB, llama 3.4GB) → timeouts e
+    # 500 persistentes (AIRTON/AGUINALDO/ALCEU do lote 2026-07-31 tiveram
+    # analistas com "Falha na geracao: timed out" mesmo após 3 retries).
+    # Serial, o pico cai para 3 (só o pipeline), que já validado no E2E single.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future_map = {
             executor.submit(_process_one, dep_id, nome_real, parl_id): (dep_id, nome_real)
             for dep_id, nome_real, parl_id in deputados

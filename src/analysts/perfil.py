@@ -77,9 +77,7 @@ Mantenha o resumo em torno de 4-8 linhas.
         if palavras >= 40 and tem_partido:
             score = min(70.0 + (palavras / 200.0) * 30.0, 100.0)
             return True, round(score, 1)
-        elif palavras >= 12 and tem_partido:
-            return True, 50.0
-        elif palavras >= 20:
+        elif palavras >= 12 and tem_partido or palavras >= 20:
             return True, 50.0
         else:
             return False, 10.0

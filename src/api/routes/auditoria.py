@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any
 
@@ -50,14 +51,15 @@ async def search_justica(query: str = Query(..., description="CNPJ to search in 
                     "datajud_buscar_processos", {"query": query, "tamanho": 5}
                 )
 
-                import json
+                from src.datajud_utils import parse_datajud_response
 
-                try:
-                    data = json.loads(res) if res else {}
-                except Exception:
-                    data = {"message": res} if res else {}
-
-                total = len(data) if isinstance(data, list) else 0
+                # A tool retorna STRING (markdown/mensagem), nao JSON — o parser
+                # converte para (total, dados) e evita o falso-zero de total=0
+                # quando o json.loads falhava.
+                total, dados = parse_datajud_response(res)
+                # Mantem o shape da resposta: lista de processos quando existem,
+                # dict de mensagem caso contrario
+                data = dados.get("processos", dados) if isinstance(dados, dict) else dados
 
                 # Upsert into DB
                 cur.execute(
@@ -70,7 +72,7 @@ async def search_justica(query: str = Query(..., description="CNPJ to search in 
                             erro = NULL,
                             checked_at = NOW();
                     """,
-                    (query, total, json.dumps(data)),
+                    (query, total, json.dumps(dados, ensure_ascii=False)),
                 )
                 conn.commit()
             except Exception as api_err:

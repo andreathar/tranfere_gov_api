@@ -83,6 +83,49 @@ def get_active_analysts(
     return active
 
 
+def _ensure_tematicas_area_summary(
+    deputado_id: int,
+    filtered: list[str],
+    nome: str,
+) -> list[str]:
+    """Garante que o chunk "Distribuição por área das emendas PIX" (resumo por
+    objeto/área, ref "Resumo por área (objeto)") esteja no contexto do analista
+    tematicas.
+
+    O prompt do tematicas manda TRANSCREVER literalmente os TOTAIS EXATOS por
+    área desse chunk. Porém ele compete com dezenas/centenas de chunks [EMENDA]
+    no RRF top-30 e frequentemente fica de fora do contexto (ex.: ANDRÉ só tinha
+    3 de 235 chunks [EMENDA]; o resumo de área não estava entre eles). Sem ele,
+    o modelo cai para os resumos por município e FABRICA valores (ANDRÉ 36.6,
+    ALICE 0.0). Uma busca dedicada no Qdrant injeta o chunk no topo do contexto,
+    de onde o analista (e o QC via _last_chunks) o enxerga.
+    """
+    marker = "Distribuição por área das emendas PIX"
+    if any(marker in c for c in filtered):
+        return filtered
+    try:
+        from src.enrichers.rag_persona import search_context_qdrant
+
+        results = search_context_qdrant(
+            deputado_id,
+            "Distribuição por área das emendas PIX por objeto de execução, "
+            "total exato por área e municípios beneficiários",
+            limit=5,
+            chunk_types=["EMENDA"],
+        )
+        for text, _score in results:
+            if marker in text:
+                injected = [text] + list(filtered)
+                log.info(
+                    f"[tematicas] chunk 'Resumo por área (objeto)' injetado no "
+                    f"topo do contexto ({len(filtered)} -> {len(injected)} chunks)"
+                )
+                return injected
+    except Exception as e:
+        log.warning(f"[tematicas] falha ao injetar resumo por área: {e}")
+    return list(filtered)
+
+
 def run_analyst_pipeline(
     deputado_id: int,
     nome: str,
@@ -125,6 +168,11 @@ def run_analyst_pipeline(
 
         min_req = getattr(klass, "min_chunks", 1)
         filtered = filter_chunks_by_analyst(context_list, analyst_id)
+        # Garantir que o resumo por área (totais exatos R$ por objeto) esteja no
+        # contexto do tematicas — sem isso o modelo fabrica valores quando o
+        # chunk fica fora do RRF top-30 (fix 2026-07-31).
+        if analyst_id == "tematicas":
+            filtered = _ensure_tematicas_area_summary(deputado_id, filtered, nome)
         if len(filtered) < min_req:
             log.info(
                 f"Analista {analyst_id} ({getattr(klass, 'section_title', '?')}) "

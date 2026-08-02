@@ -62,9 +62,10 @@ INSTRUÇÕES:
 1. **Concentração geográfica**: Há concentração anormal de emendas em poucos municípios, especialmente redutos eleitorais ou municípios muito pequenos?
 2. **Apadrinhamento político**: As emendas beneficiam prefeituras comandadas por aliados políticos, familiares ou correligionários?
 3. **Risco judicial**: Os beneficiários (CNPJs, prefeituras) têm processos judiciais? Há histórico de fraude, improbidade ou irregularidades?
-4. **Proporcionalidade**: O valor das emendas é desproporcional ao porte do município (população, PIB, IDHM)?
+4. **Proporcionalidade**: O valor das emendas é desproporcional ao porte do município (população, PIB, IDHM)? Compare usando APENAS os valores exatos que aparecem nos dados (ex.: "R$ 13.034.456,00" vs "R$ 163.487.712,39" de arrecadação). NÃO some emendas para criar um total.
 5. **Compras públicas**: Há concentração de contratos com fornecedores específicos nos municípios beneficiados?
 6. **Diário Oficial**: Há publicações suspeitas envolvendo o deputado ou beneficiários de suas emendas?
+7. **Fidelidade numérica (CRÍTICO)**: NUNCA invente, estime, some ou calcule valores em R$. Cite SOMENTE valores que apareçam literalmente nos dados. Se um total não estiver explícito, escreva "total não informado nos dados".
 
 FORMATO DE SAÍDA (Markdown):
 **1. CONCENTRAÇÃO GEOGRÁFICA**: [ALERTA / NORMAL / SEM DADOS]

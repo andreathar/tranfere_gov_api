@@ -48,6 +48,7 @@ python3 -m src.enrichers.validacao [--dry-run] [--limit N]
 python3 -m src.enrichers.ibge [--dry-run] [--uf UF]
 python3 -m src.enrichers.mapear_municipios [--dry-run]
 python3 -m src.enrichers.siconfi [--dry-run] [--uf UF] [--limit N] [--ano ANO] [--rreo]
+python3 -m src.enrichers.estados_financeiro [--dry-run] [--uf UF] [--ano ANO] [--rreo]
 python3 -m src.enrichers.camara [--dry-run] [--limit N]
 python3 -m src.enrichers.tse_prefeitos [--dry-run] [--uf UF] [--ano ANO]
 python3 -m src.enrichers.tse_vereadors [--dry-run] [--uf UF] [--ano ANO]
@@ -225,6 +226,7 @@ output/                       Gitignored (xlsx, csv, json, logs)
 | `municipios_ibge` | IBGE API | Municípios (código, nome, UF, região, pop, PIB) |
 | `beneficiario_ibge_map` | Fuzzy match | Liga beneficiários a códigos IBGE |
 | `municipios_financeiro` | SICONFI (DCA+RREO) | Dados financeiros + 15 colunas arrecadação |
+| `estados_financeiro` | SICONFI esfera estadual | Dados financeiros dos governos de estado (DCA + RREO A03: ICMS, IPVA, ITCD, FPE, FUNDEB, RCL) |
 | `parlamentares_dados` | Câmara | Perfil completo deputados |
 | `parlamentar_beneficiario` | SQL JOIN | Agregação parlamentar×município×emenda |
 | `prefeitos_dados` | TSE (DuckDB) | Prefeitos eleitos (2020/2024) |
@@ -260,6 +262,7 @@ Schema completo: `data/schema.sql`, migrations: `data/migration_002-025*.sql` (v
 | 1c | `mapear_municipios.py` | Fuzzy match | `beneficiario_ibge_map` |
 | 1d | `ibge_agregados.py` | IBGE (agregados) | `municipios_ibge` (pop, PIB, área) |
 | 1e | `siconfi.py` | SICONFI (DCA + RREO A03) | `municipios_financeiro` |
+| 1e2 | `estados_financeiro.py` | SICONFI esfera estadual (DCA + RREO A03) | `estados_financeiro` |
 | 2 | `camara.py` | Câmara Deputados | `parlamentares_dados` |
 | 3 | `pipeline.py` | SQL JOIN | `parlamentar_beneficiario` |
 | 4 | `compras.py` | Compras gov.br | `compras_municipios` |
@@ -372,7 +375,7 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 
 ### Pipeline RAG v7
 
-- **Indexador (`src/enrichers/rag_qdrant_indexer.py`)**: Indexa dados de deputados no Qdrant com **22 tipos de chunks** (perfil, emenda, voto, proposicao, discurso_plenario, conexao_politica, risco_judicial, compras_municipio, demografia, indicadores sociais, FNDE, etc.). Modos:
+- **Indexador (`src/enrichers/rag_qdrant_indexer.py`)**: Indexa dados de deputados no Qdrant com **23 tipos de chunks** (perfil, emenda, voto, proposicao, discurso_plenario, conexao_politica, risco_judicial, compras_municipio, demografia, indicadores sociais, FNDE, etc.). Modos:
   - `./run.sh cron-qdrant --limit 10` — indexa N deputados mais relevantes
   - `./run.sh cron-qdrant --nome "Nome"` — indexa deputado específico
   - `./run.sh cron-qdrant --diff --limit 50` — **modo incremental**: pula chunks com hash inalterado (mais rápido)
@@ -383,7 +386,7 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 - **Checkpoint**: tabela `qdrant_index_checkpoint` no PostgreSQL armazena hash dos dados para detecção de mudanças.
 - **Diagnóstico**: `./run.sh qdrant-status` (vetores/cobertura por tipo) e `./run.sh qdrant-staleness` (deputados desatualizados vs checkpoint).
 
-- **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v7 com **14 queries temáticas** (batch embedding) cobrindo todos os 22 chunk types + Reciprocal Rank Fusion (RRF, k=60):
+- **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v7 com **15 queries temáticas** (batch embedding) cobrindo todos os 23 chunk types + Reciprocal Rank Fusion (RRF, k=60):
 
   1. Padrão de votos, dissenso partidário e obstrução
   2. Proposições legislativas (PLs, PECs, PDLs)
@@ -423,7 +426,7 @@ Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSI�
 | Job | Comando | Frequencia | Descricao |
 |-----|---------|------------|-----------|
 | Diario Oficial | `./run.sh cron-diario` | Diaria | Baixa DOU e gera resumo de atos |
-| Qdrant Indexer | `./run.sh cron-qdrant` | Semanal | Indexa dados de deputados no Qdrant (22 chunk types) |
+| Qdrant Indexer | `./run.sh cron-qdrant` | Semanal | Indexa dados de deputados no Qdrant (23 chunk types) |
 | Dossie Persona | `./run.sh cron-dossie` | Sob demanda | Gera personas analiticas via Multi-Query RAG v7 |
 
 ---

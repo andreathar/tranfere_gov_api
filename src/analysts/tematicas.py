@@ -23,11 +23,18 @@ class AreasTematicas(AnalystBase):
     section_title = "ÁREAS TEMÁTICAS PRIORITÁRIAS"
     required_chunks = ["[EMENDA]", "[EMENDA_DISCRICIONARIA]", "[PROPOSICAO]", "[DISCURSO_PLENARIO]"]
     min_chunks = 2
+    # Data-first: usar os chunks crus (que trazem "Distribuição por área" com
+    # TOTAIS EXATOS) em vez do briefing do preparer 1.5B. O modelo 4B principal
+    # fabrica valores ao agregar; com os totais literais no contexto ele só
+    # precisa transcrevê-los (mesmo approach que consertou o analista "anomalias").
+    use_preparer = False
 
     system_prompt = (
         "Você é um analista de políticas públicas especializado em cruzamento "
         "de dados orçamentários. Compare capital alocado (emendas) com produção "
-        "legislativa (PLs) e discursos para detectar prioridades reais."
+        "legislativa (PLs) e discursos para detectar prioridades reais. "
+        "NUNCA invente, estime, some ou compute valores em R$: cite SOMENTE os "
+        "totais exatos que aparecem literalmente nos dados."
     )
 
     def build_prompt(
@@ -36,32 +43,29 @@ class AreasTematicas(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        if briefing and briefing.is_useful:
-            ctx = self._format_briefing(briefing)
-            origem = "BRIEFING SINTETIZADO"
-        else:
-            ctx = self._format_context(context)
-            origem = "DADOS CRUZADOS (EMENDAS + PROPOSIÇÕES + DISCURSOS)"
+        ctx = self._format_context(context)
+        origem = "DADOS (EMENDAS + PROPOSIÇÕES + DISCURSOS)"
 
-        return f"""Compare o volume de capital alocado por área temática com a produção legislativa e os discursos do deputado federal {nome}.
+        return f"""Identifique as áreas que mais receberam recursos do deputado federal {nome} via emendas e compare com a produção legislativa e os discursos dele.
 
 === {origem} ===
 {ctx}
 ========================================
 
 INSTRUÇÕES:
-1. Identifique as 3-5 áreas temáticas que mais receberam recursos via emendas (PIX + discricionárias).
-2. Ordene por valor total alocado (R$), não por número de projetos.
-3. Compare com os temas das proposições legislativas (PLs, PECs) que ele apresentou.
-4. Compare com os temas que ele mais discursa no plenário.
-5. Aponte discrepâncias: "fala muito de saúde mas aloca mais recursos para agricultura".
-6. Destaque se as emendas seguem a retórica ou se há pragmatismo eleitoral.
+1. Use a linha "Distribuição por área das emendas PIX de {nome}:" — ela traz o TOTAL EXATO de cada área (ex.: "Pavimentação...: R$ 10.353.574,99 (1 emenda(s), COARI)"). Se um total por município estiver explícito (ex.: "TOTAL exato R$ 28.788.030,99"), use-o também.
+2. Ordene as 3-5 áreas pelo TOTAL EXATO (R$) em ordem decrescente. TRANSCREVA os valores literalmente, exatamente como aparecem (mantendo o formato R$ X,XX). NÃO reordene, recompute ou arredonde os valores.
+3. Para cada área, informe o(s) município(s) beneficiário(s) e o número de emendas (apenas se constarem nos dados).
+4. Compare com os temas das proposições legislativas (PLs, PECs) que ele apresentou.
+5. Compare com os temas que ele mais discursa no plenário.
+6. Aponte discrepâncias: "fala muito de saúde mas aloca mais recursos para agricultura".
+7. FIDELIDADE NUMÉRICA (CRÍTICO): NUNCA invente, estime, some, compute percentuais ou crie valores em R$. Cite SOMENTE valores que apareçam literalmente nos dados. Se um total não estiver nos dados, escreva "não informado".
 
-FORMATO DE SAÍDA (Markdown):
-| Ranking | Área | Valor Estimado (R$) | % do Total | Proposições | Discursos |
-|---------|------|--------------------|------------|-------------|-----------|
-| 1º | Saúde | R$ X | XX% | N PLs | N discursos |
-| ... | ... | ... | ... | ... | ... |
+FORMATO DE SAÍDA (Markdown) — use SOMENTE valores literais dos dados:
+| Ranking | Área (objeto) | Município(s) | Nº Emendas | TOTAL exato (R$) | Proposições | Discursos |
+|---------|---------------|--------------|------------|------------------|-------------|-----------|
+| 1º | [área] | [município] | [n] | R$ [total exato dos dados] | [tema] | [tema] |
+| ... | ... | ... | ... | ... | ... | ... |
 
 **ANÁLISE**: (2-4 parágrafos interpretativos)
 - Discrepâncias entre discurso e alocação:

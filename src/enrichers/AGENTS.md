@@ -36,6 +36,7 @@ Scripts auxiliares rodam fora do pipeline: `completar_deputados.py`, `discricion
 | 1c | `mapear_municipios.py` | Match fuzzy (normalize) | `beneficiario_ibge_map` | Liga beneficiarios a codigos IBGE |
 | 1d | `ibge_agregados.py` | IBGE API (agregados v3) | `municipios_ibge` (colunas extras) | Populacao, PIB, area territorial |
 | 1e | `siconfi.py` | SICONFI/Tesouro Nacional (DCA + RREO A03) | `municipios_financeiro` | Dados financeiros + arrecadacao de impostos (IPTU/ISS/ICMS/FPM) |
+| 1e2 | `estados_financeiro.py` | SICONFI esfera estadual (DCA + RREO A03) | `estados_financeiro` | Dados financeiros dos governos de estado (ICMS/IPVA/ITCD/FPE/FUNDEB/RCL) |
 | 2 | `camara.py` | Camara dos Deputados | `parlamentares_dados` | Perfil completo dos deputados autores |
 | 3 | `pipeline.py` (--fase 3) | SQL JOIN | `parlamentar_beneficiario` | Agrega valor total por parlamentar x municipio x emenda |
 | 4 | `datajud.py` | DataJud CNJ (via mcp-brasil) | `beneficiario_processos` | Processos judiciais vinculados a CNPJs de beneficiarios |
@@ -74,13 +75,13 @@ O pipeline RAG (Retrieval-Augmented Generation) indexa dados de deputados no Qdr
 
 Modelo de embeddings: `embeddinggemma-300m` (768d) | Metrica: Cosine | Checkpoint: tabela `qdrant_index_checkpoint`
 
-**22 tipos de chunks indexados** (exemplos): `perfil`, `parlamentar_resumo`, `emenda`, `emenda_discricionaria`, `beneficiario`, `voto`, `proposicao`, `discurso_plenario`, `conexao_politica`, `risco_judicial`, `compras_municipio`, `demografia_municipio`, `municipio_financeiro`, `indicadores_sociais`, `indicadores_municipal`, `fnde_repasses`, `diario_oficial`, `senador`, `prefeito`, `vereadores_resumo`, `parlamentar_alertas`, `persona_existente`.
+**23 tipos de chunks indexados** (exemplos): `perfil`, `parlamentar_resumo`, `emenda`, `emenda_discricionaria`, `beneficiario`, `voto`, `proposicao`, `discurso_plenario`, `conexao_politica`, `risco_judicial`, `compras_municipio`, `demografia_municipio`, `municipio_financeiro`, `estado_financeiro`, `indicadores_sociais`, `indicadores_municipal`, `fnde_repasses`, `diario_oficial`, `senador`, `prefeito`, `vereadores_resumo`, `parlamentar_alertas`, `persona_existente`.
 
 Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types voto,emenda`, `--rebuild`, `--checkpoint`. Cada chunk type é isolado em try/except — falha em um não aborta os demais.
 
 ### Gerador de Personas (`rag_persona.py`) — RAG v7 Multi-Analista
 
-**14 queries tematicas** (batch embedding, cobrindo todos os 22 chunk types) + Reciprocal Rank Fusion (k=60):
+**15 queries tematicas** (batch embedding, cobrindo todos os 23 chunk types) + Reciprocal Rank Fusion (k=60):
 
 1. Padrão de votos, dissenso partidário e obstrução
 2. Proposições legislativas (PLs, PECs, PDLs)
@@ -101,7 +102,7 @@ Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types v
 
 **PromptPreparer** (`src/analysts/preparer.py`): sintetiza até 8 chunks → Briefing + Fact Table + Insights com `PREPARER_MODEL` (zero-gemma4-e4b-openzero-q5-k-m), com validação de fidelidade numérica R$ pós-geração.
 
-Fluxo: busca Qdrant (14 queries x top-k) -> PromptPreparer (briefing) -> 7 analistas (paralelo opcional) -> `assemble_dossier()` -> `calculate_global_score()` (≥ 70 aprova) -> salva no DB com contexto_rag, fontes_usadas e versao_prompt.
+Fluxo: busca Qdrant (15 queries x top-k) -> PromptPreparer (briefing) -> 7 analistas (paralelo opcional) -> `assemble_dossier()` -> `calculate_global_score()` (≥ 70 aprova) -> salva no DB com contexto_rag, fontes_usadas e versao_prompt.
 
 Uso:
 ```bash
@@ -202,7 +203,8 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 12. RREO retorna texto com acentos (ex: 'Transferencias') -- o parser usa `unicodedata.normalize('NFKD')` para normalizar
 13. `tse_vereadors.py` usa `qt_votos_nominais` (nao `qt_votos`) no dataset `tse_votacao` -- coluna e VARCHAR, requer `CAST(... AS BIGINT)`
 14. `tse_vereadors.py` pode falhar silenciosamente nos votos se o dataset `tse_votacao` nao estiver ativo -- o enricher continua com votos zerados
-15. `datajud.py` usa `asyncio` e MCP client -- nao aceita `--dry-run` e requer que o MCP server `mcp-brasil` esteja ativo; rate limit proprio de 3s entre requests e retry de 15s em caso de 429
+15. `datajud.py` usa `asyncio` e MCP client — nao aceita `--dry-run` e requer que o MCP server `mcp-brasil` esteja ativo; rate limit proprio de 3s entre requests e retry de 15s em caso de 429
+15a. `datajud_buscar_processos` (mcp-brasil) retorna STRING (tabela markdown/mensagem), NUNCA JSON — parse via `src/datajud_utils.parse_datajud_response()` (json.loads naive gravava total=0 falso e zerava o chunk `risco_judicial` no Qdrant); usar `--reprocess` para refazer CNPJs com falso-zero da versao antiga
 16. `compras.py` extrai codigo IBGE do municipio a partir dos 7 primeiros digitos do CNPJ -- pode ser impreciso para municipios com mesmo codigo de-area
 17. `saude_educacao.py` usa estimativas regionais como fallback quando APIs do CNES/DATASUS ou INEP estao indisponiveis -- valores sao aproximados, nao exatos
 18. `votacoes_camara.py` usa paginacao da API da Camara com maximo de 200 paginas -- pode perder votacoes antigas se o ano tiver mais de 10.000 registros
@@ -210,7 +212,7 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 20. `fnde.py` depende de APIs OData v4 do FNDE (Olinda) -- se indisponiveis, nao ha fallback e a fase retorna vazio
 21. `diario_oficial_worker.py` usa MCP para busca + LLM para NER -- dupla dependencia externa (MCP server + LocalAI)
 22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` e modelo `embeddinggemma-300m` carregado no LocalAI -- sem esses, indexacao falha (nomic-embed-text-v1.5 foi substituído)
-23. `rag_persona.py` usa Multi-Query RAG v7 (14 queries + 7 analistas + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
+23. `rag_persona.py` usa Multi-Query RAG v7 (15 queries + 7 analistas + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
 24. `tcu_compras.py` e auditoria/consulta (nao enriquecimento) -- nao escreve tabelas novas, usa MCP para consultas sob demanda
 25. `tse_deputados.py` sincroniza dados eleitorais do TSE com `parlamentares_dados` -- requer que `camara.py` (fase 2) tenha rodado antes para popular a tabela base
 26. `governadores.py` usa mapeamento manual (TSE 2022) -- atualizar dados exige editar a lista `GOVERNADORES_2022` no script

@@ -25,7 +25,7 @@ O sistema implementa uma pipeline completa em 9 fases + RAG v7:
    - **Fase 8**: Perfil de Senadores em exercício (API Senado).
    - **Fase 9**: Discursos de deputados em plenário (Câmara Dados Abertos).
    - **Complementares**: Compras (FNDE/TCU), DataJud, Diário Oficial, Saúde/Educação, Proposições, Votações, Governadores (TSE 2022), Violência municipal (ISP-RJ/Atlas).
-5. **Pipeline RAG v7**: Indexação vetorial (Qdrant, 22 chunk types) e geração de dossiês com 7 analistas especialistas + PromptPreparer (14 queries temáticas + RRF).
+5. **Pipeline RAG v7**: Indexação vetorial (Qdrant, 23 chunk types) e geração de dossiês com 7 analistas especialistas + PromptPreparer (15 queries temáticas + RRF).
 6. **Integração LocalAI**: Gerenciamento de modelos locais (Llama 3.2, Gemma, agentes customizados) via API compatível OpenAI — com gerenciamento de VRAM. Alternativa: vLLM local (porta 8001) ou Modal (GPU cloud).
 7. **Visualização & Servidor MCP**:
    - **Plotly Dash**: 74 gráficos analíticos interativos (18 módulos) na porta `8050`.
@@ -113,8 +113,8 @@ tranfere_gov_api/
 │   │   ├── votacoes_camara.py    # Votações da Câmara
 │   │   ├── votacoes_temas.py     # Temas das votações
 │   │   ├── diario_oficial_worker.py # Worker DOU
-│   │   ├── rag_persona.py        # Multi-Query RAG v7 (14 queries + 7 analistas)
-│   │   └── rag_qdrant_indexer.py # Indexador vetorial Qdrant (22 chunk types)
+│   │   ├── rag_persona.py        # Multi-Query RAG v7 (15 queries + 7 analistas)
+│   │   └── rag_qdrant_indexer.py # Indexador vetorial Qdrant (23 chunk types)
 │   │
 │   ├── analysts/                 # RAG v7 — 7 analistas especialistas
 │   │   ├── base.py               # AnalystBase + AnalystResult
@@ -313,7 +313,7 @@ Documentação: [docs/LOCALAI.md](docs/LOCALAI.md)
 
 Sistema de Retrieval-Augmented Generation com Qdrant + LocalAI:
 
-- **Indexação vetorial** via `rag_qdrant_indexer.py` — embeddings `embeddinggemma-300m` (768d), 22 chunk types, checkpoint incremental (`--diff`).
+- **Indexação vetorial** via `rag_qdrant_indexer.py` — embeddings `embeddinggemma-300m` (768d), 23 chunk types, checkpoint incremental (`--diff`).
 - **Multi-Analista** (`rag_persona.py` + `src/analysts/`) — 14 consultas temáticas por deputado (votos, emendas PIX, proposições, discursos, conexões políticas TSE × Emendas, etc.) + RRF, com 7 analistas especialistas (classificador, perfil, temáticas, cruzamento, alinhamento, discursos, anomalias) e PromptPreparer com validação de fidelidade numérica R$.
 - **Diagnóstico**: `./run.sh qdrant-status` e `./run.sh qdrant-staleness`.
 - **Benchmark de modelos** em `scripts/benchmark_models.py` e `scripts/benchmark_vllm_vs_localai.py`.

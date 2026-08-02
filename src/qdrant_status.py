@@ -37,12 +37,17 @@ def main():
         ("prefeito", "Prefeitos"),
         ("vereadores_resumo", "Vereadores"),
         ("demografia_municipio", "Demografia"),
+        ("municipio_financeiro", "SICONFI Municipal"),
+        ("estado_financeiro", "SICONFI Estadual"),
         ("emenda_discricionaria", "Discricionárias"),
         ("discurso_plenario", "Discursos"),
         ("compras_municipio", "Compras"),
         ("indicadores_municipal", "Indic. Municipais"),
         ("fnde_repasses", "FNDE"),
         ("diario_oficial", "Diário Oficial"),
+        ("risco_judicial", "Risco Judicial"),
+        ("senador", "Senadores"),
+        ("parlamentar_alertas", "Alertas"),
     ]
     for ct, label in chunk_types:
         c = qdrant.count(

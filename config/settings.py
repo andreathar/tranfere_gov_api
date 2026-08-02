@@ -275,7 +275,7 @@ EMBEDDING_DIM = 768
 RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m")
 # Fallback: se o modelo principal falhar ou quality check reprovar, tenta este
 RAG_FALLBACK_MODEL = os.getenv("RAG_FALLBACK_MODEL", "llama-3.2-3b-instruct:q4_k_m")
-RAG_PERSONA_VERSION = 7  # v7: 7 analistas especialistas + PromptPreparer, 14 queries tematicas, RRF k=60
+RAG_PERSONA_VERSION = 7  # v7: 7 analistas especialistas + PromptPreparer, 15 queries tematicas, RRF k=60
 RAG_MIN_CHUNKS = 3  # Mínimo de chunks para gerar persona (evitar análises vazias)
 RAG_MAX_CHUNKS = 30  # Máximo de chunks por deputado no contexto final
 RAG_BATCH_SIZE = 50  # Tamanho do batch para embedding em lote

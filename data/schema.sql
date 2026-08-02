@@ -281,6 +281,7 @@ DECLARE
     v_parlamentar_nome TEXT;
     v_emenda_ano INTEGER;
     v_parlamentar_id INTEGER;
+    v_parlamentar_id_derivado INTEGER;
 BEGIN
     -- Upsert objeto
     INSERT INTO objetos (objeto_id, descricao)
@@ -305,7 +306,7 @@ BEGIN
             cnpj = EXCLUDED.cnpj,
             uf = EXCLUDED.uf,
             ente_id = EXCLUDED.ente_id
-        RETURNING id INTO v_beneficiario_pk;
+        RETURNING beneficiario_id INTO v_beneficiario_pk;
     END IF;
 
     -- Extrair campos da emenda (se codigo_emenda_formatado estiver presente)
@@ -317,14 +318,53 @@ BEGIN
             THEN SUBSTRING(v_emenda_codigo FROM 1 FOR 4)::INTEGER
             ELSE NULL
         END;
-        v_parlamentar_id := CASE
+        v_parlamentar_id_derivado := CASE
             WHEN length(v_emenda_codigo) >= 8
             THEN SUBSTRING(v_emenda_codigo FROM 5 FOR 4)::INTEGER
             ELSE NULL
         END;
+        v_parlamentar_id := v_parlamentar_id_derivado;
     END IF;
 
-    -- Upsert plano de ação (agora com emenda_codigo, parlamentar_nome, emenda_ano e parlamentar_id)
+    -- Resolver parlamentar na dimensão ANTES de gravar emendas/planos_acao.
+    -- 1) prioriza NOME existente (mantém o parlamentar_id canônico já referenciado);
+    -- 2) senão adota id derivado já existente (evita violação UNIQUE);
+    -- 3) senão cria novo parlamentar com o id derivado.
+    IF v_parlamentar_nome IS NOT NULL AND v_parlamentar_nome != '' THEN
+        SELECT p.parlamentar_id INTO v_parlamentar_id
+        FROM parlamentares p
+        WHERE p.nome = v_parlamentar_nome
+        LIMIT 1;
+
+        IF v_parlamentar_id IS NULL AND v_parlamentar_id_derivado IS NOT NULL THEN
+            SELECT p.parlamentar_id INTO v_parlamentar_id
+            FROM parlamentares p
+            WHERE p.parlamentar_id = v_parlamentar_id_derivado
+            LIMIT 1;
+        END IF;
+
+        IF v_parlamentar_id IS NULL THEN
+            INSERT INTO parlamentares (nome, parlamentar_id, uf, partido)
+            VALUES (v_parlamentar_nome, v_parlamentar_id_derivado, NULL, NULL)
+            ON CONFLICT (nome) DO UPDATE SET
+                parlamentar_id = parlamentares.parlamentar_id
+            RETURNING parlamentar_id INTO v_parlamentar_id;
+        END IF;
+    END IF;
+
+    -- Upsert emenda na tabela de dimensão (id resolvido)
+    IF v_emenda_codigo IS NOT NULL AND v_emenda_codigo != '' THEN
+        INSERT INTO emendas (emenda_codigo, ano, parlamentar_id)
+        VALUES (v_emenda_codigo, v_emenda_ano, v_parlamentar_id)
+        ON CONFLICT (emenda_codigo) DO UPDATE SET
+            ano = EXCLUDED.ano,
+            parlamentar_id = CASE
+                WHEN EXCLUDED.parlamentar_id IS NOT NULL THEN EXCLUDED.parlamentar_id
+                ELSE emendas.parlamentar_id
+            END;
+    END IF;
+
+    -- Upsert plano de ação (agora com emenda_codigo, parlamentar_nome, emenda_ano e parlamentar_id resolvido)
     INSERT INTO planos_acao (
         plano_acao_id, plano_acao_codigo,
         objeto_id, programa_id, beneficiario_id,
@@ -362,29 +402,6 @@ BEGIN
         data_atualizacao_plano_trabalho = EXCLUDED.data_atualizacao_plano_trabalho,
         extracted_at = NOW()
     RETURNING id INTO v_existing_id;
-
-    -- Upsert parlamentar na tabela de dimensão (se tivermos os dados)
-    IF v_parlamentar_nome IS NOT NULL AND v_parlamentar_nome != '' THEN
-        INSERT INTO parlamentares (nome, parlamentar_id)
-        VALUES (v_parlamentar_nome, v_parlamentar_id)
-        ON CONFLICT (nome) DO UPDATE SET
-            parlamentar_id = CASE
-                WHEN EXCLUDED.parlamentar_id IS NOT NULL THEN EXCLUDED.parlamentar_id
-                ELSE parlamentares.parlamentar_id
-            END;
-    END IF;
-
-    -- Upsert emenda na tabela de dimensão
-    IF v_emenda_codigo IS NOT NULL AND v_emenda_codigo != '' THEN
-        INSERT INTO emendas (emenda_codigo, ano, parlamentar_id)
-        VALUES (v_emenda_codigo, v_emenda_ano, v_parlamentar_id)
-        ON CONFLICT (emenda_codigo) DO UPDATE SET
-            ano = EXCLUDED.ano,
-            parlamentar_id = CASE
-                WHEN EXCLUDED.parlamentar_id IS NOT NULL THEN EXCLUDED.parlamentar_id
-                ELSE emendas.parlamentar_id
-            END;
-    END IF;
 
     RETURN v_existing_id;
 END;

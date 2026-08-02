@@ -160,22 +160,41 @@ def _get_embed_client() -> LocalAIClient:
 
 
 def embed_text_batch(texts: list[str]) -> list[list[float]]:
-    """Gera embeddings em batch via LocalAIClient (1 request para N textos).
+    """Gera embeddings em batch via LocalAIClient.
 
-    Nota: embeddinggemma-300m tem limite de 8192 tokens (~24000 chars PT-BR).
-          Textos maiores sao truncados automaticamente antes do embedding.
+    Resiliencia: trunca textos longos (contexto real do modelo e 2048 tokens,
+    nao 8192) e divide em sub-batches. Se um sub-batch falhar, tenta texto a
+    texto pulando apenas os que falharem — um chunk problemático nao derruba o
+    deputado inteiro (evita checkpoint 'envenenado' sem vetores).
     """
     if not texts:
         return []
-    # Safeguard: truncar textos longos para evitar erro do modelo de embedding
-    MAX_CHARS = 5500
+    # Safeguard: 3000 chars PT-BR ≈ < 1300 tokens, bem abaixo do limite de 2048
+    MAX_CHARS = 3000
+    SUB_BATCH = 64
     texts = [t[:MAX_CHARS] if len(t) > MAX_CHARS else t for t in texts]
     client = _get_embed_client()
-    try:
-        return client.embed(texts)
-    except Exception as e:
-        log.error(f"Erro no batch embedding ({len(texts)} textos): {e}")
-        return []
+    out: list[list[float]] = []
+    for i in range(0, len(texts), SUB_BATCH):
+        sub = texts[i : i + SUB_BATCH]
+        try:
+            emb = client.embed(sub)
+            if not emb or len(emb) != len(sub):
+                raise RuntimeError("resposta de tamanho inesperado")
+            out.extend(emb)
+        except Exception as e:
+            log.error(
+                f"Erro no batch embedding ({len(sub)} textos): {e}; "
+                "tentando texto a texto (pulando os que falharem)..."
+            )
+            for t in sub:
+                try:
+                    one = client.embed([t])
+                    if one:
+                        out.append(one[0])
+                except Exception:
+                    log.warning(f"  embed individual falhou (pulando): {t[:80]!r}")
+    return out
 
 
 def embed_text(text: str) -> list[float] | None:
@@ -318,8 +337,76 @@ def _extract_emendas(cur: Any, deputado_id: int, nome: str) -> list[dict[str, An
     """,
         (deputado_id,),
     )
+    rows = cur.fetchall()
     docs: list[dict[str, Any]] = []
-    for row in cur.fetchall():
+
+    # Resumo por município: TOTAL EXATO das emendas, para o LLM citar o valor
+    # literalmente em vez de somar os itens (causa de alucinacao de soma
+    # detectada pelo taxa_invencao_rs). Prependido para prioridade de retrieval.
+    por_municipio: dict[tuple[str, str], list[float]] = {}
+    for row in rows:
+        municipio, emp_uf, _obj, valor = row[0], row[1], row[2], row[3]
+        if valor is not None:
+            por_municipio.setdefault((municipio, emp_uf), []).append(float(valor))
+    for (municipio, emp_uf), valores in sorted(por_municipio.items()):
+        total = sum(valores)
+        docs.append(
+            {
+                "text": (
+                    f"Resumo das emendas PIX de {nome} para {municipio}-{emp_uf}: "
+                    f"{len(valores)} emenda(s), TOTAL exato R$ {total:,.2f}."
+                    # (sem lista de valores individuais — reduz o risco de o
+                    # LLM fabricar series descendentes de valores falsos)
+                ),
+                "type": "emenda",
+                "deputado_id": deputado_id,
+                "ref": f"Resumo emendas para {municipio}",
+            }
+        )
+
+    # Resumo por OBJETO (área temática): TOTAL EXATO de cada área, para o
+    # analista de temáticas ranquear áreas citando valores literais em vez de
+    # estimar/somar (mesmo approach do resumo por município que consertou o
+    # analista "anomalias").
+    por_objeto: dict[str, list[tuple[str, float]]] = {}
+    for row in rows:
+        municipio, _emp_uf, obj, valor = row[0], row[1], row[2], row[3]
+        if valor is not None:
+            por_objeto.setdefault(obj, []).append((municipio, float(valor)))
+    if por_objeto:
+        partes: list[str] = []
+        for obj, pares in sorted(
+            por_objeto.items(), key=lambda kv: -sum(v for _, v in kv[1])
+        ):
+            # Top municípios por valor (limita o tamanho do chunk: listar todos
+            # pode estourar o contexto de 2048 tokens do embedding -> 500).
+            # O detalhe completo fica nos resumos por município.
+            por_muni: dict[str, float] = {}
+            for m, v in pares:
+                por_muni[m] = por_muni.get(m, 0.0) + v
+            top_munis = ", ".join(
+                m for m, _ in sorted(por_muni.items(), key=lambda kv: -kv[1])[:5]
+            )
+            total_obj = sum(v for _, v in pares)
+            partes.append(
+                f"{obj}: R$ {total_obj:,.2f} ({len(pares)} emenda(s), "
+                f"top municípios: {top_munis})"
+            )
+        total_geral = sum(sum(v for _, v in pares) for pares in por_objeto.values())
+        docs.append(
+            {
+                "text": (
+                    f"Distribuição por área das emendas PIX de {nome}: "
+                    + "; ".join(partes)
+                    + f". TOTAL GERAL exato R$ {total_geral:,.2f}."
+                ),
+                "type": "emenda",
+                "deputado_id": deputado_id,
+                "ref": "Resumo por área (objeto)",
+            }
+        )
+
+    for row in rows:
         municipio, emp_uf, obj, valor, situacao, receita, despesa, divida, pop, idhm = row
         txt = f"Emenda PIX de {nome} para {municipio}-{emp_uf}: R$ {valor:,.2f} — {obj}."
         if situacao:
@@ -910,6 +997,106 @@ def _extract_municipio_financeiro(cur: Any, deputado_id: int, nome: str) -> list
     return docs
 
 
+def _extract_estado_financeiro(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
+    """Chunk: Dados financeiros do GOVERNO ESTADUAL (SICONFI esfera estadual).
+
+    Usa a UF do deputado para puxar os dados do estado em que ele atua:
+    receitas, despesas, resultado orcamentario, divida e arrecadacao propria
+    (ICMS, IPVA, ITCD, IRRF) + transferencias (FPE, FUNDEB, RCL).
+    Fonte: estados_financeiro (enricher estados_financeiro.py).
+    """
+    # UF do deputado
+    cur.execute(
+        "SELECT uf FROM parlamentares_dados WHERE deputado_id = %s",
+        (deputado_id,),
+    )
+    row_uf = cur.fetchone()
+    if not row_uf or not row_uf[0]:
+        return []
+    uf = row_uf[0]
+
+    cur.execute(
+        """
+        SELECT ef.uf, ef.exercicio,
+               ef.receitas_correntes, ef.receitas_capital, ef.receitas_orcamentarias,
+               ef.despesas_correntes, ef.despesas_capital, ef.despesas_totais,
+               ef.resultado_orcamentario, ef.resultado_primario,
+               ef.divida_ativa, ef.divida_passiva, ef.patrimonio_liquido,
+               ef.arrec_icms, ef.arrec_ipva, ef.arrec_itcd, ef.arrec_irrf,
+               ef.arrec_cota_fpe, ef.arrec_fundeb, ef.arrec_impostos_geral,
+               ef.arrec_transferencias, ef.arrec_receitas_correntes, ef.arrec_rcl
+        FROM estados_financeiro ef
+        WHERE ef.uf = %s
+        ORDER BY ef.exercicio DESC
+        LIMIT 1
+        """,
+        (uf,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return []
+
+    (
+        _uf, exerc, rec_corr, rec_cap, rec_orc,
+        desp_corr, desp_cap, desp_tot,
+        res_orc, res_prim,
+        div_ativa, div_pass, patr_liq,
+        icms, ipva, itcd, irrf,
+        fpe, fundeb, imp_geral,
+        transf, rec_corr_rreo, rcl,
+    ) = row
+
+    partes: list[str] = []
+    if rec_corr:
+        partes.append(f"receitas correntes R$ {rec_corr:,.2f}")
+    if rec_cap:
+        partes.append(f"receitas de capital R$ {rec_cap:,.2f}")
+    if desp_tot:
+        partes.append(f"despesas totais R$ {desp_tot:,.2f}")
+    if res_orc is not None:
+        partes.append(f"resultado orçamentário {'superávit' if res_orc > 0 else 'déficit'} R$ {abs(res_orc):,.2f}")
+    if div_pass:
+        partes.append(f"dívida passiva R$ {div_pass:,.2f}")
+    if patr_liq is not None:
+        partes.append(f"patrimônio líquido R$ {patr_liq:,.2f}")
+    if not partes:
+        return []
+
+    txt = (
+        f"Dados financeiros do governo do estado de {uf} (exercício {exerc or '?'}), "
+        f"onde o deputado {nome} atua: {', '.join(partes)}."
+    )
+
+    # Arrecadação própria + transferências (RREO Anexo 03 estadual)
+    fontes: list[str] = []
+    if icms:
+        fontes.append(f"ICMS R$ {icms:,.2f}")
+    if ipva:
+        fontes.append(f"IPVA R$ {ipva:,.2f}")
+    if itcd:
+        fontes.append(f"ITCD R$ {itcd:,.2f}")
+    if irrf:
+        fontes.append(f"IRRF R$ {irrf:,.2f}")
+    if fpe:
+        fontes.append(f"FPE R$ {fpe:,.2f}")
+    if fundeb:
+        fontes.append(f"FUNDEB R$ {fundeb:,.2f}")
+    if rcl:
+        fontes.append(f"receita corrente líquida R$ {rcl:,.2f}")
+    if fontes:
+        txt += f" Arrecadação e transferências: {', '.join(fontes)}."
+
+    docs = [
+        {
+            "text": txt,
+            "type": "estado_financeiro",
+            "deputado_id": deputado_id,
+            "uf": uf,
+        }
+    ]
+    return docs
+
+
 def _extract_parlamentar_resumo(cur: Any, deputado_id: int, nome: str) -> list[dict[str, Any]]:
     """Chunk: Resumo consolidado do deputado (emendas, beneficiários, valores)."""
     cur.execute(
@@ -1269,6 +1456,7 @@ CHUNK_EXTRACTORS: dict[str, str] = {
     "risco_judicial": "_extract_risco_judicial",
     "demografia_municipio": "_extract_demografia_municipio",
     "municipio_financeiro": "_extract_municipio_financeiro",
+    "estado_financeiro": "_extract_estado_financeiro",
     "parlamentar_resumo": "_extract_parlamentar_resumo",
     "beneficiario": "_extract_beneficiarios",
     "prefeito": "_extract_prefeitos",
@@ -1359,12 +1547,25 @@ def _compute_data_hash(cur: Any, deputado_id: int, extractor_name: str) -> str:
         )
         hasher.update(str(cur.fetchone()).encode())
     elif extractor_name == "_extract_emendas":
-        cur.execute(
-            "SELECT COUNT(*), COALESCE(SUM(pa.valor_total)::text, '0') FROM planos_acao pa "
-            "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
-            (deputado_id,),
-        )
-        hasher.update(str(cur.fetchone()).encode())
+        # Hash por CONTEÚDO dos chunks (nao so count/sum): mudancas de formato
+        # (ex: resumo com total exato) sao detectadas pelo --diff. Fallback
+        # para count/sum se o extrator falhar.
+        try:
+            cur.execute(
+                "SELECT nome FROM parlamentares_dados WHERE deputado_id = %s",
+                (deputado_id,),
+            )
+            _row_nome = cur.fetchone()
+            _nome = _row_nome[0] if _row_nome else ""
+            for _d in _extract_emendas(cur, deputado_id, _nome):
+                hasher.update(_d["text"].encode())
+        except Exception:
+            cur.execute(
+                "SELECT COUNT(*), COALESCE(SUM(pa.valor_total)::text, '0') FROM planos_acao pa "
+                "WHERE pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id = %s)",
+                (deputado_id,),
+            )
+            hasher.update(str(cur.fetchone()).encode())
     elif extractor_name == "_extract_votos":
         cur.execute(
             "SELECT COUNT(*), MAX(id) FROM votos_camara WHERE deputado_id = %s",
@@ -1386,6 +1587,7 @@ def _compute_data_hash(cur: Any, deputado_id: int, extractor_name: str) -> str:
         hasher.update(str(cur.fetchone()).encode())
     elif extractor_name in (
         "_extract_municipio_financeiro",
+        "_extract_estado_financeiro",
         "_extract_demografia_municipio",
         "_extract_indicadores_sociais",
         "_extract_compras_municipio",
@@ -1451,7 +1653,7 @@ def get_deputado_texts(
     *,
     chunk_types: list[str] | None = None,
     diff: bool = False,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
     """Extrai chunks de fontes selecionadas para um deputado.
 
     Args:
@@ -1459,7 +1661,13 @@ def get_deputado_texts(
         diff: Se True, pula chunks que nao mudaram desde o ultimo checkpoint.
 
     Returns:
-        Lista de chunks com metadados.
+        Tupla (docs, checkpoints):
+          - docs: lista de chunks extraidos com metadados.
+          - checkpoints: lista de (chunk_type, current_hash) dos tipos cujos
+            dados mudaram e PRECISAM ter o checkpoint salvo. O chamador deve
+            salvar SOMENTE apos o upsert ter sucesso — salvar antes (na
+            extracao) deixa o checkpoint 'envenenado' (marcado como atualizado
+            sem vetores) quando o embedding/upsert falha.
     """
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
@@ -1468,7 +1676,7 @@ def get_deputado_texts(
         )
         row = cur.fetchone()
         if not row:
-            return []
+            return [], []
         nome = row[0]
 
         # Mapear tipos para funcoes extratoras
@@ -1481,8 +1689,10 @@ def get_deputado_texts(
                 extractors.append((tipo, func))
 
         docs: list[dict[str, Any]] = []
+        checkpoints: list[tuple[str, str]] = []
         for chunk_type, extractor in extractors:
             try:
+                current_hash: str | None = None
                 # Modo diff: verificar se dados mudaram
                 if diff:
                     current_hash = _compute_data_hash(cur, deputado_id, extractor.__name__)
@@ -1497,12 +1707,10 @@ def get_deputado_texts(
                 if chunk_docs:
                     docs.extend(chunk_docs)
                     log.debug(f"  {extractor.__name__}: {len(chunk_docs)} chunks")
-
-                    # Salvar checkpoint se modo diff
-                    if diff:
-                        current_hash = _compute_data_hash(cur, deputado_id, extractor.__name__)
-                        if current_hash:
-                            _save_checkpoint(chunk_type, deputado_id, current_hash)
+                    # NAO salvar checkpoint aqui: o chamador (main) salva apos
+                    # o upsert ter sucesso, evitando checkpoint sem vetores.
+                    if diff and current_hash:
+                        checkpoints.append((chunk_type, current_hash))
                 else:
                     log.debug(f"  {extractor.__name__}: 0 chunks")
 
@@ -1512,7 +1720,7 @@ def get_deputado_texts(
                 )
                 # Nao aborta — continua com os proximos extratores
 
-        return docs
+        return docs, checkpoints
 
 
 # ---------------------------------------------------------------------------
@@ -1610,7 +1818,9 @@ def main() -> None:
         nome = dep_row[1]
 
         # Extrair chunks (com resiliencia + diff)
-        docs = get_deputado_texts(deputado_id, chunk_types=tipos_filtro, diff=args.diff)
+        docs, checkpoints = get_deputado_texts(
+            deputado_id, chunk_types=tipos_filtro, diff=args.diff
+        )
         if not docs:
             log.debug(f"  [{idx}/{len(deputados)}] {nome}: sem dados novos, pulando.")
             continue
@@ -1646,6 +1856,20 @@ def main() -> None:
                 batch = points[i : i + batch_size]
                 client.upsert(collection_name=QDRANT_COLLECTION, points=batch)
             total_points += len(points)
+            # Checkpoint SOMENTE apos upsert bem-sucedido. Salvar antes (na
+            # extracao) deixava o checkpoint 'envenenado' (hash 'atual' sem
+            # vetores) quando o embedding/upsert falhava -> o --diff pulava o
+            # deputado para sempre.
+            if checkpoints:
+                try:
+                    with get_connection() as conn, conn.cursor() as cur:
+                        for chunk_type, current_hash in checkpoints:
+                            _save_checkpoint(chunk_type, deputado_id, current_hash)
+                except Exception as e:
+                    log.error(
+                        f"  Erro ao salvar checkpoint de {nome} "
+                        f"(chunk {chunk_type}): {e}"
+                    )
 
         if idx % 10 == 0 or idx == len(deputados):
             log.info(
