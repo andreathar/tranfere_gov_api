@@ -159,7 +159,7 @@ def contar_registros_tabela(cur: Any, tabela: str, deputado_id: int) -> int:
             if tabela == "planos_acao":
                 # Usa parlamentar_id para planos_acao (mais preciso que normalização de nome)
                 cur.execute(
-                    f"""
+                    """
                     SELECT COUNT(*) FROM planos_acao pa
                     JOIN parlamentares p ON pa.parlamentar_id = p.parlamentar_id
                     JOIN parlamentares_dados pd ON (
@@ -198,9 +198,7 @@ def contar_registros_tabela(cur: Any, tabela: str, deputado_id: int) -> int:
                 return 0
             uf = row[0]
             if tabela in ("senadores_dados",):
-                cur.execute(
-                    f"SELECT COUNT(*) FROM {tabela} WHERE uf = %s", (uf,)
-                )
+                cur.execute(f"SELECT COUNT(*) FROM {tabela} WHERE uf = %s", (uf,))
             elif tabela in ("prefeitos_dados", "vereadores_dados"):
                 # Conta via municipios do deputado (usando parlamentar_id)
                 cur.execute(
@@ -271,8 +269,7 @@ def analisar_staleness(
     por_deputado: list[dict[str, Any]] = []
     # Totais por chunk type
     chunk_stats: dict[str, dict[str, int]] = {
-        ct: {"indexado": 0, "ausente": 0, "nunca_visto": 0}
-        for ct, _, _ in CHUNK_TYPES
+        ct: {"indexado": 0, "ausente": 0, "nunca_visto": 0} for ct, _, _ in CHUNK_TYPES
     }
 
     for dep in deputados:
@@ -285,9 +282,7 @@ def analisar_staleness(
             key = (chunk_type, did)
             ckpt = checkpoints.get(key)
             fonte = CHUNK_SOURCE_TABLES.get(chunk_type, "")
-            tem_dados = (
-                contar_registros_tabela(cur, fonte, did) > 0 if fonte else False
-            )
+            tem_dados = contar_registros_tabela(cur, fonte, did) > 0 if fonte else False
 
             if ckpt:
                 indexados += 1
@@ -343,11 +338,7 @@ def analisar_staleness(
 
     # Classificar
     atualizados = [d for d in por_deputado if d["indexados"] == total_chunk_types]
-    parciais = [
-        d
-        for d in por_deputado
-        if 0 < d["indexados"] < total_chunk_types
-    ]
+    parciais = [d for d in por_deputado if 0 < d["indexados"] < total_chunk_types]
     nunca = [d for d in por_deputado if d["indexados"] == 0]
 
     # Chunk types que NUNCA foram indexados para ninguém
@@ -359,10 +350,7 @@ def analisar_staleness(
 
     # Chunk types com maior deficit
     chunk_deficit = sorted(
-        [
-            (ct, label, chunk_stats[ct]["ausente"])
-            for ct, label, _ in CHUNK_TYPES
-        ],
+        [(ct, label, chunk_stats[ct]["ausente"]) for ct, label, _ in CHUNK_TYPES],
         key=lambda x: -x[2],
     )
 
@@ -385,17 +373,13 @@ def analisar_staleness(
             for d in parciais
         ],
         "deputados_nunca": [
-            {"nome": d["nome"], "partido": d["partido"], "uf": d["uf"]}
-            for d in nunca
+            {"nome": d["nome"], "partido": d["partido"], "uf": d["uf"]} for d in nunca
         ],
         "chunk_types_nunca_indexados": [
-            {"tipo": ct, "rotulo": label}
-            for ct, label, _ in chunk_nunca
+            {"tipo": ct, "rotulo": label} for ct, label, _ in chunk_nunca
         ],
         "chunk_types_maior_deficit": [
-            {"tipo": ct, "rotulo": label, "ausentes": n}
-            for ct, label, n in chunk_deficit
-            if n > 0
+            {"tipo": ct, "rotulo": label, "ausentes": n} for ct, label, n in chunk_deficit if n > 0
         ],
         "por_deputado": por_deputado,
     }
@@ -420,12 +404,8 @@ def formatar_tabela(
         f"  ✅ {analise['atualizados']} deputados — totalmente atualizados "
         f"({analise['total_chunk_types']}/{analise['total_chunk_types']} chunk types)"
     )
-    linhas.append(
-        f"  ⚠️  {analise['parciais']} deputados — parcialmente indexados"
-    )
-    linhas.append(
-        f"  ❌ {analise['nunca_indexados']} deputados — nunca indexados"
-    )
+    linhas.append(f"  ⚠️  {analise['parciais']} deputados — parcialmente indexados")
+    linhas.append(f"  ❌ {analise['nunca_indexados']} deputados — nunca indexados")
 
     chunk_nunca = analise["chunk_types_nunca_indexados"]
     if chunk_nunca:
@@ -441,9 +421,7 @@ def formatar_tabela(
         for nome in analise["deputados_atualizados"][:10]:
             linhas.append(f"    {nome}")
         if len(analise["deputados_atualizados"]) > 10:
-            linhas.append(
-                f"    ... e mais {len(analise['deputados_atualizados']) - 10}"
-            )
+            linhas.append(f"    ... e mais {len(analise['deputados_atualizados']) - 10}")
 
     # Deputados parciais
     parciais = analise["deputados_parciais"]
@@ -480,32 +458,18 @@ def formatar_tabela(
         linhas.append(f"  {'Tipo':30s} {'Ausentes':>10s}")
         linhas.append(f"  {'-'*30} {'-'*10}")
         for item in deficit[:10]:
-            linhas.append(
-                f"  {item['tipo']:30s} {item['ausentes']:>3d} deputados"
-            )
+            linhas.append(f"  {item['tipo']:30s} {item['ausentes']:>3d} deputados")
 
     # Recomendações
     linhas.append("")
     linhas.append("Recomendações:")
     if analise["nunca_indexados"] > 0 or analise["parciais"] > 0:
-        linhas.append(
-            "  • ./run.sh cron-qdrant --diff "
-            "(indexação incremental com checkpoint)"
-        )
-        linhas.append(
-            "  • ./run.sh cron-qdrant --rebuild "
-            "(reindexar completo do zero)"
-        )
+        linhas.append("  • ./run.sh cron-qdrant --diff " "(indexação incremental com checkpoint)")
+        linhas.append("  • ./run.sh cron-qdrant --rebuild " "(reindexar completo do zero)")
     if chunk_nunca:
-        tipos_str = ", ".join(
-            c["tipo"] for c in chunk_nunca[:5]
-        )
-        linhas.append(
-            f"  • chunk types sem dados fonte: {tipos_str}"
-        )
-        linhas.append(
-            "    → Verificar se os pipelines de enriquecimento rodaram"
-        )
+        tipos_str = ", ".join(c["tipo"] for c in chunk_nunca[:5])
+        linhas.append(f"  • chunk types sem dados fonte: {tipos_str}")
+        linhas.append("    → Verificar se os pipelines de enriquecimento rodaram")
     linhas.append("  • ./run.sh cron-dossie --lote 50 (gerar dossiês)")
     linhas.append("")
 
@@ -513,9 +477,7 @@ def formatar_tabela(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Summary de Staleness do Qdrant"
-    )
+    parser = argparse.ArgumentParser(description="Summary de Staleness do Qdrant")
     parser.add_argument(
         "--json",
         action="store_true",

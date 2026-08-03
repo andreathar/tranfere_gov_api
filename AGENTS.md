@@ -97,6 +97,7 @@ psql -U cognee -h 127.0.0.1 -d transferegov_db
 
 - **Language**: PT-BR (comentários, logs, CLI)
 - **Style**: ruff (line-length 99, target py311) / mypy strict / pytest
+- **Python**: usar SEMPRE `.venv/bin/python` (ex: `.venv/bin/python -m pytest`, `.venv/bin/python -m mypy src/`) — o `python3` do shell pode ser shim pyenv sem pytest/mypy
 - **Config**: `config/settings.py` — importar via `from config.settings import X`, NUNCA hardcodar paths
 - **Paths**: usar `config.settings.OUTPUT_*` para saídas
 - **DB**: `upsert_plano_acao()` para import idempotente

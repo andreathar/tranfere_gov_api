@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 023: parlamentar_id em parlamentar_discursos
+-- TransfereGov — Migration 034: parlamentar_id em parlamentar_discursos
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-30
@@ -22,7 +22,7 @@ BEGIN;
 
 -- ============================================================================
 -- 1. Adicionar coluna parlamentar_id (sem FK — mesma abordagem de
---    emendas_discricionarias na migration_018)
+--    emendas_discricionarias na migration_032)
 -- ============================================================================
 
 ALTER TABLE parlamentar_discursos

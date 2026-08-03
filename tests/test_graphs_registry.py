@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import plotly.graph_objects as go
 
 from src.graphs.registry import CHART_REGISTRY, ChartSpec, register_chart
-
 
 # ---------------------------------------------------------------------------
 # register_chart decorator

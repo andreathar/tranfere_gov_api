@@ -1,4 +1,4 @@
--- migration_027: resolve parlamentar_id canonico (por NOME) antes de gravar
+-- migration_039: resolve parlamentar_id canonico (por NOME) antes de gravar
 -- planos_acao/emendas no upsert_plano_acao.
 --
 -- Motivo: o id derivado do codigo da emenda (digitos 5-8, ex: 202230610003 -> 3061)
@@ -12,7 +12,7 @@
 --   3. senao cria novo parlamentar com o id derivado.
 -- Depois grava emendas e planos_acao com o id RESOLVIDO, mantendo o JOIN do RAG
 -- (pa.parlamentar_id IN (SELECT parlamentar_id FROM parlamentares_dados WHERE deputado_id=...)).
--- Mantem a correcao da migration_026 (RETURNING beneficiario_id).
+-- Mantem a correcao da migration_037 (RETURNING beneficiario_id).
 
 CREATE OR REPLACE FUNCTION public.upsert_plano_acao(p_plano_acao_id integer, p_plano_acao_codigo text, p_objeto_id integer, p_objeto_descricao text, p_programa_id integer, p_programa_codigo text, p_beneficiario_id integer, p_beneficiario_nome text, p_beneficiario_cnpj text, p_uf text, p_ente_id integer, p_plano_acao_situacao text, p_plano_trabalho_situacao text, p_codigo_emenda_formatado text, p_valor_custeio numeric, p_valor_investimento numeric, p_valor_total numeric, p_politicas_publicas text, p_motivo_impedimento text, p_numero_parceria text, p_data_atualizacao_plano text, p_data_atualizacao_trabalho text)
  RETURNS integer

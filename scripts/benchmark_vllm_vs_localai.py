@@ -24,15 +24,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import subprocess
 import sys
 import textwrap
 import time
-from collections.abc import Iterator
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
 
 import httpx
 
@@ -40,10 +36,9 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.settings import (
-    LOCALAI_BASE_URL,
     LOCAL_VLLM_BASE_URL,
-    LOCAL_VLLM_FORK_DIR,
     LOCAL_VLLM_MODEL_MAP,
+    LOCALAI_BASE_URL,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,7 +61,9 @@ PROMPTS = [
     "O que é o TSE e como seus dados podem ser usados para análise política?",
 ]
 
-SYSTEM_PROMPT = "Você é um analista de dados governamentais brasileiros. Responda de forma técnica e objetiva."
+SYSTEM_PROMPT = (
+    "Você é um analista de dados governamentais brasileiros. Responda de forma técnica e objetiva."
+)
 
 
 # ------------------------------------------------------------------
@@ -144,13 +141,18 @@ def run_benchmark(
     results: list[BenchResult] = []
 
     # Warmup
-    for i in range(n_warmup):
+    for _ in range(n_warmup):
         try:
             messages = [{"role": "user", "content": "Teste de warmup."}]
             with httpx.Client(timeout=120) as client:
                 client.post(
                     url,
-                    json={"model": model, "messages": messages, "max_tokens": 16, "temperature": 0},
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "max_tokens": 16,
+                        "temperature": 0,
+                    },
                 )
         except Exception:
             pass
@@ -175,24 +177,26 @@ def run_benchmark(
         response_chars: list[str] = []
 
         try:
-            with httpx.Client(timeout=300) as client:
-                with client.stream("POST", url, json=payload) as resp:
-                    resp.raise_for_status()
-                    for line in resp.iter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            delta = chunk["choices"][0].get("delta", {})
-                            if "content" in delta:
-                                if first_token is None:
-                                    first_token = time.monotonic()
-                                response_chars.append(delta["content"])
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            pass
+            with (
+                httpx.Client(timeout=300) as client,
+                client.stream("POST", url, json=payload) as resp,
+            ):
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = chunk["choices"][0].get("delta", {})
+                        if "content" in delta:
+                            if first_token is None:
+                                first_token = time.monotonic()
+                            response_chars.append(delta["content"])
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        pass
 
             elapsed = time.monotonic() - start
             response_text = "".join(response_chars)
@@ -302,7 +306,9 @@ def main():
               %(prog)s --list-models
         """),
     )
-    parser.add_argument("--model", default="llama-3.2-3b", help="Nome do modelo (default: llama-3.2-3b)")
+    parser.add_argument(
+        "--model", default="llama-3.2-3b", help="Nome do modelo (default: llama-3.2-3b)"
+    )
     parser.add_argument("--only", choices=["localai", "vllm"], help="Testar apenas um engine")
     parser.add_argument("--prompts", type=int, default=10, help="Número de prompts (default: 10)")
     parser.add_argument("--max-tokens", type=int, default=512, help="Max tokens por resposta")
@@ -378,19 +384,21 @@ def main():
     if len(summaries) == 2:
         s1, s2 = summaries
         ratio_lat = s2.avg_latency_ms / s1.avg_latency_ms if s1.avg_latency_ms > 0 else 0
-        ratio_tput = s2.avg_throughput_tok_s / s1.avg_throughput_tok_s if s1.avg_throughput_tok_s > 0 else 0
+        ratio_tput = (
+            s2.avg_throughput_tok_s / s1.avg_throughput_tok_s if s1.avg_throughput_tok_s > 0 else 0
+        )
         faster_lat = "vLLM" if ratio_lat < 1 else "LocalAI"
         faster_tput = "vLLM" if ratio_tput > 1 else "LocalAI"
 
         print(f"\n{'='*60}")
-        print(f"  COMPARAÇÃO: LocalAI vs vLLM")
+        print("  COMPARAÇÃO: LocalAI vs vLLM")
         print(f"{'='*60}")
         print(f"  Latência:     {faster_lat} é {max(ratio_lat, 1/ratio_lat):.1f}x mais rápido")
         print(f"  Throughput:   {faster_tput} é {max(ratio_tput, 1/ratio_tput):.1f}x maior")
-        print(f"  First-token:")
+        print("  First-token:")
         print(f"    LocalAI:    {s1.avg_first_token_ms:.0f} ms")
         print(f"    vLLM:       {s2.avg_first_token_ms:.0f} ms")
-        print(f"  Throughput médio:")
+        print("  Throughput médio:")
         print(f"    LocalAI:    {s1.avg_throughput_tok_s:.1f} tok/s")
         print(f"    vLLM:       {s2.avg_throughput_tok_s:.1f} tok/s")
         print()

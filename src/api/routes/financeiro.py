@@ -24,9 +24,7 @@ async def financeiro_estado(uf: str):
     """Detalhe financeiro de um estado (tabela estadual ou soma municipal)."""
     dados = db_service.get_financeiro_estado(uf.upper())
     if not dados:
-        raise HTTPException(
-            status_code=404, detail=f"Sem dados financeiros para UF: {uf.upper()}"
-        )
+        raise HTTPException(status_code=404, detail=f"Sem dados financeiros para UF: {uf.upper()}")
     return dados
 
 

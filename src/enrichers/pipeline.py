@@ -167,7 +167,12 @@ def main():
     parser.add_argument("--fase", default="all", help="Fase a executar: 1-9 ou all")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="Limitar N items por fase")
-    parser.add_argument("--ano", type=int, default=2026, help="Ano para compras públicas (fase 5) e discursos (fase 9)")
+    parser.add_argument(
+        "--ano",
+        type=int,
+        default=2026,
+        help="Ano para compras públicas (fase 5) e discursos (fase 9)",
+    )
     args = parser.parse_args()
 
     inicio = time.time()

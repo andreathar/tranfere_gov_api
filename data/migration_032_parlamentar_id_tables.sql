@@ -1,4 +1,4 @@
--- migration_018_parlamentar_id_tables.sql
+-- migration_032_parlamentar_id_tables.sql
 -- Adiciona parlamentar_id às tabelas que ainda não possuem a coluna
 -- Permite JOIN exato por ID em vez de nome nas views e queries
 

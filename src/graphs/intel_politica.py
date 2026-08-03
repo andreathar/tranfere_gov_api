@@ -59,24 +59,14 @@ def chart_dinastias_politicas_emendas(uf_filter: str = "TODAS") -> go.Figure:
             altura=550,
         )
 
-    df["hover_info"] = (
-        "<b>Deputado:</b> "
-        + df["deputado_nome"]
-        + " ("
-        + df["partido_deputado"]
-        + ")<br>"
-        + "<b>Prefeito:</b> "
-        + df["prefeito_nome"]
-        + " ("
-        + df["partido_prefeito"]
-        + ")<br>"
-        + "<b>Município:</b> "
-        + df["municipio_nome"]
-        + " - "
-        + df["uf"]
-        + "<br>"
-        + "<b>Sobrenome:</b> "
-        + df["sobrenome_comum"]
+    df["hover_info"] = df.apply(
+        lambda r: (
+            f"<b>Deputado:</b> {r['deputado_nome']} ({r['partido_deputado']})<br>"
+            f"<b>Prefeito:</b> {r['prefeito_nome']} ({r['partido_prefeito']})<br>"
+            f"<b>Município:</b> {r['municipio_nome']} - {r['uf']}<br>"
+            f"<b>Sobrenome:</b> {r['sobrenome_comum']}"
+        ),
+        axis=1,
     )
 
     fig = px.bar(

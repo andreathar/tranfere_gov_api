@@ -34,9 +34,7 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
     cur.execute(query_deps)
     deputados = cur.fetchall()
 
-    log.info(
-        f"Iniciando extração de discursos de {ano} para {len(deputados)} deputados..."
-    )
+    log.info(f"Iniciando extração de discursos de {ano} para {len(deputados)} deputados...")
 
     data_inicio = f"{ano}-01-01"
     data_fim = f"{ano}-12-31"
@@ -50,7 +48,7 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
         erros_dep = 0
 
         while True:
-            params = {
+            params: dict[str, str | int] = {
                 "dataInicio": data_inicio,
                 "dataFim": data_fim,
                 "itens": ITENS_POR_PAGINA,
@@ -60,9 +58,7 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
             }
 
             try:
-                resp = requests.get(
-                    BASE_URL.format(deputado_id), params=params, timeout=15
-                )
+                resp = requests.get(BASE_URL.format(deputado_id), params=params, timeout=15)
                 resp.raise_for_status()
                 dados = resp.json().get("dados", [])
 
@@ -109,14 +105,10 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
 
             except Exception as e:
                 erros_dep += 1
-                log.error(
-                    f"Erro página {pagina} de {nome} (ID {deputado_id}): {e}"
-                )
+                log.error(f"Erro página {pagina} de {nome} (ID {deputado_id}): {e}")
                 conn.rollback()
                 if erros_dep >= 3:
-                    log.warning(
-                        f"Desistindo de {nome} após {erros_dep} erros consecutivos"
-                    )
+                    log.warning(f"Desistindo de {nome} após {erros_dep} erros consecutivos")
                     break
                 time.sleep(2)  # espera extra antes de retentar
                 continue
@@ -138,7 +130,11 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
         f"Extração de {ano} concluída. "
         f"Total de discursos novos inseridos: {total_inseridos} "
         f"em {len(deputados)} deputados"
-        + (f" ({total_deputados_com_erro} com falhas parciais)." if total_deputados_com_erro else ".")
+        + (
+            f" ({total_deputados_com_erro} com falhas parciais)."
+            if total_deputados_com_erro
+            else "."
+        )
     )
 
     # Registra no extract_log
@@ -156,7 +152,9 @@ def extract_discursos(ano: int = 2026, limit: int | None = None):
                 datetime.now(UTC),
                 "camara_discursos",
                 f"Discursos Câmara {ano}: {total_inseridos} novos, {len(deputados)} deputados processados"
-                + (f" ({total_deputados_com_erro} com falhas)" if total_deputados_com_erro else ""),
+                + (
+                    f" ({total_deputados_com_erro} com falhas)" if total_deputados_com_erro else ""
+                ),
             ),
         )
         conn.commit()
@@ -198,11 +196,11 @@ if __name__ == "__main__":
         description="Extrai discursos da Câmara dos Deputados via API Dados Abertos"
     )
     parser.add_argument("--ano", type=int, default=2026, help="Ano dos discursos (ex: 2026)")
+    parser.add_argument("--limit", type=int, help="Limita número de deputados (para teste)")
     parser.add_argument(
-        "--limit", type=int, help="Limita número de deputados (para teste)"
-    )
-    parser.add_argument(
-        "--resumo", action="store_true", help="Apenas consulta quantos discursos já existem no banco"
+        "--resumo",
+        action="store_true",
+        help="Apenas consulta quantos discursos já existem no banco",
     )
     args = parser.parse_args()
 

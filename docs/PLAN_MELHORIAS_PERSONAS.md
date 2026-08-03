@@ -1,7 +1,7 @@
 # Plano de Melhorias — Eficiência e Qualidade das Personas Dossiê IA
 
-**Data**: 27/07/2026  
-**Escopo**: Otimização do pipeline RAG v3 para geração de personas analíticas de deputados  
+**Data**: 27/07/2026
+**Escopo**: Otimização do pipeline RAG v3 para geração de personas analíticas de deputados
 **Arquivos impactados**: `rag_persona.py`, `rag_qdrant_indexer.py`, `config/settings.py`
 
 ---
@@ -22,8 +22,8 @@ O sistema atual gera personas via 5 consultas temáticas no Qdrant → prompt ad
 
 **Solução**: Retornar `context_list` de `generate_persona_analysis()` e reutilizar no save.
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Baixo (~30 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Baixo (~30 linhas)
 **Impacto**: -50% chamadas Qdrant por deputado
 
 ```
@@ -45,8 +45,8 @@ _save_persona(conn, deputado_id, persona_text, context_list)  # REUTILIZA
 
 **Solução**: Criar client uma vez, passar como parâmetro.
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Baixo (~20 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Baixo (~20 linhas)
 **Impacto**: Eliminar overhead de conexão
 
 ### 1.3 Batch de Embeddings das Queries (Alto)
@@ -55,8 +55,8 @@ _save_persona(conn, deputado_id, persona_text, context_list)  # REUTILIZA
 
 **Solução**: Chamar `embed_text_batch(QUERIES_TEMATICAS)` uma vez, iterar resultados.
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Baixo (~15 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Baixo (~15 linhas)
 **Impacto**: -80% latência de embedding na recuperação
 
 ### 1.4 Mover ensure_model_loaded() Para Fora do Loop (Médio)
@@ -65,8 +65,8 @@ _save_persona(conn, deputado_id, persona_text, context_list)  # REUTILIZA
 
 **Solução**: Chamar uma vez antes do loop multi-query.
 
-**Arquivo**: `src/enrichers/rag_persona.py` + `src/localai_manager.py`  
-**Esforço**: Baixo (~10 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py` + `src/localai_manager.py`
+**Esforço**: Baixo (~10 linhas)
 **Impacto**: -5 varreduras de GPU por deputado
 
 ### 1.5 Processamento Paralelo em Batch (Médio)
@@ -75,8 +75,8 @@ _save_persona(conn, deputado_id, persona_text, context_list)  # REUTILIZA
 
 **Solução**: Usar `concurrent.futures.ThreadPoolExecutor` com workers limitados (2-3 para não estourar VRAM).
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Médio (~60 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Médio (~60 linhas)
 **Impacto**: 2-3x throughput em batch
 
 ### 1.6 Usar RAG_BATCH_SIZE Definido (Baixo)
@@ -85,8 +85,8 @@ _save_persona(conn, deputado_id, persona_text, context_list)  # REUTILIZA
 
 **Solução**: Implementar chunking no `embed_text_batch()` do indexer.
 
-**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`  
-**Esforço**: Baixo (~15 linhas)  
+**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`
+**Esforço**: Baixo (~15 linhas)
 **Impacto**: Prevenir estouro de memória em deputados com muitos chunks
 
 ---
@@ -109,8 +109,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
     return sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 ```
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Médio (~40 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Médio (~40 linhas)
 **Impacto**: Chunks mais relevantes no prompt = personas mais precisas
 
 ### 2.2 Deduplicação Robusta (Alto)
@@ -119,8 +119,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 **Solução**: Hash MD5 do texto completo + normalização (lowercase, strip whitespace).
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Baixo (~15 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Baixo (~15 linhas)
 **Impacto**: Eliminar falsos positivos na dedup
 
 ### 2.3 Incluir Tema da Votação no Chunk (Alto)
@@ -129,8 +129,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 **Solução**: Adicionar `tema` ao texto do chunk de voto.
 
-**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`  
-**Esforço**: Baixo (~5 linhas)  
+**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`
+**Esforço**: Baixo (~5 linhas)
 **Impacto**: LLM pode analisar padrões temáticos de votação
 
 ### 2.4 Validar Tamanho do Prompt (Médio)
@@ -139,8 +139,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 **Solução**: Estimar tokens antes de enviar; truncar chunks ou reduzir `RAG_MAX_CHUNKS` se necessário.
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Médio (~30 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Médio (~30 linhas)
 **Impacto**: Prevenir respostas truncadas ou erros silenciosos
 
 ### 2.5 Corrigir Ano Hardcoded em Votos (Médio)
@@ -149,8 +149,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 **Solução**: Usar `EXTRACT(YEAR FROM data_votacao)` e incluir ano real no texto.
 
-**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`  
-**Esforço**: Baixo (~5 linhas)  
+**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`
+**Esforço**: Baixo (~5 linhas)
 **Impacto**: Precisão temporal nos dados de votação
 
 ### 2.6 Melhorar Match por Nome (Médio)
@@ -159,8 +159,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 **Solução**: Normalizar nomes (lowercase, remover acentos, trim) e usar `unaccent()` do PostgreSQL.
 
-**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`  
-**Esforço**: Médio (~20 linhas)  
+**Arquivo**: `src/enrichers/rag_qdrant_indexer.py`
+**Esforço**: Médio (~20 linhas)
 **Impacto**: Mais emendas/conexões vinculadas corretamente
 
 ### 2.7 Loop de Feedback de Qualidade (Baixo)
@@ -172,8 +172,8 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 2. Detectar se dados disponíveis foram ignorados
 3. Flag `qualidade_check` na tabela `parlamentares_personas`
 
-**Arquivo**: `src/enrichers/rag_persona.py`  
-**Esforço**: Médio (~40 linhas)  
+**Arquivo**: `src/enrichers/rag_persona.py`
+**Esforço**: Médio (~40 linhas)
 **Impacto**: Identificar personas de baixa qualidade para regeneração
 
 ---
@@ -182,56 +182,56 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 ### 3.1 Indexar Tema das Votações (Fácil)
 
-**Dados já existem**: `votacoes_camara.tema` preenchido por `votacoes_temas.py`  
-**Mudança**: Adicionar `tema` ao texto do chunk em `_extract_votos()`  
+**Dados já existem**: `votacoes_camara.tema` preenchido por `votacoes_temas.py`
+**Mudança**: Adicionar `tema` ao texto do chunk em `_extract_votos()`
 **Impacto**: LLM pode analisar "votou contra pauta de saúde X vezes"
 
 ### 3.2 Indexar Emendas Discricionárias (Fácil)
 
-**Dados já existem**: Tabela `emendas_discricionarias` preenchida por `discricionarias_sync.py`  
-**Mudança**: Novo chunk type `emenda_discricionaria` no indexer + query temática correspondente  
+**Dados já existem**: Tabela `emendas_discricionarias` preenchida por `discricionarias_sync.py`
+**Mudança**: Novo chunk type `emenda_discricionaria` no indexer + query temática correspondente
 **Impacto**: Visão completa de emendas (PIX + discricionárias)
 
 ### 3.3 Enriquecer Emendas com Dados de Compras (Médio)
 
-**Dados já existem**: Tabela `compras_municipios` preenchida por `compras.py`  
-**Mudança**: JOIN em `_extract_emendas()` para adicionar padrões de compras públicas  
+**Dados já existem**: Tabela `compras_municipios` preenchida por `compras.py`
+**Mudança**: JOIN em `_extract_emendas()` para adicionar padrões de compras públicas
 **Impacto**: "Município recebeu R$2M mas tem zero compras registradas — suspeito"
 
 ### 3.4 Enriquecer Emendas com Indicadores Sociais (Médio)
 
-**Dados já existem**: `saude_municipios`, `educacao_municipios` preenchidos por `saude_educacao.py`  
-**Mudança**: JOIN em `_extract_emendas()` para adicionar indicadores de saúde/educação  
+**Dados já existem**: `saude_municipios`, `educacao_municipios` preenchidos por `saude_educacao.py`
+**Mudança**: JOIN em `_extract_emendas()` para adicionar indicadores de saúde/educação
 **Impacto**: "Emenda para saúde mas município tem 0 médicos/1000 hab"
 
 ### 3.5 Usar v_triangulo_politico para Conexões (Médio)
 
-**Dados já existem**: View `v_triangulo_politico` (migration 015)  
-**Mudança**: Substituir query atual de `_extract_prefeitos_aliados()` pela view  
+**Dados já existem**: View `v_triangulo_politico` (migration 015)
+**Mudança**: Substituir query atual de `_extract_prefeitos_aliados()` pela view
 **Impacto**: Análise completa Deputado→Prefeito→Vereadores com alinhamento partidário
 
 ### 3.6 Indexar Processos Judiciais (Médio)
 
-**Dados já existem**: Tabela `beneficiario_processos` preenchida por `datajud.py`  
-**Mudança**: Novo chunk type `risco_judicial` no indexer  
+**Dados já existem**: Tabela `beneficiario_processos` preenchida por `datajud.py`
+**Mudança**: Novo chunk type `risco_judicial` no indexer
 **Impacto**: Sinal de risco para municípios com processos ativos
 
 ### 3.7 Adicionar Dados Demográficos (Médio)
 
-**Dados já existem**: `municipios_ibge` com pop, PIB, IDHM (fase 1b/1d)  
-**Mudança**: JOIN em `_extract_emendas()` para enriquecer contexto municipal  
+**Dados já existem**: `municipios_ibge` com pop, PIB, IDHM (fase 1b/1d)
+**Mudança**: JOIN em `_extract_emendas()` para enriquecer contexto municipal
 **Impacto**: "Emenda de R$500K para município de 5K habitantes = R$100/capita"
 
 ### 3.8 Adicionar Repasses FNDE (Médio)
 
-**Dados já existem**: Tabela `fnde_repasses` preenchida por `fnde.py`  
-**Mudança**: JOIN em `_extract_emendas()` para municípios que também recebem FNDE  
+**Dados já existem**: Tabela `fnde_repasses` preenchida por `fnde.py`
+**Mudança**: JOIN em `_extract_emendas()` para municípios que também recebem FNDE
 **Impacto**: Cruzamento educação + emendas parlamentares
 
 ### 3.9 Estender Janela do Diário Oficial (Difícil)
 
-**Problema**: Busca apenas últimos 30 dias  
-**Solução**: Backfill histórico + expandir para 90 dias  
+**Problema**: Busca apenas últimos 30 dias
+**Solução**: Backfill histórico + expandir para 90 dias
 **Impacto**: Mais atos do DOU por deputado, histórico temporal
 
 ---
@@ -240,22 +240,22 @@ def rrf_fusion(results_per_query: list[list], k: int = 60) -> list:
 
 ### 4.1 Refatorar Conexões (Médio)
 
-**Problema**: Conexões PostgreSQL gerenciadas inconsistently (context manager vs manual).  
+**Problema**: Conexões PostgreSQL gerenciadas inconsistently (context manager vs manual).
 **Solução**: Padronizar uso de `with get_connection() as conn:` em todas as funções.
 
 ### 4.2 Configuração Externa das Queries (Baixo)
 
-**Problema**: 5 queries temáticas hardcoded.  
+**Problema**: 5 queries temáticas hardcoded.
 **Solução**: Mover para `config/settings.py` ou arquivo YAML.
 
 ### 4.3 Métricas de Performance (Baixo)
 
-**Problema**: Sem telemetria de latência por etapa.  
+**Problema**: Sem telemetria de latência por etapa.
 **Solução**: Adicionar timing em cada fase (embed, search, build_prompt, generate).
 
 ### 4.4 Versionamento de Prompt (Baixo)
 
-**Problema**: `RAG_PERSONA_VERSION=3` manual.  
+**Problema**: `RAG_PERSONA_VERSION=3` manual.
 **Solução**: Auto-incrementar baseado em mudanças no template.
 
 ---

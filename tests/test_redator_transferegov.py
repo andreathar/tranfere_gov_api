@@ -7,9 +7,7 @@ Uses mocks for DB-dependent functions.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, PropertyMock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from src.redator_transferegov import (
     FECHOS,
@@ -19,8 +17,8 @@ from src.redator_transferegov import (
     consultar_pronome_tratamento,
     formatar_data_extenso,
     gerar_despacho,
-    gerar_numeracao,
     gerar_nota_tecnica,
+    gerar_numeracao,
     gerar_oficio,
     gerar_parecer,
     obter_fecho,
@@ -114,7 +112,7 @@ class TestGerarNumeracao:
 
     def test_without_setor(self):
         result = gerar_numeracao("oficio", 1)
-        assert result == "OFÍCIO Nº 1/2026" or result == f"OFÍCIO Nº 1/2026"
+        assert result == "OFÍCIO Nº 1/2026" or result == "OFÍCIO Nº 1/2026"
 
     def test_default_ano_is_current(self):
         """Without ano, should use current year."""
@@ -238,11 +236,7 @@ class TestValidarDocumento:
     """Tests for validar_documento — validação de conformidade MRPR 3ª ed."""
 
     def test_valid_texto_returns_empty(self):
-        texto = (
-            "Senhor Governador,\n\n"
-            "Brasília, 15 de julho de 2026.\n\n"
-            "Atenciosamente,\n"
-        )
+        texto = "Senhor Governador,\n\n" "Brasília, 15 de julho de 2026.\n\n" "Atenciosamente,\n"
         problemas = validar_documento(texto, "oficio")
         assert problemas == []
 
@@ -573,18 +567,20 @@ class TestGerarNotaTecnica:
 
         import pandas as pd
 
-        planos_df = pd.DataFrame([
-            {
-                "plano_acao_codigo": "2026000001",
-                "objeto_descricao": "Cemitérios",
-                "beneficiario_nome": "Município X",
-                "uf": "AL",
-                "plano_acao_situacao": "IMPEDIDO",
-                "valor_total": 150000.0,
-                "emenda_codigo": "11228",
-                "motivo_impedimento": "Restrição Técnica",
-            }
-        ])
+        planos_df = pd.DataFrame(
+            [
+                {
+                    "plano_acao_codigo": "2026000001",
+                    "objeto_descricao": "Cemitérios",
+                    "beneficiario_nome": "Município X",
+                    "uf": "AL",
+                    "plano_acao_situacao": "IMPEDIDO",
+                    "valor_total": 150000.0,
+                    "emenda_codigo": "11228",
+                    "motivo_impedimento": "Restrição Técnica",
+                }
+            ]
+        )
         mock_query_df.return_value = planos_df
 
         texto = gerar_nota_tecnica(parlamentar="DEPUTADO TESTE", ano=2026)
@@ -636,7 +632,9 @@ class TestParseArgs:
     """Tests for CLI argument parsing."""
 
     def test_nota_tecnica_command(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", ["prog", "nota-tecnica", "--parlamentar", "TESTE", "--ano", "2026"])
+        monkeypatch.setattr(
+            "sys.argv", ["prog", "nota-tecnica", "--parlamentar", "TESTE", "--ano", "2026"]
+        )
         from src.redator_transferegov import parse_args
 
         args = parse_args()
@@ -645,13 +643,21 @@ class TestParseArgs:
         assert args.ano == 2026
 
     def test_oficio_command(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", [
-            "prog", "oficio",
-            "--dest", "Governador",
-            "--cargo", "Governador do Estado",
-            "--assunto", "Relatório",
-            "--corpo", "Segue o relatório.",
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "prog",
+                "oficio",
+                "--dest",
+                "Governador",
+                "--cargo",
+                "Governador do Estado",
+                "--assunto",
+                "Relatório",
+                "--corpo",
+                "Segue o relatório.",
+            ],
+        )
         from src.redator_transferegov import parse_args
 
         args = parse_args()
@@ -660,11 +666,17 @@ class TestParseArgs:
         assert args.cargo == "Governador do Estado"
 
     def test_parecer_command(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", [
-            "prog", "parecer",
-            "--processo", "001/2026",
-            "--consulta", "Análise jurídica",
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "prog",
+                "parecer",
+                "--processo",
+                "001/2026",
+                "--consulta",
+                "Análise jurídica",
+            ],
+        )
         from src.redator_transferegov import parse_args
 
         args = parse_args()
@@ -672,11 +684,17 @@ class TestParseArgs:
         assert args.processo == "001/2026"
 
     def test_despacho_command(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", [
-            "prog", "despacho",
-            "--assunto", "Encaminhamento",
-            "--texto", "Encaminho os documentos.",
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "prog",
+                "despacho",
+                "--assunto",
+                "Encaminhamento",
+                "--texto",
+                "Encaminho os documentos.",
+            ],
+        )
         from src.redator_transferegov import parse_args
 
         args = parse_args()
@@ -691,11 +709,17 @@ class TestParseArgs:
         assert args.comando == "listar-tipos"
 
     def test_validar_command(self, monkeypatch):
-        monkeypatch.setattr("sys.argv", [
-            "prog", "validar",
-            "--arquivo", "/tmp/teste.txt",
-            "--tipo", "oficio",
-        ])
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "prog",
+                "validar",
+                "--arquivo",
+                "/tmp/teste.txt",
+                "--tipo",
+                "oficio",
+            ],
+        )
         from src.redator_transferegov import parse_args
 
         args = parse_args()

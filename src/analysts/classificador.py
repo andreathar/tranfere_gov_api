@@ -71,16 +71,12 @@ FORMATO DE SAÍDA (Markdown):
         import unicodedata
 
         normalized = (
-            unicodedata.normalize("NFKD", output)
-            .encode("ascii", "ignore")
-            .decode("ascii")
-            .upper()
+            unicodedata.normalize("NFKD", output).encode("ascii", "ignore").decode("ascii").upper()
         )
 
         # Deve conter uma das classificacoes
         has_classif = any(
-            word in normalized
-            for word in ["GOVERNO", "OPOSICAO", "INDEPENDENTE", "SEM DADOS"]
+            word in normalized for word in ["GOVERNO", "OPOSICAO", "INDEPENDENTE", "SEM DADOS"]
         )
         # Deve conter percentual
         has_pct = bool(re.search(r"\d+%", output))

@@ -10,9 +10,9 @@ import httpx
 # Add project root to path
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from src.db_utils import get_connection
+from src.db_utils import get_connection, setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+setup_logging()
 logger = logging.getLogger(__name__)
 
 TRANSPARENCIA_API_URL = "https://api.portaldatransparencia.gov.br/api-de-dados/emendas"

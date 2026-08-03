@@ -19,7 +19,6 @@ if [ -f ".venv/bin/activate" ]; then
 fi
 
 PYTHON="${PYTHON:-python3}"
-SRC="src"
 
 usage() {
     cat <<EOF
@@ -69,34 +68,34 @@ Exemplos:
   ./run.sh report sql "SELECT ..."
 
 Extração por programa + situação:
-  python3 src/transferegov_extract.py --objeto all --ano 2026 --programa 25 --situacao-api IMPEDIDO --db --csv
+  python3 -m src.transferegov_extract --objeto all --ano 2026 --programa 25 --situacao-api IMPEDIDO --db --csv
 EOF
 }
 
 case "${1:-help}" in
     discover)
-        $PYTHON "$SRC/transferegov_extract.py" --discover --ano 2026
+        $PYTHON -m src.transferegov_extract --discover --ano 2026
         ;;
     cemiterios)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 "${@:2}"
+        $PYTHON -m src.transferegov_extract --objeto 301 --ano 2026 "${@:2}"
         ;;
     negados)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto 301 --ano 2026 --negados "${@:2}"
+        $PYTHON -m src.transferegov_extract --objeto 301 --ano 2026 --negados "${@:2}"
         ;;
     import)
-        $PYTHON "$SRC/db_import.py" "${@:2}"
+        $PYTHON -m src.db_import "${@:2}"
         ;;
     report)
-        $PYTHON "$SRC/db_report.py" "${@:2}"
+        $PYTHON -m src.db_report "${@:2}"
         ;;
     dashboard)
         echo "📊 Iniciando Dashboard em http://localhost:8050 ..."
-        $PYTHON "$SRC/dash_app.py" "${@:2}"
+        $PYTHON -m src.dash_app "${@:2}"
         ;;
 
     dash)
         echo "📊 Iniciando Dashboard em http://localhost:8050 ..."
-        $PYTHON "$SRC/dash_app.py" "${@:2}"
+        $PYTHON -m src.dash_app "${@:2}"
         ;;
     web)
         echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8000 ..."
@@ -122,10 +121,10 @@ case "${1:-help}" in
         $PYTHON -m src.enrichers.governadores "${@:2}"
         ;;
     qdrant-status)
-        $PYTHON src/qdrant_status.py
+        $PYTHON -m src.qdrant_status
         ;;
     qdrant-staleness)
-        $PYTHON src/qdrant_staleness.py "${@:2}"
+        $PYTHON -m src.qdrant_staleness "${@:2}"
         ;;
     cron-diario)
         $PYTHON -m src.enrichers.diario_oficial_worker "${@:2}"
@@ -140,19 +139,19 @@ case "${1:-help}" in
         $PYTHON -m src.enrichers.camara_discursos "${@:2}"
         ;;
     transparencia)
-        $PYTHON "$SRC/extrator_transparencia.py" "${@:2}"
+        $PYTHON -m src.extrator_transparencia "${@:2}"
         ;;
     vllm)
-        $PYTHON "$SRC/local_vllm.py" "${@:2}"
+        $PYTHON -m src.local_vllm "${@:2}"
         ;;
     vllm-bench)
-        $PYTHON "$SRC/../scripts/benchmark_vllm_vs_localai.py" "${@:2}"
+        $PYTHON -m scripts.benchmark_vllm_vs_localai "${@:2}"
         ;;
     redator)
-        $PYTHON "$SRC/redator_transferegov.py" "${@:2}"
+        $PYTHON -m src.redator_transferegov "${@:2}"
         ;;
     all)
-        $PYTHON "$SRC/transferegov_extract.py" --objeto all --ano 2026 --csv "${@:2}"
+        $PYTHON -m src.transferegov_extract --objeto all --ano 2026 --csv "${@:2}"
         ;;
     help|--help|-h)
         usage

@@ -1,4 +1,4 @@
--- Migration 015: Tabela de discursos parlamentares (Câmara dos Deputados)
+-- Migration 016: Tabela de discursos parlamentares (Câmara dos Deputados)
 -- Cria tabela para armazenar discursos de cada deputado no plenário/comissões
 -- Dependências: migration_003 (parlamentares_dados)
 

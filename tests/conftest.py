@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Amostras de dados reais (anônimos) para uso nos testes
 # ---------------------------------------------------------------------------

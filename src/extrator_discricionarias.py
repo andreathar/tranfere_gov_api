@@ -594,24 +594,24 @@ def _parse_detalhes_proposta(
                     match = re.search(r"R\$\s*[\d\.,]+", div_texto)
                     if not match:
                         continue
-                    valor = _parse_valor(match.group())
+                    valor_parse = _parse_valor(match.group())
                     if "Valor de Repasse" in div_texto:
-                        proposta.valor_repasse = valor
+                        proposta.valor_repasse = valor_parse
                     elif (
                         "Valor da Contrapartida" in div_texto
                         and "Financeira" not in div_texto
                         and "Bens" not in div_texto
                     ):
-                        proposta.valor_contrapartida = valor
+                        proposta.valor_contrapartida = valor_parse
                     elif "Contrapartida Financeira" in div_texto:
-                        proposta.valor_contrapartida_financeira = valor
+                        proposta.valor_contrapartida_financeira = valor_parse
                     elif (
                         "Contrapartida Bens" in div_texto
                         or "Contrapartida Bens e Serviços" in div_texto
                     ):
-                        proposta.valor_contrapartida_bens = valor
+                        proposta.valor_contrapartida_bens = valor_parse
                     elif "Rendimentos de Aplicação" in div_texto:
-                        proposta.valor_rendimentos_aplicacao = valor
+                        proposta.valor_rendimentos_aplicacao = valor_parse
 
                 # Valor Global está no <b> direto (fora das divs)
                 b_direto = linha.find("b")
@@ -676,7 +676,7 @@ def _parse_detalhes_proposta(
             proposta.situacao or "?",
         )
 
-        return proposta
+    return proposta
 
 
 # ---------------------------------------------------------------------------

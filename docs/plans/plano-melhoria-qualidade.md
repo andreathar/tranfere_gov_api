@@ -462,7 +462,7 @@ disallow_untyped_defs = false          # ativar por módulo depois
 
 ```
 Semana 1:  Fase 1 (quick wins) + Fase 2 (test infra)
-Semana 2:  Fase 3 (refatoração core) 
+Semana 2:  Fase 3 (refatoração core)
 Semana 3:  Fase 4 (resiliência) + Fase 5 (type safety)
 Semana 4:  Testes de regressão, validação, deploy
 ```

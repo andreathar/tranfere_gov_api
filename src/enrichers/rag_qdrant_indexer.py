@@ -41,7 +41,9 @@ import argparse
 import hashlib
 import json
 import logging
+import re
 import uuid
+from collections import Counter
 from typing import Any
 
 from qdrant_client import QdrantClient
@@ -208,11 +210,6 @@ def embed_text(text: str) -> list[float] | None:
 # ---------------------------------------------------------------------------
 
 
-import hashlib as _hashlib
-import re as _re
-from collections import Counter as _Counter
-
-
 def _tokenize_text(text: str) -> list[str]:
     """Tokeniza texto para geração de sparse vector BM25.
 
@@ -220,12 +217,12 @@ def _tokenize_text(text: str) -> list[str]:
     Ex: 'SICONFI' → ['siconfi'], 'FPM' → ['fpm'], 'R$ 1.500,00' → ['r', '1', '500', '00']
     """
     text = text.lower()
-    return _re.findall(r"[a-zà-ÿ0-9]+", text)
+    return re.findall(r"[a-zà-ÿ0-9]+", text)
 
 
 def _token_to_index(token: str) -> int:
     """Hash determinístico de token → índice uint32 para sparse vector."""
-    return int(_hashlib.md5(token.encode("utf-8")).hexdigest()[:8], 16)
+    return int(hashlib.md5(token.encode("utf-8")).hexdigest()[:8], 16)
 
 
 def text_to_sparse_vector(text: str) -> qdrant_models.SparseVector:
@@ -238,7 +235,7 @@ def text_to_sparse_vector(text: str) -> qdrant_models.SparseVector:
     if not tokens:
         return qdrant_models.SparseVector(indices=[0], values=[0.0])
 
-    tf = _Counter(tokens)
+    tf = Counter(tokens)
     indices: list[int] = []
     values: list[float] = []
     for token, count in tf.most_common(200):
@@ -375,9 +372,7 @@ def _extract_emendas(cur: Any, deputado_id: int, nome: str) -> list[dict[str, An
             por_objeto.setdefault(obj, []).append((municipio, float(valor)))
     if por_objeto:
         partes: list[str] = []
-        for obj, pares in sorted(
-            por_objeto.items(), key=lambda kv: -sum(v for _, v in kv[1])
-        ):
+        for obj, pares in sorted(por_objeto.items(), key=lambda kv: -sum(v for _, v in kv[1])):
             # Top municípios por valor (limita o tamanho do chunk: listar todos
             # pode estourar o contexto de 2048 tokens do embedding -> 500).
             # O detalhe completo fica nos resumos por município.
@@ -1037,13 +1032,29 @@ def _extract_estado_financeiro(cur: Any, deputado_id: int, nome: str) -> list[di
         return []
 
     (
-        _uf, exerc, rec_corr, rec_cap, rec_orc,
-        desp_corr, desp_cap, desp_tot,
-        res_orc, res_prim,
-        div_ativa, div_pass, patr_liq,
-        icms, ipva, itcd, irrf,
-        fpe, fundeb, imp_geral,
-        transf, rec_corr_rreo, rcl,
+        _uf,
+        exerc,
+        rec_corr,
+        rec_cap,
+        rec_orc,
+        desp_corr,
+        desp_cap,
+        desp_tot,
+        res_orc,
+        res_prim,
+        div_ativa,
+        div_pass,
+        patr_liq,
+        icms,
+        ipva,
+        itcd,
+        irrf,
+        fpe,
+        fundeb,
+        imp_geral,
+        transf,
+        rec_corr_rreo,
+        rcl,
     ) = row
 
     partes: list[str] = []
@@ -1054,7 +1065,9 @@ def _extract_estado_financeiro(cur: Any, deputado_id: int, nome: str) -> list[di
     if desp_tot:
         partes.append(f"despesas totais R$ {desp_tot:,.2f}")
     if res_orc is not None:
-        partes.append(f"resultado orçamentário {'superávit' if res_orc > 0 else 'déficit'} R$ {abs(res_orc):,.2f}")
+        partes.append(
+            f"resultado orçamentário {'superávit' if res_orc > 0 else 'déficit'} R$ {abs(res_orc):,.2f}"
+        )
     if div_pass:
         partes.append(f"dívida passiva R$ {div_pass:,.2f}")
     if patr_liq is not None:
@@ -1867,8 +1880,7 @@ def main() -> None:
                             _save_checkpoint(chunk_type, deputado_id, current_hash)
                 except Exception as e:
                     log.error(
-                        f"  Erro ao salvar checkpoint de {nome} "
-                        f"(chunk {chunk_type}): {e}"
+                        f"  Erro ao salvar checkpoint de {nome} " f"(chunk {chunk_type}): {e}"
                     )
 
         if idx % 10 == 0 or idx == len(deputados):

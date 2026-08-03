@@ -19,7 +19,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -40,6 +40,7 @@ from config.settings import (
 
 class ModelFormat(Enum):
     """Formato do modelo — GGUF nativo ou HuggingFace."""
+
     GGUF = "gguf"
     HF = "hf"
 
@@ -47,10 +48,12 @@ class ModelFormat(Enum):
 @dataclass
 class ModelInfo:
     """Informações do modelo resolvido para passar ao vLLM."""
-    path: str          # path local .gguf ou HF model ID
+
+    path: str  # path local .gguf ou HF model ID
     format: ModelFormat
     tokenizer: str = "auto"
     quantization: str | None = None  # ex: "bitsandbytes" para BNB 4bit
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VLLMInstance:
     """Estado do processo vLLM server."""
+
     model_name: str
     process: subprocess.Popen | None = None
     base_url: str = LOCAL_VLLM_BASE_URL
@@ -144,31 +148,39 @@ class LocalVLLM:
 
         logger.info(
             "Iniciando vLLM: modelo=%s formato=%s porta=%d gpu_mem=%.2f",
-            model_info.path, model_info.format.value, port, gpu_mem,
+            model_info.path,
+            model_info.format.value,
+            port,
+            gpu_mem,
         )
 
         # Verifica se a porta já está ocupada
         if self._check_port_in_use(port):
             raise RuntimeError(
-                f"Porta {port} já está em uso. "
-                "Pare o processo ou configure LOCAL_VLLM_PORT."
+                f"Porta {port} já está em uso. " "Pare o processo ou configure LOCAL_VLLM_PORT."
             )
 
         if not self.manage_process:
-            raise RuntimeError(
-                "manage_process=False mas servidor não está rodando."
-            )
+            raise RuntimeError("manage_process=False mas servidor não está rodando.")
 
         cmd = [
             sys.executable,
-            "-m", "vllm.entrypoints.openai.api_server",
-            "--model", model_info.path,
-            "--host", "0.0.0.0",
-            "--port", str(port),
-            "--gpu-memory-utilization", str(gpu_mem),
-            "--max-model-len", str(max_len),
-            "--served-model-name", served_name,
-            "--api-key", "not-set",
+            "-m",
+            "vllm.entrypoints.openai.api_server",
+            "--model",
+            model_info.path,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(port),
+            "--gpu-memory-utilization",
+            str(gpu_mem),
+            "--max-model-len",
+            str(max_len),
+            "--served-model-name",
+            served_name,
+            "--api-key",
+            "not-set",
             "--trust-remote-code",
         ]
 
@@ -255,9 +267,7 @@ class LocalVLLM:
     # Health & Status
     # ------------------------------------------------------------------
 
-    def wait_until_ready(
-        self, timeout: float = 120.0, interval: float = 2.0
-    ) -> bool:
+    def wait_until_ready(self, timeout: float = 120.0, interval: float = 2.0) -> bool:
         """Aguarda o servidor vLLM ficar pronto (health check)."""
         if not self._instance:
             return False
@@ -276,16 +286,15 @@ class LocalVLLM:
                         models_list = [m["id"] for m in models]
                         logger.info(
                             "vLLM pronto em %.1fs. Modelos: %s",
-                            elapsed, models_list,
+                            elapsed,
+                            models_list,
                         )
                         return True
             except (httpx.ConnectError, httpx.TimeoutException):
                 pass
             time.sleep(interval)
 
-        logger.warning(
-            "Timeout (%.0fs) aguardando vLLM ficar pronto.", timeout
-        )
+        logger.warning("Timeout (%.0fs) aguardando vLLM ficar pronto.", timeout)
         return False
 
     def is_ready(self) -> bool:
@@ -384,9 +393,7 @@ class LocalVLLM:
         results = []
         for prompt in prompts:
             results.append(
-                self.chat(
-                    prompt, model=model, temperature=temperature, max_tokens=max_tokens
-                )
+                self.chat(prompt, model=model, temperature=temperature, max_tokens=max_tokens)
             )
         return results
 
@@ -457,6 +464,7 @@ class LocalVLLM:
     def _check_port_in_use(port: int) -> bool:
         """Verifica se porta está ocupada."""
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(("localhost", port)) == 0
 
@@ -468,9 +476,7 @@ def main():
     """CLI para gerenciar vLLM local."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Gerencia servidor vLLM local"
-    )
+    parser = argparse.ArgumentParser(description="Gerencia servidor vLLM local")
     sub = parser.add_subparsers(dest="comando")
 
     # start
@@ -527,9 +533,7 @@ def main():
         if not vllm.is_ready():
             print("Servidor vLLM não está rodando. Use 'start' primeiro.")
             sys.exit(1)
-        resp = vllm.chat(
-            args.mensagem, model=args.model, max_tokens=args.max_tokens
-        )
+        resp = vllm.chat(args.mensagem, model=args.model, max_tokens=args.max_tokens)
         print(resp)
 
     else:

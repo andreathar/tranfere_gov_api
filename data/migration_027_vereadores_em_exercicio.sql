@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 018: View Vereadores em Exercício (Frontend)
+-- TransfereGov — Migration 027: View Vereadores em Exercício (Frontend)
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-27

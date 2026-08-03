@@ -8,10 +8,10 @@ import requests
 
 from config.settings import CAMARA_API_BASE, LOCALAI_MODELS
 from src.api.services.mcp_service import _mcp_client
-from src.db_utils import get_connection
+from src.db_utils import get_connection, setup_logging
 from src.localai_client import LocalAIClient
 
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 log = logging.getLogger(__name__)
 
 # Configura o Qdrant localmente (in-memory/file storage) se necessário,
@@ -160,7 +160,9 @@ async def process_diario_oficial(
     return novos_atos
 
 
-async def process_proposicoes(deputado_id: int, nome: str, parlamentar_id: int | None = None) -> None:
+async def process_proposicoes(
+    deputado_id: int, nome: str, parlamentar_id: int | None = None
+) -> None:
     """Busca proposições recentes do deputado via API da Câmara e salva no banco de dados."""
     log.info(f"Buscando proposições para: {nome} (ID: {deputado_id})")
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 015: Tabela e Views de Senadores (Dados Senado API)
+-- TransfereGov — Migration 017: Tabela e Views de Senadores (Dados Senado API)
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-26

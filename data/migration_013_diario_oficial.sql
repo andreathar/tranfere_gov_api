@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS diario_oficial_atos (
     valor_financeiro    NUMERIC(15, 2),
     entidades_citadas   JSONB,                -- Array de pessoas/empresas citadas (extraído via LLM)
     link_original       TEXT,
-    
+
     processado_em       TIMESTAMPTZ DEFAULT NOW(),
     hash_conteudo       VARCHAR(64) UNIQUE NOT NULL -- md5 do texto para evitar duplicidade
 );

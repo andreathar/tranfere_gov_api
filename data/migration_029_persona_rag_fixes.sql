@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 020: Correções para Parlamentares Personas (RAG v3)
+-- Migration 029: Correções para Parlamentares Personas (RAG v3)
 -- ============================================================================
 -- Data: 2026-07-28
 -- Descrição: Corrige schema da tabela parlamentares_personas para suportar

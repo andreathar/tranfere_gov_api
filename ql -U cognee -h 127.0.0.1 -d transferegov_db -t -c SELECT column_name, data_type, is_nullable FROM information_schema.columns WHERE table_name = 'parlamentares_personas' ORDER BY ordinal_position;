@@ -1,18 +1,17 @@
                                           Table "public.parlamentares_personas"
-      Column      |           Type           | Collation | Nullable |                      Default                       
+      Column      |           Type           | Collation | Nullable |                      Default
 ------------------+--------------------------+-----------+----------+----------------------------------------------------
  id               | integer                  |           | not null | nextval('parlamentares_personas_id_seq'::regclass)
- deputado_id      | integer                  |           |          | 
- query_text       | text                     |           |          | 
- analise_gerada   | text                     |           |          | 
+ deputado_id      | integer                  |           |          |
+ query_text       | text                     |           |          |
+ analise_gerada   | text                     |           |          |
  data_analise     | timestamp with time zone |           |          | now()
- duracao_segundos | numeric                  |           |          | 
- contexto_rag     | text                     |           |          | 
- fontes_usadas    | text                     |           |          | 
+ duracao_segundos | numeric                  |           |          |
+ contexto_rag     | text                     |           |          |
+ fontes_usadas    | text                     |           |          |
  versao_prompt    | integer                  |           |          | 1
 Indexes:
     "parlamentares_personas_pkey" PRIMARY KEY, btree (id)
     "uniq_dep_versao" UNIQUE CONSTRAINT, btree (deputado_id, versao_prompt)
 Foreign-key constraints:
     "parlamentares_personas_deputado_id_fkey" FOREIGN KEY (deputado_id) REFERENCES parlamentares_dados(deputado_id)
-

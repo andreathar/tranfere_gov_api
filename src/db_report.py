@@ -10,6 +10,7 @@ Uso:
     python3 src/db_report.py municipio SE   # planos de um estado
     python3 src/db_report.py emenda         # por parlamentar/emenda
     python3 src/db_report.py top 10         # top N valores
+    python3 src/db_report.py saude          # saúde do pipeline (últimas extrações)
     python3 src.db_report.py sql "SELECT…"  # query customizada
 """
 
@@ -53,6 +54,30 @@ QUERIES = {
         WHERE codigo_emenda_formatado IS NOT NULL AND codigo_emenda_formatado != ''
         GROUP BY codigo_emenda_formatado
         ORDER BY valor_total DESC
+    """,
+    "saude": """
+        WITH last_run AS (
+            SELECT DISTINCT ON (source)
+                source,
+                ano,
+                total_registros,
+                extracted_at
+            FROM extract_log
+            ORDER BY source, extracted_at DESC
+        )
+        SELECT
+            source,
+            ano,
+            total_registros,
+            extracted_at::date AS ultima_extracao,
+            CASE
+                WHEN extracted_at >= NOW() - INTERVAL '24 hours' THEN 'ok'
+                WHEN extracted_at >= NOW() - INTERVAL '7 days'  THEN 'atrasado'
+                ELSE 'critico'
+            END AS status,
+            (SELECT COUNT(*) FROM extract_log) AS total_execucoes
+        FROM last_run
+        ORDER BY status ASC, extracted_at DESC
     """,
 }
 
@@ -179,7 +204,7 @@ def main():
 
     else:
         print(f"Comando desconhecido: {cmd}")
-        print("Comandos: resumo, estado, objeto, negados, emenda, municipio, top, sql")
+        print("Comandos: resumo, estado, objeto, negados, emenda, municipio, top, saude, sql")
         return 1
 
     cur.close()

@@ -21,7 +21,12 @@ log = logging.getLogger(__name__)
 class AreasTematicas(AnalystBase):
     analyst_id = "tematicas"
     section_title = "ÁREAS TEMÁTICAS PRIORITÁRIAS"
-    required_chunks = ["[EMENDA]", "[EMENDA_DISCRICIONARIA]", "[PROPOSICAO]", "[DISCURSO_PLENARIO]"]
+    required_chunks = [
+        "[EMENDA]",
+        "[EMENDA_DISCRICIONARIA]",
+        "[PROPOSICAO]",
+        "[DISCURSO_PLENARIO]",
+    ]
     min_chunks = 2
     # Data-first: usar os chunks crus (que trazem "Distribuição por área" com
     # TOTAIS EXATOS) em vez do briefing do preparer 1.5B. O modelo 4B principal
@@ -80,7 +85,7 @@ FORMATO DE SAÍDA (Markdown) — use SOMENTE valores literais dos dados:
 
         # 2. Validação de fidelidade numérica (parse BR/US + tolerância 2%)
         try:
-            chunks_text = "\n".join(getattr(self, '_last_chunks', []))
+            chunks_text = "\n".join(getattr(self, "_last_chunks", []))
             taxa_invencao = taxa_invencao_rs(output, chunks_text)
         except Exception:
             taxa_invencao = 0.0

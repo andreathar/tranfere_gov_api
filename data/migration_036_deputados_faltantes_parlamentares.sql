@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 025: Inserir 130 deputados faltantes em parlamentares
+-- TransfereGov — Migration 036: Inserir 130 deputados faltantes em parlamentares
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-30
@@ -12,7 +12,7 @@
 --   o deputado correspondente não existe em parlamentares (nunca usaram
 --   Transferências Especiais / Emendas PIX).
 --
---   Migration 024 adicionou parlamentar_id em votos_camara e
+--   Migration 035 adicionou parlamentar_id em votos_camara e
 --   parlamentares_personas mas o backfill deixou NULL para esses 130
 --   porque parlamentares_dados.parlamentar_id era NULL.
 --

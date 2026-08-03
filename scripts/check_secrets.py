@@ -36,7 +36,10 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("Google API key (AIza)", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
     ("Slack token (xox)", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
     ("Heroku API key", re.compile(r"\b(?:API_KEY|HEROKU_API_KEY)\s*=\s*[0-9a-fA-F]{32}\b")),
-    ("JWT (eyJ)", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
+    (
+        "JWT (eyJ)",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+    ),
 ]
 
 # Segredos já vazados e purgados do histórico — re-incluir deve falhar no commit.
@@ -69,6 +72,7 @@ def _detect_base64_creds(linha: str) -> bool:
         if ":" in decodificado and not any(ch.isspace() for ch in decodificado):
             return True
     return False
+
 
 RE_CPF = re.compile(r"\b(\d{3})\.(\d{3})\.(\d{3})-(\d{2})\b")
 RE_CNPJ = re.compile(r"\b(\d{2})\.(\d{3})\.(\d{3})/(\d{4})-(\d{2})\b")

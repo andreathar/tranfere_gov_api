@@ -1,4 +1,4 @@
--- migration_016_view_emendas_parlamentar_id.sql
+-- migration_030_view_emendas_parlamentar_id.sql
 -- Adiciona parlamentar_id à view v_emendas_unificadas
 -- Permite que gráficos e queries façam JOIN exato por ID em vez de ILIKE/normalização
 

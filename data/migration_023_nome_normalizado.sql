@@ -1,5 +1,5 @@
 -- ============================================================================
--- Migration 021: Normalização de Nomes via Unaccent para JOINs Robusto
+-- Migration 023: Normalização de Nomes via Unaccent para JOINs Robusto
 -- ============================================================================
 -- Data: 2026-07-28
 -- Descrição:
@@ -17,7 +17,7 @@
 --   - Substitui o _SQL_NORM frágil replicado em 12 extractors
 --
 -- Ordem de execução:
---   psql -U cognee -h 127.0.0.1 -d transferegov_db -f data/migration_021_nome_normalizado.sql
+--   psql -U cognee -h 127.0.0.1 -d transferegov_db -f data/migration_023_nome_normalizado.sql
 -- ============================================================================
 
 BEGIN;

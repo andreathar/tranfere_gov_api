@@ -37,13 +37,13 @@ import pandas as pd
 from config.settings import (
     CLOUD_PROXY_MODEL_NAMES,
     CLOUD_PROXY_MODELS,
+    LOCAL_VLLM_BASE_URL,
     LOCALAI_BASE_URL,
     LOCALAI_DEFAULT_MODEL,
     LOCALAI_MAX_RETRIES,
     LOCALAI_MODEL_TIMEOUTS,
     LOCALAI_MODELS,
     LOCALAI_TIMEOUT,
-    LOCAL_VLLM_BASE_URL,
     MODAL_VLLM_TOKEN,
     MODAL_VLLM_URL,
     USE_LOCAL_VLLM,
@@ -99,7 +99,7 @@ class LocalAIClient:
             self.base_url = LOCALAI_BASE_URL.rstrip("/")
             self.token = None
             proxy_cfg = CLOUD_PROXY_MODELS.get(self.model, {})
-            self.timeout = timeout or proxy_cfg.get("timeout") or LOCALAI_TIMEOUT
+            self.timeout = timeout or int(proxy_cfg.get("timeout") or LOCALAI_TIMEOUT)
         # Chat/LLM → vLLM local (USE_LOCAL_VLLM=true)
         elif USE_LOCAL_VLLM and LOCAL_VLLM_BASE_URL:
             self.base_url = LOCAL_VLLM_BASE_URL.rstrip("/")

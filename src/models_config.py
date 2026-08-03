@@ -59,8 +59,12 @@ class BackendType(StrEnum):
     def is_gpu(self) -> bool:
         # CPU_LEGACY ("llama-cpp" sem prefixo) também roda em GPU:
         # no build GPU é um meta-backend que resolve para cuda12-llama-cpp.
-        return self in (BackendType.CUDA, BackendType.CUDA12,
-                        BackendType.VULKAN, BackendType.CPU_LEGACY)
+        return self in (
+            BackendType.CUDA,
+            BackendType.CUDA12,
+            BackendType.VULKAN,
+            BackendType.CPU_LEGACY,
+        )
 
     @property
     def is_cpu(self) -> bool:
@@ -362,10 +366,12 @@ def scan_all_model_configs() -> dict[str, ModelConfig]:
         )
 
         configs[name] = cfg
-        raw_models.append({
-            "name": name,
-            "gguf_path": gguf_path,
-        })
+        raw_models.append(
+            {
+                "name": name,
+                "gguf_path": gguf_path,
+            }
+        )
 
     # Segunda passada: resolver grupos de afinidade
     affinity_map = _resolve_affinity_group(raw_models)
@@ -478,7 +484,9 @@ def docker_restart() -> bool:
     try:
         result = subprocess.run(
             ["docker", "restart", DOCKER_CONTAINER],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             logger.info("Container %s reiniciado.", DOCKER_CONTAINER)
@@ -500,7 +508,8 @@ def docker_logs(model_name: str | None = None, tail: int = 50) -> str:
             # Filtra linhas relevantes ao modelo
             lines = output.split("\n")
             filtered = [
-                line for line in lines
+                line
+                for line in lines
                 if model_name in line.lower()
                 or "backend" in line.lower()
                 or "loaded" in line.lower()
@@ -528,7 +537,9 @@ def format_model_table(configs: dict[str, ModelConfig] | None = None) -> str:
         return "Nenhuma config de modelo encontrada."
 
     lines = []
-    lines.append(f"{'Modelo':30s} {'Backend':22s} {'GPU Layers':10s} {'Ctx':6s} {'KV Off':7s} {'GGUF':8s} {'VRAM est.':10s} {'Grupo':20s}")
+    lines.append(
+        f"{'Modelo':30s} {'Backend':22s} {'GPU Layers':10s} {'Ctx':6s} {'KV Off':7s} {'GGUF':8s} {'VRAM est.':10s} {'Grupo':20s}"
+    )
     lines.append("-" * 117)
 
     for name in sorted(configs.keys()):
@@ -566,6 +577,7 @@ def format_model_table(configs: dict[str, ModelConfig] | None = None) -> str:
 # Conveniência
 # ---------------------------------------------------------------------------
 
+
 def get_config(model_name: str) -> ModelConfig | None:
     """Retorna a config de um modelo específico."""
     configs = scan_all_model_configs()
@@ -587,7 +599,9 @@ def set_kv_offloading(model_name: str, enabled: bool) -> bool:
 
     cfg = configs[model_name]
     if not cfg.backend.is_gpu:
-        logger.warning("Modelo '%s' não é GPU (backend=%s). Ignorando.", model_name, cfg.backend.value)
+        logger.warning(
+            "Modelo '%s' não é GPU (backend=%s). Ignorando.", model_name, cfg.backend.value
+        )
         return False
 
     try:
@@ -682,7 +696,10 @@ def get_docker_backend_status() -> dict[str, Any]:
         # Primeiro verifica se o container está rodando
         subprocess.run(
             ["docker", "ps", "--filter", f"name={DOCKER_CONTAINER}", "--format", "{{.Names}}"],
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         )
         results["container_running"] = True
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -709,9 +726,7 @@ def get_docker_backend_status() -> dict[str, Any]:
             continue
 
     results["loaded_models"] = loaded
-    results["active_backends"] = len(set(
-        getattr(configs.get(m), "backend", None) for m in loaded
-    ))
+    results["active_backends"] = len(set(getattr(configs.get(m), "backend", None) for m in loaded))
     return results
 
 

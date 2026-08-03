@@ -16,14 +16,10 @@ class TestBuscarDeputado:
     """Testes para a função buscar_deputado com mock de HTTP."""
 
     @patch("src.enrichers.camara.requests.get")
-    def test_deputado_encontrado(
-        self, mock_get: Mock, sample_deputado_response: dict[str, Any]
-    ):
+    def test_deputado_encontrado(self, mock_get: Mock, sample_deputado_response: dict[str, Any]):
         """Deputado encontrado deve retornar dados detalhados."""
         mock_search = Mock(status_code=200)
-        mock_search.json.return_value = {
-            "dados": [{"id": 204560, "nome": "Deputado Teste"}]
-        }
+        mock_search.json.return_value = {"dados": [{"id": 204560, "nome": "Deputado Teste"}]}
         mock_detail = Mock(status_code=200)
         mock_detail.json.return_value = sample_deputado_response
 

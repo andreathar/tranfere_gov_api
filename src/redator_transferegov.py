@@ -725,7 +725,9 @@ Exemplos:
     # --- nota-tecnica ---
     nt = sub.add_parser("nota-tecnica", help="Gerar nota técnica sobre impedimentos")
     nt.add_argument("--parlamentar", type=str, default=None, help="Nome do parlamentar (filtro)")
-    nt.add_argument("--parlamentar-id", type=int, default=None, help="ID do parlamentar (filtro exato)")
+    nt.add_argument(
+        "--parlamentar-id", type=int, default=None, help="ID do parlamentar (filtro exato)"
+    )
     nt.add_argument("--ano", type=int, default=None, help="Ano de exercício (filtro)")
     nt.add_argument(
         "--cidade", type=str, default="Brasília", help="Cidade para data (default: Brasília)"

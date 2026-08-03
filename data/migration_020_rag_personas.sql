@@ -1,4 +1,4 @@
--- Migration 017: Schema robusto para parlamentares_personas + índices
+-- Migration 020: Schema robusto para parlamentares_personas + índices
 -- Data: 2026-07-26
 -- Descrição: Recria parlamentares_personas com colunas novas (contexto_rag, versao_prompt, fontes_usadas)
 --           e constraint UNIQUE para 1 persona por deputado por versão.

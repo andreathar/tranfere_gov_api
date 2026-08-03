@@ -46,7 +46,7 @@ def parse_datajud_response(res: Any) -> tuple[int, dict[str, Any]]:
     if not res:
         return 0, {}
 
-    if isinstance(res, (list, dict)):
+    if isinstance(res, list | dict):
         data: Any = res
     elif isinstance(res, str):
         stripped = res.strip()

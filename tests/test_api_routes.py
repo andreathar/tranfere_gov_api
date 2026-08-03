@@ -60,10 +60,18 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(deputados.db_service, "search_deputados", lambda q: [])
-        mock_api = AsyncMock(return_value=[
-            {"id": 100, "nome": "API Dep", "nomeEleitoral": "API Dep",
-             "siglaPartido": "PDT", "siglaUf": "RJ", "urlFoto": "https://foto2.jpg"}
-        ])
+        mock_api = AsyncMock(
+            return_value=[
+                {
+                    "id": 100,
+                    "nome": "API Dep",
+                    "nomeEleitoral": "API Dep",
+                    "siglaPartido": "PDT",
+                    "siglaUf": "RJ",
+                    "urlFoto": "https://foto2.jpg",
+                }
+            ]
+        )
         monkeypatch.setattr(deputados.camara_service, "search_deputados_api", mock_api)
 
         resp = client.get("/api/v1/deputados/search?q=api")
@@ -76,13 +84,24 @@ class TestDeputadosRoutes:
         """Quando API Câmara falha, retorna os poucos resultados do DB sem quebrar."""
         from src.api.routes import deputados
 
-        monkeypatch.setattr(deputados.db_service, "search_deputados", lambda q: [
-            {"deputado_id": 1, "nome": "Unico", "nome_urna": "Unico",
-             "sigla_partido": "X", "uf": "SP", "url_foto": ""}
-        ])
         monkeypatch.setattr(
-            deputados.camara_service, "search_deputados_api",
-            AsyncMock(side_effect=Exception("API offline"))
+            deputados.db_service,
+            "search_deputados",
+            lambda q: [
+                {
+                    "deputado_id": 1,
+                    "nome": "Unico",
+                    "nome_urna": "Unico",
+                    "sigla_partido": "X",
+                    "uf": "SP",
+                    "url_foto": "",
+                }
+            ],
+        )
+        monkeypatch.setattr(
+            deputados.camara_service,
+            "search_deputados_api",
+            AsyncMock(side_effect=Exception("API offline")),
         )
 
         resp = client.get("/api/v1/deputados/search?q=unico")
@@ -94,8 +113,14 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_perfil_deputado",
-            lambda _: {"deputado_id": 204560, "nome": "Dep Teste", "sigla_partido": "PARTIDO", "uf": "SP"},
+            deputados.db_service,
+            "get_perfil_deputado",
+            lambda _: {
+                "deputado_id": 204560,
+                "nome": "Dep Teste",
+                "sigla_partido": "PARTIDO",
+                "uf": "SP",
+            },
         )
 
         resp = client.get("/api/v1/deputados/204560/perfil")
@@ -108,22 +133,30 @@ class TestDeputadosRoutes:
 
         monkeypatch.setattr(deputados.db_service, "get_perfil_deputado", lambda _: None)
         monkeypatch.setattr(
-            deputados.camara_service, "buscar_deputado",
-            AsyncMock(return_value={
-                "id": 999,
-                "nomeCivil": "Dep Via API",
-                "ultimoStatus": {
-                    "nomeEleitoral": "Dep Via API",
-                    "siglaPartido": "PSB",
-                    "siglaUf": "MG",
-                    "urlFoto": "https://foto.com",
-                    "situacao": "Exercício",
-                    "gabinete": {"sala": "1", "predio": "4", "telefone": "1111", "email": "a@b.com"},
-                    "condicaoEleitoral": "Titular",
-                },
-                "escolaridade": "Superior",
-                "dataNascimento": "1980-01-01",
-            })
+            deputados.camara_service,
+            "buscar_deputado",
+            AsyncMock(
+                return_value={
+                    "id": 999,
+                    "nomeCivil": "Dep Via API",
+                    "ultimoStatus": {
+                        "nomeEleitoral": "Dep Via API",
+                        "siglaPartido": "PSB",
+                        "siglaUf": "MG",
+                        "urlFoto": "https://foto.com",
+                        "situacao": "Exercício",
+                        "gabinete": {
+                            "sala": "1",
+                            "predio": "4",
+                            "telefone": "1111",
+                            "email": "a@b.com",
+                        },
+                        "condicaoEleitoral": "Titular",
+                    },
+                    "escolaridade": "Superior",
+                    "dataNascimento": "1980-01-01",
+                }
+            ),
         )
 
         resp = client.get("/api/v1/deputados/999/perfil")
@@ -136,8 +169,7 @@ class TestDeputadosRoutes:
 
         monkeypatch.setattr(deputados.db_service, "get_perfil_deputado", lambda _: None)
         monkeypatch.setattr(
-            deputados.camara_service, "buscar_deputado",
-            AsyncMock(return_value=None)
+            deputados.camara_service, "buscar_deputado", AsyncMock(return_value=None)
         )
 
         resp = client.get("/api/v1/deputados/99999/perfil")
@@ -150,7 +182,8 @@ class TestDeputadosRoutes:
         monkeypatch.setattr(deputados.db_service, "get_parlamentar_id", lambda _: None)
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: "Dep Teste")
         monkeypatch.setattr(
-            deputados.db_service, "get_emendas_deputado",
+            deputados.db_service,
+            "get_emendas_deputado",
             lambda _: [{"emenda_codigo": "E001", "valor_total": 50000.0}],
         )
 
@@ -164,8 +197,7 @@ class TestDeputadosRoutes:
 
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: None)
         monkeypatch.setattr(
-            deputados.camara_service, "buscar_deputado",
-            AsyncMock(return_value=None)
+            deputados.camara_service, "buscar_deputado", AsyncMock(return_value=None)
         )
 
         resp = client.get("/api/v1/deputados/99999/emendas")
@@ -178,7 +210,8 @@ class TestDeputadosRoutes:
         monkeypatch.setattr(deputados.db_service, "get_parlamentar_id", lambda _: None)
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: "Dep Teste")
         monkeypatch.setattr(
-            deputados.db_service, "get_resumo_emendas",
+            deputados.db_service,
+            "get_resumo_emendas",
             lambda _: {"total_planos": 10, "valor_total": 500000.0, "taxa_sucesso": 80.0},
         )
 
@@ -190,9 +223,11 @@ class TestDeputadosRoutes:
         """GET /api/v1/deputados/{id}/despesas — retorna lista da API Câmara."""
         from src.api.routes import deputados
 
-        mock_despesas = AsyncMock(return_value=[
-            {"ano": 2024, "valorLiquido": 5000.0, "tipoDespesa": "Passagem"},
-        ])
+        mock_despesas = AsyncMock(
+            return_value=[
+                {"ano": 2024, "valorLiquido": 5000.0, "tipoDespesa": "Passagem"},
+            ]
+        )
         monkeypatch.setattr(deputados.camara_service, "listar_despesas", mock_despesas)
 
         resp = client.get("/api/v1/deputados/204560/despesas?ano=2024")
@@ -204,8 +239,9 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.camara_service, "listar_despesas",
-            AsyncMock(side_effect=Exception("API Câmara fora"))
+            deputados.camara_service,
+            "listar_despesas",
+            AsyncMock(side_effect=Exception("API Câmara fora")),
         )
 
         resp = client.get("/api/v1/deputados/1/despesas")
@@ -216,8 +252,9 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.camara_service, "listar_orgaos",
-            AsyncMock(return_value=[{"id": 1, "sigla": "CCJ", "nome": "Comissão de Justiça"}])
+            deputados.camara_service,
+            "listar_orgaos",
+            AsyncMock(return_value=[{"id": 1, "sigla": "CCJ", "nome": "Comissão de Justiça"}]),
         )
 
         resp = client.get("/api/v1/deputados/204560/comissoes")
@@ -228,7 +265,8 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_votacoes_deputado",
+            deputados.db_service,
+            "get_votacoes_deputado",
             lambda _id, **kwargs: [{"votacao_id": "V001", "tipo_voto": "Sim"}],
         )
 
@@ -240,8 +278,9 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.camara_service, "listar_proposicoes",
-            AsyncMock(return_value=[{"id": 123, "siglaTipo": "PL", "numero": 456}])
+            deputados.camara_service,
+            "listar_proposicoes",
+            AsyncMock(return_value=[{"id": 123, "siglaTipo": "PL", "numero": 456}]),
         )
 
         resp = client.get("/api/v1/deputados/204560/proposicoes")
@@ -252,7 +291,8 @@ class TestDeputadosRoutes:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_dossie_deputado",
+            deputados.db_service,
+            "get_dossie_deputado",
             lambda _: {
                 "analise_gerada": "Dossiê completo",
                 "data_analise": "2024-01-01",
@@ -301,7 +341,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "search_prefeitos",
+            prefeitos.db_service,
+            "search_prefeitos",
             lambda q: [{"municipio_id": 1, "municipio_nome": "Maceió", "uf": "AL"}],
         )
         resp = client.get("/api/v1/prefeitos/search?q=maceio")
@@ -312,7 +353,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "get_ranking_prefeitos",
+            prefeitos.db_service,
+            "get_ranking_prefeitos",
             lambda **kw: [{"municipio_nome": "A", "valor_total_emendas": 1e6}],
         )
         resp = client.get("/api/v1/prefeitos/ranking?limit=5")
@@ -322,7 +364,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "get_perfil_prefeito",
+            prefeitos.db_service,
+            "get_perfil_prefeito",
             lambda _: {"municipio_id": 1, "prefeito_nome": "Prefeito Teste"},
         )
         resp = client.get("/api/v1/prefeitos/1/perfil")
@@ -340,7 +383,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "get_emendas_municipio",
+            prefeitos.db_service,
+            "get_emendas_municipio",
             lambda _id, **kw: {"anos_disponiveis": [2024], "total_planos": 5, "emendas": []},
         )
         resp = client.get("/api/v1/prefeitos/1/emendas")
@@ -351,7 +395,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "get_licitacoes_prefeitura",
+            prefeitos.db_service,
+            "get_licitacoes_prefeitura",
             lambda _id, **kw: [{"id": 1, "descricao": "Compra de insumos"}],
         )
         resp = client.get("/api/v1/prefeitos/1/licitacoes")
@@ -361,7 +406,8 @@ class TestPrefeitosRoutes:
         from src.api.routes import prefeitos
 
         monkeypatch.setattr(
-            prefeitos.db_service, "get_ganhadores_licitacoes_prefeitura",
+            prefeitos.db_service,
+            "get_ganhadores_licitacoes_prefeitura",
             lambda _id, **kw: [{"razao_social": "Empresa X", "total_licitacoes_ganhas": 3}],
         )
         resp = client.get("/api/v1/prefeitos/1/licitacoes/ganhadores")
@@ -380,7 +426,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "search_vereadores",
+            vereadores.db_service,
+            "search_vereadores",
             lambda q: [{"sq_candidato": "1", "nome_completo": "Ver. Teste", "partido": "PT"}],
         )
         resp = client.get("/api/v1/vereadores/search?q=teste")
@@ -390,7 +437,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "get_ranking_vereadores",
+            vereadores.db_service,
+            "get_ranking_vereadores",
             lambda **kw: [{"nome_completo": "Ver. A", "votos": 5000}],
         )
         resp = client.get("/api/v1/vereadores/ranking?limit=10&uf=SP")
@@ -400,7 +448,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "get_resumo_vereadores",
+            vereadores.db_service,
+            "get_resumo_vereadores",
             lambda: {"total_eleitos": 50000, "total_municipios": 5000},
         )
         resp = client.get("/api/v1/vereadores/resumo")
@@ -411,7 +460,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "get_vereadores_por_partido",
+            vereadores.db_service,
+            "get_vereadores_por_partido",
             lambda **kw: [{"partido": "PT", "total_eleitos": 1000}],
         )
         resp = client.get("/api/v1/vereadores/por-partido?uf=SP")
@@ -421,7 +471,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "get_vereadores_por_municipio",
+            vereadores.db_service,
+            "get_vereadores_por_municipio",
             lambda _id: [{"nome_completo": "Ver. Mun"}],
         )
         resp = client.get("/api/v1/vereadores/municipio/2700300")
@@ -430,9 +481,7 @@ class TestVereadoresRoutes:
     def test_por_municipio_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.routes import vereadores
 
-        monkeypatch.setattr(
-            vereadores.db_service, "get_vereadores_por_municipio", lambda _id: []
-        )
+        monkeypatch.setattr(vereadores.db_service, "get_vereadores_por_municipio", lambda _id: [])
         resp = client.get("/api/v1/vereadores/municipio/99999")
         assert resp.status_code == 404
 
@@ -440,7 +489,8 @@ class TestVereadoresRoutes:
         from src.api.routes import vereadores
 
         monkeypatch.setattr(
-            vereadores.db_service, "get_vereadores_por_uf",
+            vereadores.db_service,
+            "get_vereadores_por_uf",
             lambda uf: [{"nome_completo": "Ver. SP"}],
         )
         resp = client.get("/api/v1/vereadores/uf/SP")
@@ -459,7 +509,8 @@ class TestAnalyticsRoutes:
         from src.api.routes import analytics
 
         monkeypatch.setattr(
-            analytics.analytics_service, "get_party_efficiency",
+            analytics.analytics_service,
+            "get_party_efficiency",
             AsyncMock(return_value=[{"partido": "PT", "taxa_sucesso": 75.0}]),
         )
         resp = client.get("/api/v1/analytics/party-efficiency")
@@ -470,7 +521,8 @@ class TestAnalyticsRoutes:
         from src.api.routes import analytics
 
         monkeypatch.setattr(
-            analytics.analytics_service, "get_socioeconomic_data",
+            analytics.analytics_service,
+            "get_socioeconomic_data",
             AsyncMock(return_value=[{"municipio": "Maceió", "idhm": 0.7}]),
         )
         resp = client.get("/api/v1/analytics/socioeconomic")
@@ -480,7 +532,8 @@ class TestAnalyticsRoutes:
         from src.api.routes import analytics
 
         monkeypatch.setattr(
-            analytics.analytics_service, "get_deputy_roi",
+            analytics.analytics_service,
+            "get_deputy_roi",
             AsyncMock(return_value=[{"deputado": "Teste", "roi": 2.5}]),
         )
         resp = client.get("/api/v1/analytics/deputy-roi")
@@ -490,7 +543,8 @@ class TestAnalyticsRoutes:
         from src.api.routes import analytics
 
         monkeypatch.setattr(
-            analytics.analytics_service, "get_top_municipios",
+            analytics.analytics_service,
+            "get_top_municipios",
             AsyncMock(return_value=[{"municipio": "Maceió", "valor_total": 1e7}]),
         )
         resp = client.get("/api/v1/analytics/top-municipios")
@@ -509,7 +563,8 @@ class TestAuditoriaRoutes:
         from src.api.routes import auditoria
 
         monkeypatch.setattr(
-            auditoria.mcp_service, "get_saude_resumo",
+            auditoria.mcp_service,
+            "get_saude_resumo",
             AsyncMock(return_value={"farmacia_popular": {"unidades": 5}}),
         )
         resp = client.get("/api/v1/auditoria/saude/2700300")
@@ -520,7 +575,8 @@ class TestAuditoriaRoutes:
         from src.api.routes import auditoria
 
         monkeypatch.setattr(
-            auditoria.mcp_service, "get_saude_resumo",
+            auditoria.mcp_service,
+            "get_saude_resumo",
             AsyncMock(side_effect=Exception("MCP erro")),
         )
         resp = client.get("/api/v1/auditoria/saude/000")
@@ -530,7 +586,8 @@ class TestAuditoriaRoutes:
         from src.api.routes import auditoria
 
         monkeypatch.setattr(
-            auditoria.mcp_service, "executar_lote",
+            auditoria.mcp_service,
+            "executar_lote",
             AsyncMock(return_value=[{"inidoneo": False}]),
         )
         resp = client.get("/api/v1/auditoria/tcu?cnpj=12345678000190")
@@ -540,7 +597,8 @@ class TestAuditoriaRoutes:
         from src.api.routes import auditoria
 
         monkeypatch.setattr(
-            auditoria.mcp_service, "executar_lote",
+            auditoria.mcp_service,
+            "executar_lote",
             AsyncMock(side_effect=Exception("Falha MCP")),
         )
         resp = client.get("/api/v1/auditoria/tcu?cnpj=00000000000000")
@@ -559,7 +617,8 @@ class TestComprasRoutes:
         from src.api.routes import compras
 
         monkeypatch.setattr(
-            compras.mcp_service._mcp_client, "call_tool",
+            compras.mcp_service._mcp_client,
+            "call_tool",
             AsyncMock(return_value={"fornecedor": "Empresa X"}),
         )
         resp = client.get("/api/v1/compras/fornecedor?cnpj=12345678000190")
@@ -570,7 +629,8 @@ class TestComprasRoutes:
         from src.api.routes import compras
 
         monkeypatch.setattr(
-            compras.mcp_service._mcp_client, "call_tool",
+            compras.mcp_service._mcp_client,
+            "call_tool",
             AsyncMock(side_effect=Exception("PNCP erro")),
         )
         resp = client.get("/api/v1/compras/fornecedor?cnpj=00000000000000")
@@ -580,7 +640,8 @@ class TestComprasRoutes:
         from src.api.routes import compras
 
         monkeypatch.setattr(
-            compras.mcp_service._mcp_client, "call_tool",
+            compras.mcp_service._mcp_client,
+            "call_tool",
             AsyncMock(return_value={"precos": []}),
         )
         resp = client.get("/api/v1/compras/bps?termo=insulina")
@@ -599,7 +660,8 @@ class TestDiarioRoutes:
         from src.api.routes import diario
 
         monkeypatch.setattr(
-            diario.mcp_service._mcp_client, "call_tool",
+            diario.mcp_service._mcp_client,
+            "call_tool",
             AsyncMock(return_value={"materias": [{"titulo": "Portaria X"}]}),
         )
         resp = client.get("/api/v1/diario/buscar?q=portaria&escopo=federal")
@@ -609,7 +671,8 @@ class TestDiarioRoutes:
         from src.api.routes import diario
 
         monkeypatch.setattr(
-            diario.mcp_service._mcp_client, "call_tool",
+            diario.mcp_service._mcp_client,
+            "call_tool",
             AsyncMock(side_effect=Exception("DOU erro")),
         )
         resp = client.get("/api/v1/diario/buscar?q=xxx&escopo=ambos")
@@ -619,7 +682,8 @@ class TestDiarioRoutes:
         from src.api.routes import diario
 
         monkeypatch.setattr(
-            diario.mcp_service, "buscar_diario_perfil",
+            diario.mcp_service,
+            "buscar_diario_perfil",
             AsyncMock(return_value={"citacoes": []}),
         )
         resp = client.post(
@@ -647,7 +711,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_resumo_estado",
+            fnde.db_service,
+            "get_fnde_resumo_estado",
             lambda **kw: [{"uf": "AL", "total_beneficiados": 50000}],
         )
         resp = client.get("/api/v1/fnde/resumo?uf=AL")
@@ -657,7 +722,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_resumo_estado",
+            fnde.db_service,
+            "get_fnde_resumo_estado",
             lambda **kw: [{"uf": "AL"}, {"uf": "SP"}],
         )
         resp = client.get("/api/v1/fnde/resumo")
@@ -667,7 +733,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_resumo_municipio",
+            fnde.db_service,
+            "get_fnde_resumo_municipio",
             lambda **kw: [{"municipio_id": 1, "total_beneficiados": 1000}],
         )
         resp = client.get("/api/v1/fnde/municipios?uf=AL&limit=10")
@@ -677,7 +744,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_programas_municipio",
+            fnde.db_service,
+            "get_fnde_programas_municipio",
             lambda **kw: [{"programa": "FUNDEB", "ano": 2024}],
         )
         resp = client.get("/api/v1/fnde/municipio/2700300")
@@ -687,7 +755,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_programas_municipio",
+            fnde.db_service,
+            "get_fnde_programas_municipio",
             lambda **kw: [],
         )
         resp = client.get("/api/v1/fnde/municipio/99999")
@@ -697,7 +766,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "get_fnde_programas_disponiveis",
+            fnde.db_service,
+            "get_fnde_programas_disponiveis",
             lambda: [{"programa": "FUNDEB", "total_registros": 100}],
         )
         resp = client.get("/api/v1/fnde/programas")
@@ -707,7 +777,8 @@ class TestFndeRoutes:
         from src.api.routes import fnde
 
         monkeypatch.setattr(
-            fnde.db_service, "search_fnde_municipios",
+            fnde.db_service,
+            "search_fnde_municipios",
             lambda **kw: [{"municipio_id": 1, "nome": "Maceió"}],
         )
         resp = client.get("/api/v1/fnde/search?q=maceio")
@@ -726,7 +797,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_all_governadores",
+            governadores.db_service,
+            "get_all_governadores",
             lambda **kw: [{"uf": "SP", "nome_governador": "Gov SP", "sigla_partido": "PSDB"}],
         )
         resp = client.get("/api/v1/governadores/")
@@ -736,7 +808,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_all_governadores",
+            governadores.db_service,
+            "get_all_governadores",
             lambda **kw: [{"uf": "SP", "nome_governador": "Gov SP"}],
         )
         resp = client.get("/api/v1/governadores/?partido=PSDB&regiao=SE")
@@ -746,7 +819,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_ranking_governadores_emendas",
+            governadores.db_service,
+            "get_ranking_governadores_emendas",
             lambda **kw: [{"uf": "SP", "valor_total_emendas": 1e8}],
         )
         resp = client.get("/api/v1/governadores/ranking/emendas?limit=10")
@@ -756,7 +830,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_ranking_alinhamento_governador",
+            governadores.db_service,
+            "get_ranking_alinhamento_governador",
             lambda **kw: [{"uf": "SP", "pct_aliados": 85.0}],
         )
         resp = client.get("/api/v1/governadores/ranking/alinhamento")
@@ -766,8 +841,11 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_triangulo_politico",
-            lambda **kw: [{"deputado_nome": "Dep A", "relacao_partidaria_prefeito": "mesmo partido"}],
+            governadores.db_service,
+            "get_triangulo_politico",
+            lambda **kw: [
+                {"deputado_nome": "Dep A", "relacao_partidaria_prefeito": "mesmo partido"}
+            ],
         )
         resp = client.get("/api/v1/governadores/triangulo-politico?uf=SP")
         assert resp.status_code == 200
@@ -776,8 +854,14 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_perfil_governador",
-            lambda uf: {"uf": "SP", "nome_governador": "Gov SP", "top_municipios": [], "distribuicao_partidos_bancada": []},
+            governadores.db_service,
+            "get_perfil_governador",
+            lambda uf: {
+                "uf": "SP",
+                "nome_governador": "Gov SP",
+                "top_municipios": [],
+                "distribuicao_partidos_bancada": [],
+            },
         )
         resp = client.get("/api/v1/governadores/SP/perfil")
         assert resp.status_code == 200
@@ -786,9 +870,7 @@ class TestGovernadoresRoutes:
     def test_perfil_governador_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.routes import governadores
 
-        monkeypatch.setattr(
-            governadores.db_service, "get_perfil_governador", lambda uf: None
-        )
+        monkeypatch.setattr(governadores.db_service, "get_perfil_governador", lambda uf: None)
         resp = client.get("/api/v1/governadores/XX/perfil")
         assert resp.status_code == 404
 
@@ -796,7 +878,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_bancada_deputados_uf",
+            governadores.db_service,
+            "get_bancada_deputados_uf",
             lambda uf, **kw: [{"deputado_id": 1, "nome": "Dep Federal"}],
         )
         resp = client.get("/api/v1/governadores/SP/bancada")
@@ -806,8 +889,14 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_emendas_estado",
-            lambda uf, **kw: {"uf": "SP", "total_emendas": 100, "emendas": [], "por_parlamentar": []},
+            governadores.db_service,
+            "get_emendas_estado",
+            lambda uf, **kw: {
+                "uf": "SP",
+                "total_emendas": 100,
+                "emendas": [],
+                "por_parlamentar": [],
+            },
         )
         resp = client.get("/api/v1/governadores/SP/emendas?ano=2024")
         assert resp.status_code == 200
@@ -816,7 +905,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_financeiro_estado",
+            governadores.db_service,
+            "get_financeiro_estado",
             lambda uf: {"uf": "SP", "receitas_correntes": 1e9},
         )
         resp = client.get("/api/v1/governadores/SP/financeiro")
@@ -826,7 +916,8 @@ class TestGovernadoresRoutes:
         from src.api.routes import governadores
 
         monkeypatch.setattr(
-            governadores.db_service, "get_municipios_por_estado",
+            governadores.db_service,
+            "get_municipios_por_estado",
             lambda uf, **kw: [{"municipio_nome": "São Paulo", "valor_total_emendas": 1e7}],
         )
         resp = client.get("/api/v1/governadores/SP/municipios")
@@ -844,7 +935,10 @@ class TestRootRoute:
     def test_root_no_index(self) -> None:
         """GET / — retorna JSON (se sem index.html) ou HTML (se existir)."""
         from pathlib import Path
-        index_path = Path(__file__).resolve().parent.parent / "src" / "api" / "static" / "index.html"
+
+        index_path = (
+            Path(__file__).resolve().parent.parent / "src" / "api" / "static" / "index.html"
+        )
         resp = client.get("/")
         assert resp.status_code == 200
         if index_path.exists():
@@ -863,4 +957,7 @@ class TestRootRoute:
         """GET /openapi.json — schema OpenAPI."""
         resp = client.get("/openapi.json")
         assert resp.status_code == 200
-        assert resp.json()["info"]["title"] == "TransfereGov — Painel de Inteligência Parlamentar & Municipal"
+        assert (
+            resp.json()["info"]["title"]
+            == "TransfereGov — Painel de Inteligência Parlamentar & Municipal"
+        )

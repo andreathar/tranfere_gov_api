@@ -1,4 +1,4 @@
--- migration_017_parlamentar_proposicoes_id.sql
+-- migration_031_parlamentar_proposicoes_id.sql
 -- Adiciona parlamentar_id (TransfereGov) à tabela parlamentar_proposicoes
 -- Permite JOIN direto com planos_acao sem depender de nome
 

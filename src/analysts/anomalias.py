@@ -102,7 +102,7 @@ Se NENHUMA anomalia for identificada em todas as categorias, responda apenas:
 
         # 2. Validação de fidelidade numérica (parse BR/US + tolerância 2%)
         try:
-            chunks_text = "\n".join(getattr(self, '_last_chunks', []))
+            chunks_text = "\n".join(getattr(self, "_last_chunks", []))
             taxa_invencao = taxa_invencao_rs(output, chunks_text)
         except Exception:
             taxa_invencao = 0.0

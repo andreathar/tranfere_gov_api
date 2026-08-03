@@ -33,7 +33,7 @@ from mcp_brasil.data.transferegov.schemas import TransferenciaEspecial
 
 from config.settings import SITUACOES_NEGADAS
 from src.db_import import LOG_SQL, UPSERT_SQL
-from src.db_utils import get_connection
+from src.db_utils import get_connection, setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +72,9 @@ async def fetch_ano(ano: int, limit: int = 0) -> list[TransferenciaEspecial]:
 
 def carregar_beneficiarios(cur: Any) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
     """Mapas cnpj -> beneficiario_id e (nome, uf) -> beneficiario_id."""
-    cur.execute("SELECT beneficiario_id, cnpj, nome, uf FROM beneficiarios WHERE cnpj IS NOT NULL AND cnpj != ''")
+    cur.execute(
+        "SELECT beneficiario_id, cnpj, nome, uf FROM beneficiarios WHERE cnpj IS NOT NULL AND cnpj != ''"
+    )
     por_cnpj: dict[str, int] = {}
     por_nome_uf: dict[tuple[str, str], int] = {}
     for bid, cnpj, nome, uf in cur.fetchall():
@@ -146,10 +148,16 @@ def mapear_param(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sincronizar PIX 2022-2024 via API PostgREST (mcp-brasil)")
-    parser.add_argument("--anos", type=int, nargs="+", default=list(DEFAULT_ANOS), help="Anos a sincronizar")
+    parser = argparse.ArgumentParser(
+        description="Sincronizar PIX 2022-2024 via API PostgREST (mcp-brasil)"
+    )
+    parser.add_argument(
+        "--anos", type=int, nargs="+", default=list(DEFAULT_ANOS), help="Anos a sincronizar"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Apenas contar, sem gravar")
-    parser.add_argument("--limit", type=int, default=0, help="Limitar N registros por ano (0=todos)")
+    parser.add_argument(
+        "--limit", type=int, default=0, help="Limitar N registros por ano (0=todos)"
+    )
     args = parser.parse_args()
 
     conn = get_connection()
@@ -255,5 +263,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
     main()

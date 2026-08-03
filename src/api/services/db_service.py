@@ -945,6 +945,7 @@ def get_perfil_governador(uf: str) -> dict | None:
         if not row:
             return None
         result = _row_to_dict(row)
+        assert result is not None  # row já verificado acima
 
         # Totais de emendas para a UF (via beneficiarios.uf)
         cur.execute(
@@ -1426,9 +1427,15 @@ def get_financeiro_municipios(
 ) -> list[dict]:
     """Ranking de municípios por receita/despesa/arrecadação (JOIN IBGE)."""
     allowed = {
-        "despesas_totais", "receitas_orcamentarias", "resultado_orcamentario",
-        "arrec_iss", "arrec_iptu", "arrec_cota_icms", "arrec_cota_fpm",
-        "arrec_impostos_geral", "populacao",
+        "despesas_totais",
+        "receitas_orcamentarias",
+        "resultado_orcamentario",
+        "arrec_iss",
+        "arrec_iptu",
+        "arrec_cota_icms",
+        "arrec_cota_fpm",
+        "arrec_impostos_geral",
+        "populacao",
     }
     order_col = order_by if order_by in allowed else "despesas_totais"
     with _get_connection() as conn, conn.cursor() as cur:

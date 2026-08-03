@@ -15,7 +15,7 @@ Diferenca para siconfi.py (municipal):
     FPE no lugar de FPM, sem IPTU/ISS/ITBI
   - Destino: tabela estados_financeiro (PK uf + exercicio)
 
-Requer: migration_026_estados_financeiro.sql.
+Requer: migration_025_estados_financeiro.sql.
 API: https://apidatalake.tesouro.gov.br/ords/siconfi/tt/ (mesma do municipal)
 Rate limit: 1 req/s (respeitado).
 """
@@ -46,10 +46,33 @@ from src.enrichers.siconfi import (
 # Códigos IBGE dos 26 estados + DF (id_ente na API SICONFI)
 # ---------------------------------------------------------------------------
 UF_IBGE: dict[str, int] = {
-    "RO": 11, "AC": 12, "AM": 13, "RR": 14, "PA": 15, "AP": 16, "TO": 17,
-    "MA": 21, "PI": 22, "CE": 23, "RN": 24, "PB": 25, "PE": 26, "AL": 27,
-    "SE": 28, "BA": 29, "MG": 31, "ES": 32, "RJ": 33, "SP": 35, "PR": 41,
-    "SC": 42, "RS": 43, "MS": 50, "MT": 51, "GO": 52, "DF": 53,
+    "RO": 11,
+    "AC": 12,
+    "AM": 13,
+    "RR": 14,
+    "PA": 15,
+    "AP": 16,
+    "TO": 17,
+    "MA": 21,
+    "PI": 22,
+    "CE": 23,
+    "RN": 24,
+    "PB": 25,
+    "PE": 26,
+    "AL": 27,
+    "SE": 28,
+    "BA": 29,
+    "MG": 31,
+    "ES": 32,
+    "RJ": 33,
+    "SP": 35,
+    "PR": 41,
+    "SC": 42,
+    "RS": 43,
+    "MS": 50,
+    "MT": 51,
+    "GO": 52,
+    "DF": 53,
 }
 
 # ---------------------------------------------------------------------------
@@ -118,16 +141,18 @@ def _conta_exata(conta: str, alvo: str) -> bool:
         return False
     # Exclui codigos de receita/despesa intra-orcamentaria (7.x, 8.x, 9.x)
     codigo = conta.split(" - ")[0].strip()
-    intra_orcamentaria = (
-        re.fullmatch(r"\d+(\.\d+)*", codigo) is not None
-        and codigo.split(".")[0] in ("7", "8", "9")
-    )
+    intra_orcamentaria = re.fullmatch(r"\d+(\.\d+)*", codigo) is not None and codigo.split(".")[
+        0
+    ] in ("7", "8", "9")
     return not intra_orcamentaria
 
 
 def _valor_de(itens: Sequence[_ItemDCA], nome: str, coluna: str) -> float | None:
     for item in itens:
-        if _conta_exata(str(item.get("conta", "")), nome) and str(item.get("coluna", "")) == coluna:
+        if (
+            _conta_exata(str(item.get("conta", "")), nome)
+            and str(item.get("coluna", "")) == coluna
+        ):
             valor = item.get("valor")
             if valor is not None:
                 try:
@@ -183,6 +208,7 @@ def parse_dca_estadual_itens(itens: Sequence[_ItemDCA]) -> dict[str, float | Non
             resultado["resultado_orcamentario"] = rec - desp
 
     return resultado
+
 
 # ---------------------------------------------------------------------------
 # Mapeamento RREO Anexo 03 ESTADUAL -> coluna no banco
@@ -244,7 +270,9 @@ def buscar_dca_estado(uf: str, exercicio: int) -> Sequence[_ItemDCA]:
         return []
 
 
-def buscar_rreo_estado(uf: str, exercicio: int, periodo: int = RREO_PERIODO_ANUAL) -> Sequence[_ItemDCA]:
+def buscar_rreo_estado(
+    uf: str, exercicio: int, periodo: int = RREO_PERIODO_ANUAL
+) -> Sequence[_ItemDCA]:
     """Busca RREO Anexo 03 de um ESTADO (esfera estadual)."""
     if uf.upper() not in UF_IBGE:
         return []
@@ -277,18 +305,14 @@ def parse_rreo_estadual_itens(itens: Sequence[_ItemDCA]) -> dict[str, float | No
     real do exercicio. Fallback: soma dos valores mensais <MR*> quando a coluna
     de total nao existir.
     """
+
     # Normaliza colunas uma vez
     def _norm_col(item: _ItemDCA) -> str:
         return _strip_accents(str(item.get("coluna", "")).lower())
 
     tem_total = any("total (ultimos 12 meses)" in _norm_col(i) for i in itens)
-    itens_alvo = [
-        i for i in itens
-        if "total (ultimos 12 meses)" in _norm_col(i)
-        if tem_total
-    ] or [
-        i for i in itens
-        if _norm_col(i).startswith("<mr")
+    itens_alvo = [i for i in itens if "total (ultimos 12 meses)" in _norm_col(i) if tem_total] or [
+        i for i in itens if _norm_col(i).startswith("<mr")
     ]
 
     resultado: dict[str, float | None] = {col: None for col in ARREC_DB_COLUMNS}
@@ -432,13 +456,17 @@ def main() -> None:
     if not args.dry_run:
         conn.commit()
 
-    print(f"\nDCA concluido em {time.time() - inicio:.1f}s | OK: {total_dca_ok} | Sem dados: {total_dca_vazio}")
+    print(
+        f"\nDCA concluido em {time.time() - inicio:.1f}s | OK: {total_dca_ok} | Sem dados: {total_dca_vazio}"
+    )
 
     # ========================================================================
     # FASE 2 — RREO Anexo 03 estadual (arrecadacao)
     # ========================================================================
     if not args.rreo:
-        print("\n[INFO] Use --rreo para buscar arrecadacao estadual (ICMS, IPVA, ITCD, FPE, FUNDEB)")
+        print(
+            "\n[INFO] Use --rreo para buscar arrecadacao estadual (ICMS, IPVA, ITCD, FPE, FUNDEB)"
+        )
         conn.close()
         return
 
@@ -479,7 +507,9 @@ def main() -> None:
         conn.commit()
 
     conn.close()
-    print(f"\nRREO concluido em {time.time() - inicio_rreo:.1f}s | OK: {total_rreo_ok} | Sem dados: {total_rreo_vazio}")
+    print(
+        f"\nRREO concluido em {time.time() - inicio_rreo:.1f}s | OK: {total_rreo_ok} | Sem dados: {total_rreo_vazio}"
+    )
 
 
 if __name__ == "__main__":

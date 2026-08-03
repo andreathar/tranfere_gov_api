@@ -1,4 +1,4 @@
--- Migration 015: Adiciona colunas de modelo_usado e score_qualidade em parlamentares_personas
+-- Migration 028: Adiciona colunas de modelo_usado e score_qualidade em parlamentares_personas
 
 ALTER TABLE parlamentares_personas
 ADD COLUMN IF NOT EXISTS modelo_usado VARCHAR(100) DEFAULT 'llama-3.2-3b-instruct:q4_k_m',

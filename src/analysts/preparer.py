@@ -67,6 +67,7 @@ class Briefing:
         raw_fallback: True se o preparador falhou e este é fallback simples.
         chunks_pre_count: Quantidade original de chunks recebidos.
     """
+
     text: str = ""
     fact_table: str = ""
     insights: list[str] = field(default_factory=list)
@@ -104,6 +105,7 @@ class PromptPreparer:
     def _get_client(self) -> Any:
         if self._client is None:
             from src.localai_client import LocalAIClient
+
             self._client = LocalAIClient(model=self.model)
         return self._client
 
@@ -175,15 +177,13 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         if len(prompt) > PREPARER_MAX_PROMPT_CHARS:
             # Truncar chunks do meio
             meio = len(chunks) // 2
-            chunks_keep = chunks[:meio] + chunks[meio+2:]
+            chunks_keep = chunks[:meio] + chunks[meio + 2 :]
             log.warning(
                 f"Preparer: prompt excede {PREPARER_MAX_PROMPT_CHARS} chars "
                 f"({len(prompt)}), removendo chunks do meio. "
                 f"{len(chunks)} -> {len(chunks_keep)}"
             )
-            return self._build_prep_prompt(
-                chunks_keep, analyst_persona, section_title, nome
-            )
+            return self._build_prep_prompt(chunks_keep, analyst_persona, section_title, nome)
 
         return prompt
 
@@ -198,7 +198,8 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         # Extrair seção ---BRIEFING---
         m = re.search(
             r"---BRIEFING---\s*\n(.*?)(?=---FACT TABLE---|---KEY INSIGHTS---|$)",
-            resposta, re.DOTALL,
+            resposta,
+            re.DOTALL,
         )
         if m:
             briefing.text = m.group(1).strip()
@@ -206,7 +207,8 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         # Extrair seção ---FACT TABLE---
         m = re.search(
             r"---FACT TABLE---\s*\n(.*?)(?=---KEY INSIGHTS---|$)",
-            resposta, re.DOTALL,
+            resposta,
+            re.DOTALL,
         )
         if m:
             briefing.fact_table = m.group(1).strip()
@@ -231,9 +233,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
     # Validação de fidelidade numérica
     # -----------------------------------------------------------------------
 
-    def _validate_fidelity(
-        self, briefing: Briefing, chunks: list[str]
-    ) -> bool:
+    def _validate_fidelity(self, briefing: Briefing, chunks: list[str]) -> bool:
         """Verifica se todos os valores R$ do briefing existem nos chunks fonte.
 
         Estratégia:
@@ -246,11 +246,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         """
         # Extrair R$ do briefing
         texto_briefing = briefing.text + "\n" + briefing.fact_table
-        valores_briefing = set(
-            m.group(0) for m in re.finditer(
-                r"R\$\s*[\d.,]+", texto_briefing
-            )
-        )
+        valores_briefing = set(m.group(0) for m in re.finditer(r"R\$\s*[\d.,]+", texto_briefing))
 
         if not valores_briefing:
             # Sem valores para validar = passa automaticamente
@@ -259,9 +255,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 
         # Extrair R$ dos chunks
         texto_chunks = "\n".join(chunks)
-        valores_chunks = set(
-            m.group(0) for m in re.finditer(r"R\$\s*[\d.,]+", texto_chunks)
-        )
+        valores_chunks = set(m.group(0) for m in re.finditer(r"R\$\s*[\d.,]+", texto_chunks))
 
         # Normalizar para comparação: remover espaços, uppercase e
         # normalizar decimais (aceitar 198,000.0 == 198,000.00)
@@ -293,16 +287,10 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 
         chunks_norm = {_normalize(v) for v in valores_chunks}
 
-        falsos = [
-            v for v in valores_briefing
-            if _normalize(v) not in chunks_norm
-        ]
+        falsos = [v for v in valores_briefing if _normalize(v) not in chunks_norm]
 
         if falsos:
-            log.warning(
-                f"Valores R$ no briefing sem correspondência nos chunks: "
-                f"{falsos[:5]}"
-            )
+            log.warning(f"Valores R$ no briefing sem correspondência nos chunks: " f"{falsos[:5]}")
             if len(falsos) / len(valores_briefing) > 0.2:
                 briefing.validation_pass = False
                 return False
@@ -369,16 +357,16 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
                 chunks_pre_count=0,
             )
 
-        prompt = self._build_prep_prompt(
-            chunks, analyst_persona, section_title, nome
-        )
+        prompt = self._build_prep_prompt(chunks, analyst_persona, section_title, nome)
 
         # Carregar modelo rápido via model_scope (refcount tracking)
         lm_ctx = None
         try:
             from config.settings import CLOUD_PROXY_MODEL_NAMES
+
             if self.model not in CLOUD_PROXY_MODEL_NAMES:
                 from src.localai_manager import manager as lm
+
                 lm_ctx = lm.model_scope(self.model)
                 lm_ctx.__enter__()
         except Exception as e:
@@ -404,9 +392,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
             # quando precisa de VRAM).
             resposta = client.chat(prompt=prompt, system=self._system_prompt(), max_tokens=1500)
         except Exception as e:
-            log.warning(
-                f"Preparer falhou para '{section_title}': {e}"
-            )
+            log.warning(f"Preparer falhou para '{section_title}': {e}")
             # Garantir release do modelo
             if lm_ctx is not None:
                 try:

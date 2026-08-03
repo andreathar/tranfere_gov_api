@@ -1,4 +1,4 @@
--- migration_026: corrige upsert_plano_acao para gravar beneficiario_id (chave natural)
+-- migration_037: corrige upsert_plano_acao para gravar beneficiario_id (chave natural)
 -- em planos_acao (RETURNING id serial quebrava a FK p/ beneficiarios.beneficiario_id).
 -- Gerada a partir da definicao deployada em 2026-07-31.
 
@@ -123,4 +123,3 @@ BEGIN
     RETURN v_existing_id;
 END;
 $function$
-

@@ -1,4 +1,4 @@
--- Migration 016: Tabela governadores_dados e view v_governadores_resumo
+-- Migration 018: Tabela governadores_dados e view v_governadores_resumo
 
 CREATE TABLE IF NOT EXISTS governadores_dados (
     uf VARCHAR(2) PRIMARY KEY,
@@ -22,7 +22,7 @@ COMMENT ON COLUMN governadores_dados.sigla_partido IS 'Partido político do gove
 
 -- View consolidando Governador + Total Emendas Pix para a UF + Deputados da mesma UF
 CREATE OR REPLACE VIEW v_governadores_resumo AS
-SELECT 
+SELECT
     g.uf,
     g.nome_governador,
     g.sigla_partido AS partido_governador,

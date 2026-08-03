@@ -265,7 +265,7 @@ def run_benchmark(
     resultados = []
 
     for i, modelo in enumerate(modelos, 1):
-        mid = modelo["id"]
+        mid = str(modelo["id"])
         label = modelo["label"]
         print(f"[{i}/{len(modelos)}] {label} ({mid})")
 

@@ -1,0 +1,59 @@
+name: supabase-studio-transfergov
+
+services:
+  meta:
+    container_name: transfergov-meta
+    image: supabase/postgres-meta:v0.96.6
+    restart: unless-stopped
+    # Usa a rede do host para alcançar o Postgres nativo em 127.0.0.1:5432
+    network_mode: host
+    environment:
+      PG_META_PORT: 8106
+      PG_META_DB_HOST: 127.0.0.1
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: transferegov_db
+      PG_META_DB_USER: cognee
+      PG_META_DB_PASSWORD: cognee
+      CRYPTO_KEY: dev-local-pg-meta-crypto-key-transfergov
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8106; echo -e \"GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n\" >&3; head -1 <&3 | grep -q 200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  studio:
+    container_name: transfergov-studio
+    image: supabase/studio:2026.07.07-sha-a6a04f2
+    restart: unless-stopped
+    depends_on:
+      meta:
+        condition: service_healthy
+    network_mode: host
+    environment:
+      HOSTNAME: 0.0.0.0
+      STUDIO_PG_META_URL: http://127.0.0.1:8106
+      POSTGRES_PORT: 5432
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_DB: transferegov_db
+      POSTGRES_PASSWORD: cognee
+      POSTGRES_USER_READ_WRITE: cognee
+      PG_META_CRYPTO_KEY: dev-local-pg-meta-crypto-key-transfergov
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      DEFAULT_ORGANIZATION_NAME: TransferGov
+      DEFAULT_PROJECT_NAME: transferegov-db
+      SUPABASE_URL: http://127.0.0.1:8091
+      SUPABASE_PUBLIC_URL: http://localhost:3000
+      SUPABASE_ANON_KEY: dev-local-anon-key-transfergov
+      SUPABASE_SERVICE_KEY: dev-local-service-role-key-transfergov
+      AUTH_JWT_SECRET: dev-local-jwt-secret-transfergov-transfergov
+      ENABLED_FEATURES_LOGS_ALL: "false"
+    volumes:
+      - studio-snippets:/app/snippets
+      - studio-functions:/app/edge-functions:ro
+
+volumes:
+  studio-snippets:
+  studio-functions:

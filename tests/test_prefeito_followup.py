@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from src.prefeito_followup import buscar_prefeitos, mostrar_perfil_prefeito, mostrar_ranking_prefeitos
+from src.prefeito_followup import (
+    buscar_prefeitos,
+    mostrar_perfil_prefeito,
+    mostrar_ranking_prefeitos,
+)
 
 # ---------------------------------------------------------------------------
 # buscar_prefeitos — mock DB
@@ -270,7 +274,7 @@ class TestMostrarRankingPrefeitos:
         called_sql = mock_cur.execute.call_args[0][0]
         assert "LIMIT" in called_sql.upper()
         # Default limit is 15
-        assert 15 == mock_cur.execute.call_args[0][1][0]
+        assert mock_cur.execute.call_args[0][1][0] == 15
 
     @patch("src.prefeito_followup.get_connection")
     def test_empty_ranking(self, mock_conn, capsys):

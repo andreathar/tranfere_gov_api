@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from src.enrichers.validacao import validar_cnpj
 
 # ---------------------------------------------------------------------------
@@ -79,8 +77,7 @@ class TestValidarCnpj:
         validar_cnpj("12.345.678/0001-90")
 
         # Verificar que a URL chamada tem o CNPJ limpo
-        expected_url = f"{self.BRAISLAPI_BASE}/123456789000190"  # 12 chars
-        # Na verdade, 12.345.678/0001-90 → 12345678000190 (14 dígitos)
+        # 12.345.678/0001-90 → 12345678000190 (14 dígitos)
         expected_url_correct = f"{self.BRAISLAPI_BASE}/12345678000190"
         mock_get.assert_called_once_with(expected_url_correct, timeout=15)
 

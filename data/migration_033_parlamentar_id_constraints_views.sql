@@ -1,4 +1,4 @@
--- migration_019_parlamentar_id_constraints_views.sql
+-- migration_033_parlamentar_id_constraints_views.sql
 -- Ajusta UNIQUE constraint e índices da parlamentar_beneficiario
 -- Recria views que ainda JOINam por parlamentar_nome para usar parlamentar_id
 

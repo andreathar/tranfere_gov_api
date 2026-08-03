@@ -30,9 +30,16 @@ class TestSenadoresRoutes:
         from src.api.routes import senadores
 
         monkeypatch.setattr(
-            senadores.db_service, "search_senadores",
-            lambda q: [{"senador_codigo": 5672, "nome_parlamentar": "Alan Rick",
-                        "sigla_partido": "REPUBLICANOS", "uf": "AC"}],
+            senadores.db_service,
+            "search_senadores",
+            lambda q: [
+                {
+                    "senador_codigo": 5672,
+                    "nome_parlamentar": "Alan Rick",
+                    "sigla_partido": "REPUBLICANOS",
+                    "uf": "AC",
+                }
+            ],
         )
         resp = client.get("/api/v1/senadores/search?q=rick")
         assert resp.status_code == 200
@@ -47,9 +54,11 @@ class TestSenadoresRoutes:
         from src.api.routes import senadores
 
         monkeypatch.setattr(
-            senadores.db_service, "get_ranking_senadores",
-            lambda limit=30, partido=None, uf=None: [{"senador_codigo": 5982,
-                                                       "atividade_total": 0}],
+            senadores.db_service,
+            "get_ranking_senadores",
+            lambda limit=30, partido=None, uf=None: [
+                {"senador_codigo": 5982, "atividade_total": 0}
+            ],
         )
         resp = client.get("/api/v1/senadores/ranking?limit=10&partido=MDB")
         assert resp.status_code == 200
@@ -59,7 +68,8 @@ class TestSenadoresRoutes:
         from src.api.routes import senadores
 
         monkeypatch.setattr(
-            senadores.db_service, "get_senadores_por_partido",
+            senadores.db_service,
+            "get_senadores_por_partido",
             lambda: [{"sigla_partido": "MDB", "total": 11}],
         )
         resp = client.get("/api/v1/senadores/por-partido")
@@ -77,9 +87,13 @@ class TestSenadoresRoutes:
         from src.api.routes import senadores
 
         monkeypatch.setattr(
-            senadores.db_service, "get_perfil_senador",
-            lambda _: {"senador_codigo": 1, "nome_parlamentar": "Senador X",
-                       "situacao": "EM EXERCÍCIO"},
+            senadores.db_service,
+            "get_perfil_senador",
+            lambda _: {
+                "senador_codigo": 1,
+                "nome_parlamentar": "Senador X",
+                "situacao": "EM EXERCÍCIO",
+            },
         )
         resp = client.get("/api/v1/senadores/1/perfil")
         assert resp.status_code == 200
@@ -96,9 +110,9 @@ class TestFinanceiroRoutes:
         from src.api.routes import financeiro
 
         monkeypatch.setattr(
-            financeiro.db_service, "get_financeiro_estados",
-            lambda exercicio=None: [{"uf": "SP", "exercicio": 2025,
-                                     "despesas_totais": 1.0}],
+            financeiro.db_service,
+            "get_financeiro_estados",
+            lambda exercicio=None: [{"uf": "SP", "exercicio": 2025, "despesas_totais": 1.0}],
         )
         resp = client.get("/api/v1/financeiro/estados")
         assert resp.status_code == 200
@@ -129,9 +143,7 @@ class TestFinanceiroRoutes:
     def test_municipio_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.routes import financeiro
 
-        monkeypatch.setattr(
-            financeiro.db_service, "get_financeiro_municipio", lambda _: None
-        )
+        monkeypatch.setattr(financeiro.db_service, "get_financeiro_municipio", lambda _: None)
         resp = client.get("/api/v1/financeiro/municipio/0")
         assert resp.status_code == 404
 
@@ -139,7 +151,8 @@ class TestFinanceiroRoutes:
         from src.api.routes import financeiro
 
         monkeypatch.setattr(
-            financeiro.db_service, "get_comparativo_emendas_financeiro",
+            financeiro.db_service,
+            "get_comparativo_emendas_financeiro",
             lambda uf=None: [{"uf": "AC", "valor_emendas": 887078446.09}],
         )
         resp = client.get("/api/v1/financeiro/comparativo?uf=AC")
@@ -157,10 +170,15 @@ class TestDeputadoNovosRecursos:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_discursos_deputado",
+            deputados.db_service,
+            "get_discursos_deputado",
             lambda deputado_id, limit=50, tipo=None: [
-                {"id": 6171, "data_hora_inicio": "2026-07-14T18:20:00",
-                 "tipo_discurso": "COMO LÍDER", "sumario": "..."}
+                {
+                    "id": 6171,
+                    "data_hora_inicio": "2026-07-14T18:20:00",
+                    "tipo_discurso": "COMO LÍDER",
+                    "sumario": "...",
+                }
             ],
         )
         resp = client.get("/api/v1/deputados/204407/discursos?limit=5")
@@ -171,9 +189,9 @@ class TestDeputadoNovosRecursos:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_alertas_deputado",
-            lambda deputado_id: [{"alerta_id": 38, "nivel_relevancia": 1,
-                                  "notificado": False}],
+            deputados.db_service,
+            "get_alertas_deputado",
+            lambda deputado_id: [{"alerta_id": 38, "nivel_relevancia": 1, "notificado": False}],
         )
         resp = client.get("/api/v1/deputados/73579/alertas")
         assert resp.status_code == 200
@@ -183,10 +201,10 @@ class TestDeputadoNovosRecursos:
         from src.api.routes import deputados
 
         monkeypatch.setattr(
-            deputados.db_service, "get_emendas_discricionarias_deputado",
+            deputados.db_service,
+            "get_emendas_discricionarias_deputado",
             lambda deputado_id, ano=None, limit=100: [
-                {"codigo_emenda": "202639840001", "ano": 2026,
-                 "valor_total": 5031503.0}
+                {"codigo_emenda": "202639840001", "ano": 2026, "valor_total": 5031503.0}
             ],
         )
         resp = client.get("/api/v1/deputados/204407/emendas-discricionarias?ano=2026")
@@ -204,10 +222,15 @@ class TestVotacoesRecentes:
         from src.api.routes import analytics
 
         monkeypatch.setattr(
-            analytics.db_service, "get_votacoes_recentes",
+            analytics.db_service,
+            "get_votacoes_recentes",
             lambda ano=None, limit=20: [
-                {"votacao_id": "2638483-34", "data_registro": "2026-07-14",
-                 "descricao": "Rejeitada", "aprovacao": False}
+                {
+                    "votacao_id": "2638483-34",
+                    "data_registro": "2026-07-14",
+                    "descricao": "Rejeitada",
+                    "aprovacao": False,
+                }
             ],
         )
         resp = client.get("/api/v1/analytics/votacoes-recentes?limit=5")
@@ -225,9 +248,14 @@ class TestMunicipiosIndicadores:
         from src.api.routes import municipios
 
         monkeypatch.setattr(
-            municipios.db_service, "get_indicadores_municipio",
-            lambda _: {"municipio_id": 3501608, "nome": "Americana",
-                       "total_estabelecimentos": 34, "ubs": 20},
+            municipios.db_service,
+            "get_indicadores_municipio",
+            lambda _: {
+                "municipio_id": 3501608,
+                "nome": "Americana",
+                "total_estabelecimentos": 34,
+                "ubs": 20,
+            },
         )
         resp = client.get("/api/v1/municipios/3501608/indicadores")
         assert resp.status_code == 200
@@ -236,9 +264,7 @@ class TestMunicipiosIndicadores:
     def test_indicadores_404(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from src.api.routes import municipios
 
-        monkeypatch.setattr(
-            municipios.db_service, "get_indicadores_municipio", lambda _: None
-        )
+        monkeypatch.setattr(municipios.db_service, "get_indicadores_municipio", lambda _: None)
         resp = client.get("/api/v1/municipios/0/indicadores")
         assert resp.status_code == 404
 
@@ -246,9 +272,13 @@ class TestMunicipiosIndicadores:
         from src.api.routes import municipios
 
         monkeypatch.setattr(
-            municipios.db_service, "get_financeiro_municipio",
-            lambda _: {"municipio_id": 3501608, "nome": "Americana",
-                       "despesas_totais": 1592595003.39},
+            municipios.db_service,
+            "get_financeiro_municipio",
+            lambda _: {
+                "municipio_id": 3501608,
+                "nome": "Americana",
+                "despesas_totais": 1592595003.39,
+            },
         )
         resp = client.get("/api/v1/municipios/3501608/financeiro")
         assert resp.status_code == 200

@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ModelVRAM:
     """Orçamento VRAM de um modelo específico."""
+
     gguf_bytes: int
     overhead_mib: int
     group: str = ""
@@ -37,21 +38,31 @@ class ModelVRAM:
 # Overhead inclui: KV cache parcial + backend buffers + CUDA context
 MODEL_VRAM: dict[str, ModelVRAM] = {
     # --- LLMs ---
-    "qwen2.5-1.5b-instruct-q4-k-m":     ModelVRAM(1_100_000_000, 400, "qwen2.5-family"),
-    "llama-3.2-3b-instruct:q4_k_m":     ModelVRAM(1_900_000_000, 500, "llama3.2-family"),
-    "llama-3.1-8b-q4-k-m":              ModelVRAM(4_600_000_000, 400, "llama3.1-family"),   # no_kv_offloading=false, KV offload
-    "llama-3.1-8b-q4-k-m-vulkan":       ModelVRAM(4_600_000_000, 500, "llama3.1-family"),   # Vulkan, gpu_layers=8
-    "gemma-4-e2b-it":                   ModelVRAM(4_700_000_000, 800, "gemma-4-family"),     # Q8, huge KV cache
-    "zero-gemma4-e4b-openzero-q5-k-m":  ModelVRAM(4_300_000_000, 400, "zero-gemma-family"),  # Q5_K_M 5.6 GB, gpu_layers=40 → medido 3933 MiB
-    "Qwen2.5-Coder-7B-Instruct-GGUF":  ModelVRAM(4_400_000_000, 500, "coder-family"),
-    "agente-dossie-investigativo":      ModelVRAM(4_600_000_000, 400, "llama3.1-family"),    # shares GGUF with 8B
-    "agente-dossie-rapido":             ModelVRAM(1_100_000_000, 400, "qwen2.5-family"),     # shares GGUF with qwen
+    "qwen2.5-1.5b-instruct-q4-k-m": ModelVRAM(1_100_000_000, 400, "qwen2.5-family"),
+    "llama-3.2-3b-instruct:q4_k_m": ModelVRAM(1_900_000_000, 500, "llama3.2-family"),
+    "llama-3.1-8b-q4-k-m": ModelVRAM(
+        4_600_000_000, 400, "llama3.1-family"
+    ),  # no_kv_offloading=false, KV offload
+    "llama-3.1-8b-q4-k-m-vulkan": ModelVRAM(
+        4_600_000_000, 500, "llama3.1-family"
+    ),  # Vulkan, gpu_layers=8
+    "gemma-4-e2b-it": ModelVRAM(4_700_000_000, 800, "gemma-4-family"),  # Q8, huge KV cache
+    "zero-gemma4-e4b-openzero-q5-k-m": ModelVRAM(
+        4_300_000_000, 400, "zero-gemma-family"
+    ),  # Q5_K_M 5.6 GB, gpu_layers=40 → medido 3933 MiB
+    "Qwen2.5-Coder-7B-Instruct-GGUF": ModelVRAM(4_400_000_000, 500, "coder-family"),
+    "agente-dossie-investigativo": ModelVRAM(
+        4_600_000_000, 400, "llama3.1-family"
+    ),  # shares GGUF with 8B
+    "agente-dossie-rapido": ModelVRAM(
+        1_100_000_000, 400, "qwen2.5-family"
+    ),  # shares GGUF with qwen
     "minicpm5-1b-claude-opus-fable5-thinking": ModelVRAM(1_100_000_000, 300, "minicpm5-family"),
-    "qwen3.5-9b-dossie":               ModelVRAM(6_000_000_000, 800, ""),
+    "qwen3.5-9b-dossie": ModelVRAM(6_000_000_000, 800, ""),
     # --- Embeddings (CPU puro via backend cpu-llama-cpp desde 2026-07-31) ---
-    "embeddinggemma-300m":              ModelVRAM(314_000_000, 0, "embedding-cpu"),
-    "nomic-embed-text-v1.5":            ModelVRAM(262_000_000, 0, "embedding-cpu"),
-    "nomic-embed-text":                 ModelVRAM(262_000_000, 0, "embedding-cpu"),
+    "embeddinggemma-300m": ModelVRAM(314_000_000, 0, "embedding-cpu"),
+    "nomic-embed-text-v1.5": ModelVRAM(262_000_000, 0, "embedding-cpu"),
+    "nomic-embed-text": ModelVRAM(262_000_000, 0, "embedding-cpu"),
 }
 
 # Modelos que não consomem VRAM (CPU puro via backend cpu-llama-cpp, cloud proxy)
@@ -71,13 +82,17 @@ _OVERHEAD_ADDITIONAL_MIB = 150
 # ---------------------------------------------------------------------------
 
 AFFINITY_GROUPS: dict[str, list[str]] = {
-    "qwen2.5-family":    ["qwen2.5-1.5b-instruct-q4-k-m", "agente-dossie-rapido"],
-    "llama3.1-family":   ["llama-3.1-8b-q4-k-m", "llama-3.1-8b-q4-k-m-vulkan", "agente-dossie-investigativo"],
-    "llama3.2-family":   ["llama-3.2-3b-instruct:q4_k_m", "llama-3.2-3b-instruct:q8_0"],
-    "gemma-4-family":    ["gemma-4-e2b-it"],
-    "coder-family":      ["Qwen2.5-Coder-7B-Instruct-GGUF"],
-    "embedding-gpu":     ["embeddinggemma-300m", "nomic-embed-text-v1.5", "nomic-embed-text"],
-    "minicpm5-family":   ["minicpm5-1b-claude-opus-fable5-thinking"],
+    "qwen2.5-family": ["qwen2.5-1.5b-instruct-q4-k-m", "agente-dossie-rapido"],
+    "llama3.1-family": [
+        "llama-3.1-8b-q4-k-m",
+        "llama-3.1-8b-q4-k-m-vulkan",
+        "agente-dossie-investigativo",
+    ],
+    "llama3.2-family": ["llama-3.2-3b-instruct:q4_k_m", "llama-3.2-3b-instruct:q8_0"],
+    "gemma-4-family": ["gemma-4-e2b-it"],
+    "coder-family": ["Qwen2.5-Coder-7B-Instruct-GGUF"],
+    "embedding-gpu": ["embeddinggemma-300m", "nomic-embed-text-v1.5", "nomic-embed-text"],
+    "minicpm5-family": ["minicpm5-1b-claude-opus-fable5-thinking"],
 }
 
 
@@ -135,9 +150,14 @@ def _nvidia_smi() -> str | None:
 
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.total,memory.free,memory.used",
-             "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5,
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total,memory.free,memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         output = result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
@@ -196,6 +216,7 @@ def wait_for_vram(needed_mib: int, timeout: float = 30.0, interval: float = 1.0)
 # Integração opcional com models_config (quando disponível)
 # ---------------------------------------------------------------------------
 
+
 def build_vram_registry_from_yaml() -> dict[str, ModelVRAM]:
     """Tenta ler as YAMLs reais e construir o registry dinamicamente.
 
@@ -217,7 +238,9 @@ def build_vram_registry_from_yaml() -> dict[str, ModelVRAM]:
                 continue
 
             if cfg.is_cloud_proxy or cfg.backend in (
-                mc.BackendType.LIQUID_AUDIO, mc.BackendType.QWEN3_TTS, mc.BackendType.UNKNOWN
+                mc.BackendType.LIQUID_AUDIO,
+                mc.BackendType.QWEN3_TTS,
+                mc.BackendType.UNKNOWN,
             ):
                 registry[name] = ModelVRAM(cfg.gguf_bytes, 0, cfg.backend.value)
                 continue

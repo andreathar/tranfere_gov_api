@@ -187,10 +187,6 @@ async def get_alertas(deputado_id: int):
 
 
 @router.get("/{deputado_id}/emendas-discricionarias")
-async def get_emendas_discricionarias(
-    deputado_id: int, ano: int | None = None, limit: int = 100
-):
+async def get_emendas_discricionarias(deputado_id: int, ano: int | None = None, limit: int = 100):
     """Emendas discricionárias do parlamentar (Portal da Transparência)."""
-    return db_service.get_emendas_discricionarias_deputado(
-        deputado_id, ano=ano, limit=limit
-    )
+    return db_service.get_emendas_discricionarias_deputado(deputado_id, ano=ano, limit=limit)

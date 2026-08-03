@@ -555,7 +555,9 @@ def main():
                 logger.info(f"Parlamentar código {args.parlamentar} → nome: {nome_autor}")
         parlamentar_id = lookup_parlamentar_id(args.parlamentar)
         if parlamentar_id:
-            logger.info(f"Parlamentar código {args.parlamentar} → parlamentar_id: {parlamentar_id}")
+            logger.info(
+                f"Parlamentar código {args.parlamentar} → parlamentar_id: {parlamentar_id}"
+            )
 
     if not nome_autor and not args.bulk:
         logger.error("Informe --nome-autor, --parlamentar ou --bulk")

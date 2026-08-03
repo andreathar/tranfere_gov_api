@@ -53,11 +53,7 @@ def main():
         c = qdrant.count(
             QDRANT_COLLECTION,
             count_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="type", match=models.MatchValue(value=ct)
-                    )
-                ]
+                must=[models.FieldCondition(key="type", match=models.MatchValue(value=ct))]
             ),
         )
         if c.count > 0:

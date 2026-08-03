@@ -221,7 +221,15 @@ def search_context_qdrant(
         should_close = True
 
     # Filtro base: deputado_id
-    conditions = [
+    conditions: list[
+        qdrant_models.FieldCondition
+        | qdrant_models.IsEmptyCondition
+        | qdrant_models.IsNullCondition
+        | qdrant_models.HasIdCondition
+        | qdrant_models.HasVectorCondition
+        | qdrant_models.NestedCondition
+        | qdrant_models.Filter
+    ] = [
         qdrant_models.FieldCondition(
             key="deputado_id",
             match=qdrant_models.MatchValue(value=deputado_id),
@@ -1123,7 +1131,9 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
     model_ctx.__enter__()
     _model_ctx_active = True
 
-    def _process_one(dep_id: int, nome_real: str, parl_id: int | None) -> tuple[str, int, int, float, list[str]] | None:
+    def _process_one(
+        dep_id: int, nome_real: str, parl_id: int | None
+    ) -> tuple[str, int, int, float, list[str]] | None:
         """Worker: gera e salva persona para um deputado (thread-safe)."""
         try:
             # No lote, o model_scope externo prende o modelo de análise

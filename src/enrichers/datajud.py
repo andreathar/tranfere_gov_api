@@ -6,9 +6,7 @@ from src.api.services.db_service import _get_connection
 from src.api.services.mcp_service import _mcp_client
 from src.datajud_utils import parse_datajud_response
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("enrichers.datajud")
 
 

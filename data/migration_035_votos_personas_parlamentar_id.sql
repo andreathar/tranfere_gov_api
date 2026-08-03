@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 024: parlamentar_id em votos_camara + parlamentares_personas
+-- TransfereGov — Migration 035: parlamentar_id em votos_camara + parlamentares_personas
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-30

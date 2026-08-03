@@ -60,7 +60,7 @@ guie um agente na manutenção. É o subsistema mais frágil e com mais falhas p
 
 #### Skill 2: `transferegov-database`
 
-**Por quê**: 20+ tabelas, 19 migrations (com numeração inconsistente — migration_014 e _015 duplicados),
+**Por quê**: 20+ tabelas, 38 migrations (numeração consistente 002–039),
 6 views, funções upsert, e connection pooling. Nenhum skill cobre manutenção do schema,
 criação de migrations, ou debug de queries SQL.
 

@@ -77,8 +77,7 @@ def get_active_analysts(
             active.append((analyst_id, klass))
         else:
             log.info(
-                f"Analista {analyst_id} pulado: apenas {len(filtered)} chunks "
-                f"(min {min_req})"
+                f"Analista {analyst_id} pulado: apenas {len(filtered)} chunks " f"(min {min_req})"
             )
     return active
 
@@ -234,15 +233,15 @@ def run_analyst_pipeline(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map: dict[concurrent.futures.Future, str] = {}
 
-        for analyst_id, klass, filtered in tasks:
+        for analyst_id, analyst_klass, filtered in tasks:
             log.info(
-                f"  Enfileirando {analyst_id} ({getattr(klass, 'section_title', '?')}) "
+                f"  Enfileirando {analyst_id} ({getattr(analyst_klass, 'section_title', '?')}) "
                 f"com {len(filtered)} chunks..."
             )
 
             def _run_analyst(
                 _aid: str = analyst_id,
-                _klass: type = klass,
+                _klass: type = analyst_klass,
                 _ctx: list[str] = filtered,
             ) -> AnalystResult:
                 try:

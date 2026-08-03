@@ -43,9 +43,7 @@ LARGE_THRESHOLD_MIB = lm._LARGE_MODEL_THRESHOLD_MIB  # 4000
 def _models_from_localai() -> list[str]:
     """Lista modelos disponíveis no servidor LocalAI."""
     try:
-        with urllib.request.urlopen(
-            f"{LOCALAI_BASE_URL}/v1/models", timeout=5
-        ) as resp:
+        with urllib.request.urlopen(f"{LOCALAI_BASE_URL}/v1/models", timeout=5) as resp:
             data = json.loads(resp.read().decode())
         return sorted(m["id"] for m in data.get("data", []))
     except Exception as exc:  # noqa: BLE001 - diagnóstico não deve quebrar
@@ -92,6 +90,8 @@ def _build_rows() -> list[dict]:
         alias = ", ".join(alias_of.get(name, [])) or "—"
 
         cfg = yaml_configs.get(name)
+        gpu_layers: int | str
+        context: int | str
         if cfg:
             backend = str(cfg.backend.value)
             gpu_layers = cfg.gpu_layers
@@ -141,10 +141,12 @@ def _build_rows() -> list[dict]:
 def cmd_map() -> None:
     """Imprime a tabela de mapeamento."""
     print(f"== Mapeamento de modelos LocalAI ({LOCALAI_BASE_URL}) ==\n")
-    print(f"VRAM total: {lm._TOTAL_VRAM_MIB} MiB | "
-          f"margem: {lm._SAFETY_MARGIN_MIB} MiB | "
-          f"LARGE >= {LARGE_THRESHOLD_MIB} MiB | "
-          f"wait timeout: {lm._VRAM_WAIT_TIMEOUT:.1f}s\n")
+    print(
+        f"VRAM total: {lm._TOTAL_VRAM_MIB} MiB | "
+        f"margem: {lm._SAFETY_MARGIN_MIB} MiB | "
+        f"LARGE >= {LARGE_THRESHOLD_MIB} MiB | "
+        f"wait timeout: {lm._VRAM_WAIT_TIMEOUT:.1f}s\n"
+    )
 
     disponiveis = set(_models_from_localai())
 
@@ -163,8 +165,10 @@ def cmd_map() -> None:
             f"{str(r['context']):>5} {disp}"
         )
 
-    print("\nLegenda: VRAM = estimada (MiB) | PAPEL = função no pipeline | TO = timeout (s) | "
-          "GL = gpu_layers | CTX = context | DISP = disponível no LocalAI")
+    print(
+        "\nLegenda: VRAM = estimada (MiB) | PAPEL = função no pipeline | TO = timeout (s) | "
+        "GL = gpu_layers | CTX = context | DISP = disponível no LocalAI"
+    )
     gpu_rows = [r for r in rows if r["tipo"] in ("LARGE", "SMALL")]
     total_gpu = sum(r["vram"] for r in gpu_rows)
     print(
@@ -229,7 +233,8 @@ def cmd_test() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Diagnóstico modelos LocalAI")
     parser.add_argument(
-        "--test", action="store_true",
+        "--test",
+        action="store_true",
         help="roda ciclo real load->chat->unload no modelo padrão",
     )
     args = parser.parse_args()

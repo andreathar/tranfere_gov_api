@@ -7,6 +7,7 @@ Substitui as 14+ cópias espalhadas de get_connection() / query_df()
 from __future__ import annotations
 
 import atexit
+import logging
 import threading
 from typing import Any
 
@@ -17,6 +18,17 @@ from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
 from config.settings import PG_DB, PG_HOST, PG_PASS, PG_PORT, PG_USER
+
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+
+def setup_logging(level: int = logging.INFO) -> None:
+    """Configura o logging raiz com formato canônico do projeto.
+
+    Idempotente: não adiciona handlers duplicados em chamadas repetidas.
+    """
+    logging.basicConfig(level=level, format=LOG_FORMAT, force=False)
+
 
 # ---------------------------------------------------------------------------
 # Connection Pool (thread-safe, lazy init)

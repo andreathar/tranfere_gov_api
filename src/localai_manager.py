@@ -121,12 +121,20 @@ class LocalAIManager:
                     wait = _RETRY_BACKOFF**attempt
                     logger.debug(
                         "LocalAI %s %s tentativa %d/%d falhou (%s), retry em %.1fs",
-                        method, path, attempt, self.max_retries, exc, wait,
+                        method,
+                        path,
+                        attempt,
+                        self.max_retries,
+                        exc,
+                        wait,
                     )
                     time.sleep(wait)
         logger.warning(
             "LocalAI %s %s falhou após %d tentativas: %s",
-            method, path, self.max_retries, last_exc,
+            method,
+            path,
+            self.max_retries,
+            last_exc,
         )
         return None
 
@@ -202,7 +210,8 @@ class LocalAIManager:
             return True
 
         resp = self._request(
-            "GET", "/backend/monitor",
+            "GET",
+            "/backend/monitor",
             params={"model": model_id},
             timeout=3,
         )
@@ -269,9 +278,11 @@ class LocalAIManager:
         vram_available = self._get_free_vram()
 
         logger.debug(
-            "VRAM additive check: %s precisa %d MiB (+%d margem), "
-            "disponivel %d MiB",
-            target_model, vram_needed, _SAFETY_MARGIN_MIB, vram_available,
+            "VRAM additive check: %s precisa %d MiB (+%d margem), " "disponivel %d MiB",
+            target_model,
+            vram_needed,
+            _SAFETY_MARGIN_MIB,
+            vram_available,
         )
 
         return vram_needed + _SAFETY_MARGIN_MIB <= vram_available
@@ -301,10 +312,7 @@ class LocalAIManager:
 
         # Ordenar LRU: OrderedDict mantém ordem de inserção.
         # Só considera modelos idle (refcount=0) — em uso não podem sair.
-        models_to_consider = [
-            m for m in self._loaded_models
-            if self._loaded_models[m] <= 0
-        ]
+        models_to_consider = [m for m in self._loaded_models if self._loaded_models[m] <= 0]
         models_unloaded: list[str] = []
 
         for model_id in models_to_consider:
@@ -328,20 +336,21 @@ class LocalAIManager:
         if free >= target_vram + _SAFETY_MARGIN_MIB:
             logger.info(
                 "LRU liberou VRAM: %d MiB livres (precisa %d)",
-                free, target_vram,
+                free,
+                target_vram,
             )
             return True
 
         logger.warning(
             "VRAM insuficiente mesmo após descarregar %d modelos: "
             "%d MiB livres, precisa %d MiB",
-            len(models_unloaded), free, target_vram,
+            len(models_unloaded),
+            free,
+            target_vram,
         )
         return False
 
-    def _wait_for_room(
-        self, target_model: str, timeout: float = _VRAM_WAIT_TIMEOUT
-    ) -> bool:
+    def _wait_for_room(self, target_model: str, timeout: float = _VRAM_WAIT_TIMEOUT) -> bool:
         """Aguarda até que haja VRAM livre suficiente para carregar target_model.
 
         Deve ser chamado COM self._lock adquirido. Usa Condition.wait, que
@@ -480,7 +489,9 @@ class LocalAIManager:
         fits = free >= target_vram + _SAFETY_MARGIN_MIB
         logger.info(
             "Recuperação forçada: %d MiB livres (precisa %d). %s",
-            free, target_vram, "Cabe!" if fits else "Ainda não cabe.",
+            free,
+            target_vram,
+            "Cabe!" if fits else "Ainda não cabe.",
         )
         return fits
 
@@ -525,16 +536,25 @@ class LocalAIManager:
         if target_model in self._loaded_models:
             self._loaded_models[target_model] += 1
             self._loaded_models.move_to_end(target_model)
-            logger.debug("Modelo %s já carregado (refcount=%d).",
-                         target_model, self._loaded_models[target_model])
+            logger.debug(
+                "Modelo %s já carregado (refcount=%d).",
+                target_model,
+                self._loaded_models[target_model],
+            )
             return
 
         # --- Verificar se o LocalAI já tem o modelo (Cognee pode ter carregado) ---
         if not self.is_model_active_internal(target_model) and self.is_model_loaded(target_model):
-            logger.info("Modelo %s já está carregado no LocalAI (ex: Cognee). Rastreando.", target_model)
+            logger.info(
+                "Modelo %s já está carregado no LocalAI (ex: Cognee). Rastreando.", target_model
+            )
             self._loaded_models[target_model] = self._loaded_models.get(target_model, 0) + 1
             group = get_affinity_group(target_model)
-            if group and group not in ("embedding-cpu", None) and get_vram_mib(target_model) >= _LARGE_MODEL_THRESHOLD_MIB:
+            if (
+                group
+                and group not in ("embedding-cpu", None)
+                and get_vram_mib(target_model) >= _LARGE_MODEL_THRESHOLD_MIB
+            ):
                 self._active_large_group = group
             return
 
@@ -549,16 +569,20 @@ class LocalAIManager:
             logger.info(
                 "Modelo grande %s (%s) conflita com grupo ativo %s. "
                 "Descarregando modelos do grupo %s...",
-                target_model, target_group, self._active_large_group, self._active_large_group,
+                target_model,
+                target_group,
+                self._active_large_group,
+                self._active_large_group,
             )
             self.unload_group(self._active_large_group)
 
         # Tentar carregamento aditivo
         if self._can_fit_additive(target_model):
             logger.info(
-                "Carregamento aditivo: %s cabe com os %d modelos atuais "
-                "(~%d MiB livres).",
-                target_model, len(self._loaded_models), self._get_free_vram(),
+                "Carregamento aditivo: %s cabe com os %d modelos atuais " "(~%d MiB livres).",
+                target_model,
+                len(self._loaded_models),
+                self._get_free_vram(),
             )
         else:
             # Auto-cura: descobrir modelos real-carregados no LocalAI que o
@@ -573,13 +597,15 @@ class LocalAIManager:
                 logger.info(
                     "Após descoberta de modelos não rastreados, %s cabe "
                     "aditivamente (~%d MiB livres).",
-                    target_model, self._get_free_vram(),
+                    target_model,
+                    self._get_free_vram(),
                 )
             else:
                 # Precisa liberar espaço — LRU unload
                 logger.info(
                     "VRAM insuficiente para %s (%d MiB). Aplicando LRU unload...",
-                    target_model, target_vram,
+                    target_model,
+                    target_vram,
                 )
                 if not self._unload_lru_until_fits(target_model):
                     # LRU não achou nada: ou os modelos em uso não podem sair,
@@ -588,7 +614,8 @@ class LocalAIManager:
                     # derruba backends GPU ociosos/não rastreados.
                     if self._force_release_vram_locked(target_model):
                         logger.info(
-                            "Recuperação forçada liberou VRAM para %s.", target_model,
+                            "Recuperação forçada liberou VRAM para %s.",
+                            target_model,
                         )
                     else:
                         # Ainda bloqueada por modelos em uso (refcount>0): aguarda
@@ -598,13 +625,15 @@ class LocalAIManager:
                         logger.warning(
                             "VRAM bloqueada para %s (%d MiB) por modelos em uso. "
                             "Aguardando liberação...",
-                            target_model, target_vram,
+                            target_model,
+                            target_vram,
                         )
                         if not self._wait_for_room(target_model):
                             logger.error(
                                 "VRAM insuficiente para %s mesmo após %.0fs de espera. "
                                 "Abortando carregamento (estado preservado).",
-                                target_model, _VRAM_WAIT_TIMEOUT,
+                                target_model,
+                                _VRAM_WAIT_TIMEOUT,
                             )
                             raise RuntimeError(
                                 f"VRAM insuficiente para carregar {target_model}: "
@@ -618,7 +647,9 @@ class LocalAIManager:
 
         logger.info(
             "Modelo %s assegurado. VRAM estimada: %d MiB usada de %d MiB total.",
-            target_model, self._get_loaded_vram_total(), _TOTAL_VRAM_MIB,
+            target_model,
+            self._get_loaded_vram_total(),
+            _TOTAL_VRAM_MIB,
         )
 
     # ------------------------------------------------------------------
@@ -706,7 +737,8 @@ class LocalAIManager:
 
         logger.info("Descarregando modelo da memória: %s ...", model_id)
         resp = self._request(
-            "POST", "/backend/shutdown",
+            "POST",
+            "/backend/shutdown",
             timeout=_POST_TIMEOUT,
             json={"model": model_id},
         )
@@ -725,16 +757,26 @@ class LocalAIManager:
             # Backend já morto (processo terminou) = memória já liberada.
             # "unimplemented" ocorre quando o gRPC do backend não responde
             # porque o processo foi encerrado — o unload efetivamente ocorreu.
-            if "unimplemented" in text or "eof" in text or "not found" in text or "not loaded" in text:
-                logger.info("Modelo %s: backend já encerrado (HTTP 500 %s). Considerando descarregado.",
-                            model_id, text.strip()[:80])
+            if (
+                "unimplemented" in text
+                or "eof" in text
+                or "not found" in text
+                or "not loaded" in text
+            ):
+                logger.info(
+                    "Modelo %s: backend já encerrado (HTTP 500 %s). Considerando descarregado.",
+                    model_id,
+                    text.strip()[:80],
+                )
                 self._loaded_models.pop(model_id, None)
                 self._sync_from_localai()
                 self._cond.notify_all()
                 return True
         logger.warning(
             "Falha ao descarregar %s (HTTP %d): %s",
-            model_id, resp.status_code, resp.text,
+            model_id,
+            resp.status_code,
+            resp.text,
         )
         return False
 
@@ -749,8 +791,7 @@ class LocalAIManager:
     def _unload_group_locked(self, group: str) -> bool:
         """Corpo real de unload_group (chamar apenas com self._lock)."""
         models_in_group = [
-            m for m in list(self._loaded_models.keys())
-            if get_affinity_group(m) == group
+            m for m in list(self._loaded_models.keys()) if get_affinity_group(m) == group
         ]
         if not models_in_group:
             return True
@@ -792,9 +833,9 @@ class LocalAIManager:
 
         # Descarrega apenas modelos GPU (mantém CPU embeddings)
         gpu_models = [
-            m for m in list(self._loaded_models.keys())
-            if not is_cpu_model(m)
-            and not self._is_cloud_proxy_model(m)
+            m
+            for m in list(self._loaded_models.keys())
+            if not is_cpu_model(m) and not self._is_cloud_proxy_model(m)
         ]
 
         if not gpu_models:
@@ -806,7 +847,8 @@ class LocalAIManager:
                 if not loaded_in_localai:
                     # Último recurso: shutdown all
                     resp = self._request(
-                        "POST", "/backend/shutdown",
+                        "POST",
+                        "/backend/shutdown",
                         timeout=_POST_TIMEOUT,
                         json={"model": "all"},
                     )
@@ -937,7 +979,6 @@ class LocalAIManager:
             "vram_estimated_used_mib": self._get_loaded_vram_total(),
         }
 
-
     # ------------------------------------------------------------------
     # Controle de backends (integração com YAMLs do LocalAI)
     # ------------------------------------------------------------------
@@ -946,6 +987,7 @@ class LocalAIManager:
         """Retorna a configuração completa de um modelo das YAMLs."""
         try:
             from src import models_config as _mc
+
             cfg = _mc.get_config(model_name)
             if not cfg:
                 return None
@@ -985,6 +1027,7 @@ class LocalAIManager:
         """
         try:
             from src import models_config as _mc
+
             ok = _mc.set_model_backend(model_name, backend, gpu_layers)
             if ok and restart:
                 ok = _mc.docker_restart()
@@ -1003,6 +1046,7 @@ class LocalAIManager:
         """
         try:
             from src import models_config as _mc
+
             ok = _mc.set_gpu_layers(model_name, layers)
             if ok and restart:
                 ok = _mc.docker_restart()
@@ -1015,6 +1059,7 @@ class LocalAIManager:
         """Controla se o KV cache fica na GPU (mais rápido) ou RAM (menos VRAM)."""
         try:
             from src import models_config as _mc
+
             ok = _mc.set_kv_offloading(model_name, enabled)
             if ok and restart:
                 ok = _mc.docker_restart()
@@ -1027,6 +1072,7 @@ class LocalAIManager:
         """Retorna tabela formatada de todas as configs."""
         try:
             from src import models_config as _mc
+
             return _mc.format_model_table()
         except ImportError:
             return "models_config não disponível"
@@ -1035,6 +1081,7 @@ class LocalAIManager:
         """Retorna status dos backends no Docker."""
         try:
             from src import models_config as _mc
+
             return _mc.get_docker_backend_status()
         except ImportError:
             return {"error": "models_config não disponível"}

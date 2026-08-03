@@ -1,4 +1,4 @@
--- migration_028: performance do frontend (rankings, discursos, votações).
+-- migration_038: performance do frontend (rankings, discursos, votações).
 --
 -- Indexes compostos para as queries mais pesadas servidas pela API:
 --   1. Ranking de vereadores por UF + partido (filtros do frontend, 430k linhas);

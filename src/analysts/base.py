@@ -5,6 +5,7 @@ Define:
     - AnalystResult: dataclass com resultado de um analista
     - AnalystBase: classe abstrata que cada analista concreto implementa
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,8 +38,16 @@ _RE_RS_TOKEN = re.compile(
 )
 
 _RS_SUFIXO_MULT = {
-    "bi": 1e9, "bilhao": 1e9, "bilhões": 1e9, "bilhoes": 1e9, "bilhão": 1e9,
-    "mi": 1e6, "milhao": 1e6, "milhões": 1e6, "milhoes": 1e6, "milhão": 1e6,
+    "bi": 1e9,
+    "bilhao": 1e9,
+    "bilhões": 1e9,
+    "bilhoes": 1e9,
+    "bilhão": 1e9,
+    "mi": 1e6,
+    "milhao": 1e6,
+    "milhões": 1e6,
+    "milhoes": 1e6,
+    "milhão": 1e6,
     "mil": 1e3,
 }
 
@@ -120,9 +129,11 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
     falsos = [v for v in out_vals if not fiel(v)]
     return len(falsos) / len(out_vals)
 
+
 # Import do Briefing (opcional — preparer pode nao estar disponivel)
 try:
     from src.analysts.preparer import Briefing as _Briefing
+
     Briefing = _Briefing  # type: ignore[assignment]
 except ImportError:
     # Fallback: Briefing dummy para compatibilidade quando preparer nao existe
@@ -131,6 +142,7 @@ except ImportError:
     @_dc
     class Briefing:  # type: ignore
         """Dummy briefing usado quando preparer nao esta disponivel."""
+
         text: str = ""
         fact_table: str = ""
         insights: list = field(default_factory=list)
@@ -209,7 +221,9 @@ class AnalystBase(ABC):
     section_title: str = ""
     required_chunks: list[str] = []
     min_chunks: int = 1
-    system_prompt: str = "Voce e um analista investigativo especializado em contas publicas e ciencia politica."
+    system_prompt: str = (
+        "Voce e um analista investigativo especializado em contas publicas e ciencia politica."
+    )
     use_preparer: bool = True  # Se True, usa PromptPreparer para sintetizar chunks
 
     @abstractmethod
@@ -288,6 +302,7 @@ class AnalystBase(ABC):
         """
         if not llm_model:
             from config.settings import RAG_LLM_MODEL
+
             llm_model = RAG_LLM_MODEL
 
         # 1. Preparacao do briefing (se ativado)
@@ -297,6 +312,7 @@ class AnalystBase(ABC):
         if use_prep:
             try:
                 from src.analysts.preparer import PromptPreparer
+
                 preparer = PromptPreparer()
                 briefing = preparer.prepare(
                     chunks=context,
@@ -306,8 +322,7 @@ class AnalystBase(ABC):
                 )
             except Exception as e:
                 log.warning(
-                    f"[{self.analyst_id}] Preparer exception: {e}, "
-                    f"usando chunks crus."
+                    f"[{self.analyst_id}] Preparer exception: {e}, " f"usando chunks crus."
                 )
 
         # 2. Montar prompt (analista decide se usa briefing ou nao)

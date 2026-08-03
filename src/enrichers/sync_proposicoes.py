@@ -38,7 +38,7 @@ def sync_proposicoes_deputado(
     data_inicio = f"{ano_inicio}-01-01"
 
     while inseridos < max_items:
-        params = {
+        params: dict[str, str | int] = {
             "idDeputadoAutor": dep_id,
             "ordem": "DESC",
             "ordenarPor": "id",

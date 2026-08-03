@@ -1,5 +1,5 @@
 -- ============================================================================
--- TransfereGov — Migration 022: Identificador consistente de parlamentares
+-- TransfereGov — Migration 024: Identificador consistente de parlamentares
 -- ============================================================================
 -- Banco: transferegov_db
 -- Data: 2026-07-29

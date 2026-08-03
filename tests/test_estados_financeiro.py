@@ -31,7 +31,9 @@ class TestConvencoes:
         # Nao pode casar com "Outras/Demais" nem com intra-orcamentarias
         assert not _conta_exata("1.9.0.0.00.0.0 - Outras Receitas Correntes", "Receitas Correntes")
         assert not _conta_exata("7.0.0.0.00.0.0 - Receitas Correntes", "Receitas Correntes")
-        assert not _conta_exata("8.9.0.0.00.0.0 - Outras Receitas de Capital", "Receitas de Capital")
+        assert not _conta_exata(
+            "8.9.0.0.00.0.0 - Outras Receitas de Capital", "Receitas de Capital"
+        )
         assert _conta_exata("2.0.0.0.00.0.0 - Receitas de Capital", "Receitas de Capital")
 
 
@@ -39,7 +41,9 @@ class TestParseDCAEstadual:
     def test_pega_coluna_certa_e_ignora_deducoes(self):
         itens = [
             _item("1.0.0.0.00.0.0 - Receitas Correntes", "Receitas Brutas Realizadas", 100.0),
-            _item("1.0.0.0.00.0.0 - Receitas Correntes", "Deduções - FUNDEB", 90.0),  # NAO pode ser usado
+            _item(
+                "1.0.0.0.00.0.0 - Receitas Correntes", "Deduções - FUNDEB", 90.0
+            ),  # NAO pode ser usado
             _item("2.0.0.0.00.0.0 - Receitas de Capital", "Receitas Brutas Realizadas", 20.0),
             _item("3.0.00.00.00 - Despesas Correntes", "Despesas Empenhadas", 80.0),
             _item("Despesas Exceto Intraorçamentárias", "Despesas Empenhadas", 95.0),
