@@ -2,19 +2,12 @@
 """Healthcheck script for TransfereGov services."""
 
 import sys
-from pathlib import Path
 
 from config.settings import (
     LOCALAI_BASE_URL,
     MODAL_VLLM_URL,
-    PG_DB,
-    PG_HOST,
-    PG_PASS,
-    PG_PORT,
-    PG_USER,
-    QDRANT_URL,
     QDRANT_COLLECTION,
-    USE_LOCAL_VLLM,
+    QDRANT_URL,
     USE_MODAL_VLLM,
 )
 from src.db_utils import get_connection
