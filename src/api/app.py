@@ -46,7 +46,7 @@ app = FastAPI(
 )
 
 # CORS — configurable via env var; permissive only in dev
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001").split(
     ","
 )
 allow_all = "*" in CORS_ORIGINS

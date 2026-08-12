@@ -43,6 +43,7 @@ import concurrent.futures
 import hashlib
 import logging
 import time
+from typing import Any
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
@@ -71,6 +72,11 @@ from src.enrichers.rag_qdrant_indexer import (
 from src.localai_manager import manager as localai_manager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+# Último resultado de qualidade (score global + por analista) exposto para
+# consumidores como scripts/dossier_bench.py — preenchido a cada chamada de
+# generate_persona_analysis() sem alterar a assinatura da função.
+LAST_RUN_SCORE: dict = {"global": None, "analistas": {}}
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -188,6 +194,7 @@ def search_context_qdrant(
     query_vector: list[float] | None = None,
     query_sparse_vector: qdrant_models.SparseVector | None = None,
     chunk_types: list[str] | None = None,
+    tipo_politico: str = "deputado",
 ) -> list[tuple[str, float]]:
     """Busca chunks relevantes no Qdrant usando hybrid search (dense + BM25 sparse + RRF).
 
@@ -217,10 +224,33 @@ def search_context_qdrant(
     # 1.2: Reutilizar client quando fornecido
     should_close = False
     if client is None:
-        client = QdrantClient(url=QDRANT_URL)
+        # trust_env=False: evita falha de URLPattern do httpx 0.28.1 com
+        # no_proxy contendo CIDR IPv6 (ex.: fd00::/8) -> Invalid port ':'
+        client = QdrantClient(url=QDRANT_URL, trust_env=False)
         should_close = True
 
-    # Filtro base: deputado_id
+    # Filtro base: por cargo + id do político.
+    # Deputados: tipo_politico/politico_id (uniforme com os demais cargos),
+    # com fallback para deputado_id (pontos criados antes do backfill Fase 3).
+    if tipo_politico == "deputado":
+        id_conditions: list[Any] = [
+            qdrant_models.FieldCondition(
+                key="politico_id",
+                match=qdrant_models.MatchValue(value=deputado_id),
+            ),
+            qdrant_models.FieldCondition(
+                key="deputado_id",
+                match=qdrant_models.MatchValue(value=deputado_id),
+            ),
+        ]
+    else:
+        id_conditions = [
+            qdrant_models.FieldCondition(
+                key="politico_id",
+                match=qdrant_models.MatchValue(value=deputado_id),
+            )
+        ]
+
     conditions: list[
         qdrant_models.FieldCondition
         | qdrant_models.IsEmptyCondition
@@ -231,9 +261,10 @@ def search_context_qdrant(
         | qdrant_models.Filter
     ] = [
         qdrant_models.FieldCondition(
-            key="deputado_id",
-            match=qdrant_models.MatchValue(value=deputado_id),
-        )
+            key="tipo_politico",
+            match=qdrant_models.MatchValue(value=tipo_politico),
+        ),
+        qdrant_models.Filter(should=id_conditions),
     ]
 
     # Filtro opcional por chunk type
@@ -301,25 +332,115 @@ def search_context_qdrant(
 # ---------------------------------------------------------------------------
 
 
+def _buscar_resumos_por_area(
+    deputado_id: int,
+    tipo_politico: str = "deputado",
+    client: QdrantClient | None = None,
+) -> list[tuple[str, float]]:
+    """Busca chunks 'Distribuição por área' (fonte canônica de R$ literais).
+
+    Os resumos por área de emendas/emendas discricionárias trazem os TOTAIS
+    EXATOS por área/município — a fonte que o llama-3.2-3b deve transcrever
+    literalmente (data-first). O RRF normal pode deixá-los de fora quando há
+    muitos chunks; aqui usamos filtro por tipo + scroll e selecionamos os
+    chunks cujo texto contém 'Distribuição por área'.
+
+    Retorna lista de (texto_formatado, score_ficticio) — score 1.0 apenas
+    para manter o contrato de (texto, score).
+    """
+    should_close = False
+    if client is None:
+        client = QdrantClient(url=QDRANT_URL, trust_env=False)
+        should_close = True
+    try:
+        # Filtro por tipo de chunk de emenda (o resumo vive em um destes)
+        conditions: list[Any] = [
+            qdrant_models.FieldCondition(
+                key="tipo_politico",
+                match=qdrant_models.MatchValue(value=tipo_politico),
+            ),
+            qdrant_models.FieldCondition(
+                key="type",
+                match=qdrant_models.MatchAny(any=["emenda", "emenda_discricionaria"]),
+            ),
+        ]
+        if tipo_politico == "deputado":
+            conditions.append(
+                qdrant_models.Filter(
+                    should=[
+                        qdrant_models.FieldCondition(
+                            key="politico_id",
+                            match=qdrant_models.MatchValue(value=deputado_id),
+                        ),
+                        qdrant_models.FieldCondition(
+                            key="deputado_id",
+                            match=qdrant_models.MatchValue(value=deputado_id),
+                        ),
+                    ]
+                )
+            )
+        else:
+            conditions.append(
+                qdrant_models.FieldCondition(
+                    key="politico_id",
+                    match=qdrant_models.MatchValue(value=deputado_id),
+                )
+            )
+
+        hits, _next = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=qdrant_models.Filter(must=conditions),
+            limit=100,
+            with_payload=True,
+        )
+        out: list[tuple[str, float]] = []
+        for hit in hits:
+            pl = hit.payload or {}
+            text = pl.get("text") or ""
+            if "Distribuição por área" in text or "distribuicao_por_area" in text:
+                tipo = str(pl.get("type", "info")).upper()
+                out.append((f"[{tipo}] {text}", 1.0))
+        return out
+    except Exception as exc:
+        log.warning(f"Falha ao buscar resumos por área: {exc}")
+        return []
+    finally:
+        if should_close:
+            client.close()
+
+
 def search_context_multiquery(
-    deputado_id: int, top_k_per_query: int = 8
+    deputado_id: int,
+    top_k_per_query: int = 8,
+    tipo_politico: str = "deputado",
 ) -> tuple[list[str], list[tuple[str, float]]]:
     """Executa 15 queries tematicas com batch embed, RRF merge + MD5 dedup.
+
+    Args:
+        deputado_id: ID do político no cargo (deputado_id, senador_codigo,
+            municipio_id p/ prefeito, sq_candidato p/ vereador, uf p/ governador).
+        tipo_politico: Cargo (deputado/senador/governador/prefeito/vereador).
+            Filtra o payload do Qdrant por tipo_politico + politico_id.
 
     Returns:
         (context_list, scored_chunks):
         - context_list: textos finais deduplicados e ranqueados por RRF
         - scored_chunks: (texto, rrf_score) para auditoria
     """
+    from config.settings import RAG_MAX_CHUNKS_BY_TIPO
+
+    max_chunks = RAG_MAX_CHUNKS_BY_TIPO.get(tipo_politico, RAG_MAX_CHUNKS)
     # Embedder (nomic) e CPU-based, nao precisa de exclusividade GPU.
     # LocalAI lazy-load na primeira chamada de embedding.
 
     # 1.2: reutilizar QdrantClient para todas as queries
-    client = QdrantClient(url=QDRANT_URL)
+    # trust_env=False: idem — httpx 0.28.1 quebra com no_proxy CIDR IPv6
+    client = QdrantClient(url=QDRANT_URL, trust_env=False)
 
     # 1.3: batch embed de todas as queries em 1 request
     log.info(
-        f"Batch embedding de {len(QUERIES_TEMATICAS)} queries tematicas para deputado {deputado_id}..."
+        f"Batch embedding de {len(QUERIES_TEMATICAS)} queries tematicas "
+        f"para {tipo_politico} {deputado_id}..."
     )
     all_vectors = embed_text_batch(QUERIES_TEMATICAS)
     if len(all_vectors) != len(QUERIES_TEMATICAS):
@@ -348,10 +469,21 @@ def search_context_multiquery(
             query_vector=vector,
             query_sparse_vector=sparse_vec,
             chunk_types=chunk_types,
+            tipo_politico=tipo_politico,
         )
         for text, score in results:
             raw_results.append((text, score, qi))
         log.debug(f"  query '{query_text[:40]}...' -> {len(results)} chunks")
+
+    # PITFALL 2026-08-11 (data-first): os resumos por área ("Distribuição por
+    # área ... R$ total por área") são a FONTE CANÔNICA de totais literais
+    # para os analistas tematicas/cruzamento/anomalias. Com 124+ chunks por
+    # político, o RRF top-N frequentemente deixa o resumo de fora (as queries
+    # vetoriais casam com os chunks individuais de emenda). Sem os totais
+    # literais no contexto, o llama-3.2-3b inventa valores (golden 6/6 falhou
+    # com 92% de R$ fabricados). Solução: buscar SEMPRE os resumos por área
+    # e injetá-los no topo do contexto, independente do ranking.
+    resumos_area = _buscar_resumos_por_area(deputado_id, tipo_politico, client)
 
     client.close()
 
@@ -377,12 +509,31 @@ def search_context_multiquery(
 
     # Ordenar por RRF score desc, tomar top N
     deduped.sort(key=lambda x: rrf_scores[x[0]], reverse=True)
-    final = [(text, rrf_scores[h]) for h, text, _score, _qi in deduped[:RAG_MAX_CHUNKS]]
+    final = [(text, rrf_scores[h]) for h, text, _score, _qi in deduped[:max_chunks]]
+
+    # Injeta os resumos por área (buscados antes do client.close()) no topo.
+    if resumos_area:
+        log.info(
+            f"Injetando {len(resumos_area)} resumo(s) por área no topo do "
+            f"contexto (fonte canônica de R$)."
+        )
+        textos_resumo = [t for t, _s in resumos_area]
+        # Dedup contra o que já veio do RRF
+        hashes_existentes = {
+            hashlib.md5(t.lower().strip().encode()).hexdigest() for t, _s in final
+        }
+        novos = [
+            t for t in textos_resumo
+            if hashlib.md5(t.lower().strip().encode()).hexdigest()
+            not in hashes_existentes
+        ]
+        final = [(t, 999.0) for t in novos] + final
+        final = final[: max_chunks + len(novos)]
 
     context_list = [text for text, _rrf in final]
     log.info(
         f"Multi-query: {len(raw_results)} brutos -> {len(deduped)} unicos "
-        f"-> {len(final)} finais (RRF)"
+        f"-> {len(final)} finais (RRF + resumos por área)"
     )
     return context_list, final
 
@@ -784,6 +935,8 @@ def _save_persona(
     qualidade_ok: bool | None = None,
     modelo_usado: str = "llama-3.2-3b-instruct:q4_k_m",
     score_qualidade: float = 0.0,
+    tipo_politico: str = "deputado",
+    politico_id: int | None = None,
 ):
     should_close = False
     if conn is None:
@@ -797,15 +950,18 @@ def _save_persona(
         )
 
     try:
+        if politico_id is None:
+            politico_id = deputado_id
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO parlamentares_personas
                     (deputado_id, query_text, contexto_rag, analise_gerada,
                      fontes_usadas, versao_prompt, duracao_segundos, qualidade_ok,
-                     modelo_usado, score_qualidade, parlamentar_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (deputado_id, versao_prompt) DO UPDATE SET
+                     modelo_usado, score_qualidade, parlamentar_id,
+                     tipo_politico, politico_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (tipo_politico, politico_id, versao_prompt) DO UPDATE SET
                     analise_gerada = EXCLUDED.analise_gerada,
                     contexto_rag = EXCLUDED.contexto_rag,
                     fontes_usadas = EXCLUDED.fontes_usadas,
@@ -818,7 +974,7 @@ def _save_persona(
                     parlamentar_id = EXCLUDED.parlamentar_id
             """,
                 (
-                    deputado_id,
+                    deputado_id if tipo_politico == "deputado" else None,
                     query_text,
                     contexto_rag,
                     analise,
@@ -829,11 +985,15 @@ def _save_persona(
                     modelo_usado,
                     score_qualidade,
                     parlamentar_id,
+                    tipo_politico,
+                    politico_id,
                 ),
             )
             conn.commit()
     except Exception as e:
-        log.error(f"Erro ao salvar persona para deputado {deputado_id}: {e}")
+        log.error(
+            f"Erro ao salvar persona para {tipo_politico} {politico_id}: {e}"
+        )
         conn.rollback()
     finally:
         if should_close:
@@ -879,27 +1039,40 @@ def generate_persona_analysis(
     nome: str,
     query: str | None = None,
     use_preparer: bool | None = None,
+    tipo_politico: str = "deputado",
 ) -> tuple[str, float, list[str], list[str], bool | None]:
-    """Gera dossier comportamental via pipeline multi-analista RAG v7.
+    """Gera dossier comportamental via pipeline multi-analista RAG v8.
 
     Cada seção do dossier é gerada por um analista especialista independente,
     com prompt focado e quality check próprio. O score global é a média
     ponderada dos scores individuais.
 
+    Args:
+        deputado_id: ID do político no cargo (politico_id no Qdrant).
+        tipo_politico: Cargo (deputado/senador/governador/prefeito/vereador).
+
     Returns:
         (analise_text, duracao_segundos, fontes_usadas, context_list, qualidade_ok)
         context_list e retornado para reutilizacao (elimina busca duplicada).
     """
+    from config.settings import RAG_MIN_CHUNKS_BY_TIPO
+
+    min_chunks = RAG_MIN_CHUNKS_BY_TIPO.get(tipo_politico, RAG_MIN_CHUNKS)
     inicio_total = time.time()
 
     # 1. Recuperacao multi-query (chamada unica)
-    log.info(f"Recuperando contexto multi-query para {nome} (ID: {deputado_id})...")
-    context_list, _scored = search_context_multiquery(deputado_id)
+    log.info(
+        f"Recuperando contexto multi-query para {nome} "
+        f"({tipo_politico} ID: {deputado_id})..."
+    )
+    context_list, _scored = search_context_multiquery(
+        deputado_id, tipo_politico=tipo_politico
+    )
 
-    if len(context_list) < RAG_MIN_CHUNKS:
+    if len(context_list) < min_chunks:
         msg = (
             f"Dados insuficientes para {nome}: apenas {len(context_list)} chunks "
-            f"(minimo: {RAG_MIN_CHUNKS}). Indexe mais dados com cron-qdrant."
+            f"(minimo: {min_chunks}). Indexe mais dados com cron-qdrant."
         )
         log.warning(msg)
         return msg, 0.0, [], context_list, None
@@ -921,6 +1094,7 @@ def generate_persona_analysis(
         context_list=context_list,
         llm_model=RAG_LLM_MODEL,
         use_preparer=use_preparer,
+        tipo_politico=tipo_politico,
     )
 
     if not results:
@@ -939,6 +1113,11 @@ def generate_persona_analysis(
 
     # 4. Calcular score global
     score_global, qualidade_ok = calculate_global_score(results)
+    # Expor para consumidores (dossier_bench) sem mudar a assinatura.
+    LAST_RUN_SCORE["global"] = score_global
+    LAST_RUN_SCORE["analistas"] = {
+        r.analyst_id: (round(r.quality_score, 1), r.quality_ok) for r in results
+    }
     duracao_total = time.time() - inicio_total
 
     log.info(
@@ -969,7 +1148,7 @@ def generate_persona_analysis(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Gera dossies comportamentais via RAG v3 (multi-query + RRF)"
+        description="Gera dossies comportamentais via RAG v8 (multi-query + RRF, multi-cargo)"
     )
     parser.add_argument("--nome", type=str, help="Nome do deputado")
     parser.add_argument(
@@ -993,6 +1172,19 @@ def main() -> None:
         default=None,
         help="Modelo LLM para persona (padrão: llama-3.2-3b-instruct:q4_k_m)",
     )
+    parser.add_argument(
+        "--tipo",
+        type=str,
+        default="deputado",
+        choices=("deputado", "senador", "governador", "prefeito", "vereador"),
+        help="Cargo do político (default: deputado)",
+    )
+    parser.add_argument(
+        "--politico-id",
+        type=int,
+        default=None,
+        help="ID do político no cargo (senador_codigo, municipio_id, uf-hash p/ governador, sq_candidato)",
+    )
     args = parser.parse_args()
 
     # Override do modelo via CLI
@@ -1003,7 +1195,7 @@ def main() -> None:
 
     # --- Modo lote ---
     if args.lote:
-        _run_lote(args.lote, args.query, args.regerar)
+        _run_lote(args.lote, args.query, args.regerar, tipo_politico=args.tipo)
         return
 
     # --- Modo single ---
@@ -1011,24 +1203,29 @@ def main() -> None:
         parser.print_help()
         return
 
-    # Descobrir deputado
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados WHERE nome ILIKE %s LIMIT 1",
-            (f"%{args.nome}%",),
-        )
-        result = cur.fetchone()
+    # Descobrir político (multi-cargo Fase 3)
+    if args.tipo == "deputado":
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados WHERE nome ILIKE %s LIMIT 1",
+                (f"%{args.nome}%",),
+            )
+            result = cur.fetchone()
+        if not result:
+            log.error(f"Deputado '{args.nome}' nao encontrado no banco.")
+            return
+        dep_id, nome_real, parl_id = result
+    else:
+        dep_id, nome_real, parl_id = _find_politico_por_tipo(args.tipo, args.nome, args.politico_id)
+        if dep_id is None:
+            log.error(f"{args.tipo} '{args.nome}' nao encontrado no banco.")
+            return
 
-    if not result:
-        log.error(f"Deputado '{args.nome}' nao encontrado no banco.")
-        return
-
-    dep_id, nome_real, parl_id = result
-    log.info(f"Gerando dossier para: {nome_real} (ID: {dep_id})")
+    log.info(f"Gerando dossier para: {nome_real} ({args.tipo} ID: {dep_id})")
 
     # 1.1: chamada unica que retorna context_list junto com a analise
     analise, duracao, fontes, context_list, qualidade_ok = generate_persona_analysis(
-        dep_id, nome_real, args.query
+        dep_id, nome_real or str(dep_id), args.query, tipo_politico=args.tipo
     )
 
     # Output
@@ -1056,8 +1253,10 @@ def main() -> None:
             qualidade_ok=qualidade_ok,
             modelo_usado=modelo,
             score_qualidade=score,
+            tipo_politico=args.tipo,
         )
         log.info(f"Dossier salvo no banco (v{RAG_PERSONA_VERSION}). Score: {score:.1f}/100")
+        _mark_dossie_checkpoint(args.tipo, dep_id, ok=bool(qualidade_ok))
 
 
 def _generate_with_retry(
@@ -1065,6 +1264,7 @@ def _generate_with_retry(
     nome: str,
     query: str | None = None,
     use_preparer: bool | None = None,
+    tipo_politico: str = "deputado",
 ) -> tuple[str, float, list[str], list[str], bool | None]:
     """Gera persona com retry + fallback para uso em lote."""
     return generate_persona_analysis(
@@ -1072,56 +1272,257 @@ def _generate_with_retry(
         nome,
         query,
         use_preparer=use_preparer,
+        tipo_politico=tipo_politico,
     )
 
 
-def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
-    """Gera personas em lote para deputados sem persona v3."""
+# ---------------------------------------------------------------------------
+# Checkpoint de dossiês (dossie_checkpoint) — Fase 4
+# ---------------------------------------------------------------------------
+
+
+def _find_politico_por_tipo(
+    tipo_politico: str, nome: str, politico_id: int | None
+) -> tuple[int | None, str | None, int | None]:
+    """Localiza (politico_id, nome, parlamentar_id) de um cargo não-deputado."""
     with get_connection() as conn, conn.cursor() as cur:
-        if regenerar:
+        if tipo_politico == "senador":
+            if politico_id:
+                cur.execute(
+                    "SELECT senador_codigo, nome_completo FROM senadores_dados WHERE senador_codigo = %s",
+                    (politico_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT senador_codigo, nome_completo FROM senadores_dados "
+                    "WHERE nome_completo ILIKE %s OR nome_parlamentar ILIKE %s LIMIT 1",
+                    (f"%{nome}%", f"%{nome}%"),
+                )
+            row = cur.fetchone()
+            return (int(row[0]), row[1], None) if row else (None, None, None)
+        if tipo_politico == "governador":
             cur.execute(
-                "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados ORDER BY deputado_id LIMIT %s",
-                (lote,),
+                "SELECT -abs(hashtext(uf)), nome_governador FROM governadores_dados "
+                "WHERE nome_governador ILIKE %s OR uf ILIKE %s LIMIT 1",
+                (f"%{nome}%", f"%{nome}%"),
+            )
+            row = cur.fetchone()
+            return (int(row[0]), row[1], None) if row else (None, None, None)
+        if tipo_politico == "prefeito":
+            if politico_id:
+                cur.execute(
+                    "SELECT municipio_id, prefeito_nome FROM prefeitos_dados WHERE municipio_id = %s",
+                    (politico_id,),
+                )
+            else:
+                cur.execute(
+                    "SELECT municipio_id, prefeito_nome FROM prefeitos_dados "
+                    "WHERE prefeito_nome ILIKE %s LIMIT 1",
+                    (f"%{nome}%",),
+                )
+            row = cur.fetchone()
+            return (int(row[0]), row[1], None) if row else (None, None, None)
+        # vereador
+        if politico_id:
+            cur.execute(
+                "SELECT sq_candidato, nome_completo FROM vereadores_dados WHERE sq_candidato = %s",
+                (politico_id,),
             )
         else:
             cur.execute(
-                """
-                SELECT pd.deputado_id, pd.nome, pd.parlamentar_id
-                FROM parlamentares_dados pd
-                LEFT JOIN parlamentares_personas pp
-                    ON pd.deputado_id = pp.deputado_id
-                    AND pp.versao_prompt = %s
-                WHERE pp.deputado_id IS NULL
-                ORDER BY
-                    (SELECT COUNT(*)
-                     FROM parlamentar_alertas pa
-                     WHERE pa.parlamentar_nome IN (pd.nome, pd.nome_urna)
-                    ) DESC,
-                    (SELECT COUNT(*)
-                     FROM votos_camara vc
-                     WHERE vc.deputado_id = pd.deputado_id
-                    ) DESC,
-                    (SELECT COUNT(*)
-                     FROM planos_acao pa2
-                     JOIN parlamentares p ON pa2.parlamentar_id = p.parlamentar_id
-                     JOIN parlamentares_dados pd2 ON pd2.parlamentar_id = p.parlamentar_id
-                     WHERE pd2.deputado_id = pd.deputado_id
-                     ) DESC,
-                    pd.deputado_id ASC
-                LIMIT %s
-            """,
-                (
-                    RAG_PERSONA_VERSION,
-                    lote,
-                ),
+                "SELECT sq_candidato, nome_completo FROM vereadores_dados "
+                "WHERE nome_completo ILIKE %s OR nome_urna ILIKE %s LIMIT 1",
+                (f"%{nome}%", f"%{nome}%"),
             )
-        deputados = cur.fetchall()
+        row = cur.fetchone()
+        return (int(row[0]), row[1], None) if row else (None, None, None)
 
-    if not deputados:
-        log.info("Nenhum deputado aguardando geracao de dossier.")
+
+def _ensure_dossie_checkpoint_table() -> None:
+    """Cria a tabela de checkpoint de dossiês (idempotente)."""
+    from src.db_utils import get_connection as _gc
+
+    conn = _gc()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS dossie_checkpoint (
+                    tipo        VARCHAR(20)   NOT NULL,
+                    politico_id INTEGER       NOT NULL,
+                    versao      INTEGER       NOT NULL DEFAULT 8,
+                    status      VARCHAR(10)   NOT NULL DEFAULT 'pendente'
+                                CHECK (status IN ('ok', 'fail', 'pendente')),
+                    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (tipo, politico_id, versao)
+                )
+                """
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _mark_dossie_checkpoint(tipo: str, politico_id: int, ok: bool) -> None:
+    """Registra status do dossiê no checkpoint (ok/fail)."""
+    from src.db_utils import get_connection as _gc
+
+    conn = _gc()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dossie_checkpoint (tipo, politico_id, versao, status, updated_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (tipo, politico_id, versao) DO UPDATE SET
+                    status = EXCLUDED.status, updated_at = NOW()
+                """,
+                (tipo, politico_id, RAG_PERSONA_VERSION, "ok" if ok else "fail"),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_fila_por_tipo(
+    tipo_politico: str, lote: int, regenerar: bool
+) -> list[tuple[int, str, int | None]]:
+    """Fila de políticos de um cargo (não-deputado) sem dossier v8.
+
+    Retorna [(politico_id, nome, parlamentar_id)].
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if tipo_politico == "senador":
+            cur.execute(
+                """
+                SELECT s.senador_codigo, s.nome_completo, NULL::int
+                FROM senadores_dados s
+                WHERE %s = TRUE
+                   OR NOT EXISTS (
+                       SELECT 1 FROM dossie_checkpoint dc
+                       WHERE dc.tipo = 'senador' AND dc.politico_id = s.senador_codigo
+                         AND dc.versao = %s AND dc.status = 'ok'
+                   )
+                ORDER BY s.senador_codigo
+                LIMIT %s
+                """,
+                (regenerar, RAG_PERSONA_VERSION, lote),
+            )
+        elif tipo_politico == "governador":
+            # governadores_dados não tem id numérico — uf é a chave.
+            # politico_id = -abs(hashtext(uf)): inteiro negativo ESTÁVEL por UF
+            # (consistente com o indexador e o filtro do Qdrant).
+            cur.execute(
+                """
+                SELECT -abs(hashtext(g.uf)), g.nome_governador, NULL::int
+                FROM governadores_dados g
+                WHERE %s = TRUE
+                   OR NOT EXISTS (
+                       SELECT 1 FROM dossie_checkpoint dc
+                       WHERE dc.tipo = 'governador' AND dc.politico_id = -abs(hashtext(g.uf))
+                         AND dc.versao = %s AND dc.status = 'ok'
+                   )
+                ORDER BY g.uf
+                LIMIT %s
+                """,
+                (regenerar, RAG_PERSONA_VERSION, lote),
+            )
+        elif tipo_politico == "prefeito":
+            cur.execute(
+                """
+                SELECT p.municipio_id, p.prefeito_nome, NULL::int
+                FROM prefeitos_dados p
+                WHERE %s = TRUE
+                   OR NOT EXISTS (
+                       SELECT 1 FROM dossie_checkpoint dc
+                       WHERE dc.tipo = 'prefeito' AND dc.politico_id = p.municipio_id
+                         AND dc.versao = %s AND dc.status = 'ok'
+                   )
+                ORDER BY p.municipio_id
+                LIMIT %s
+                """,
+                (regenerar, RAG_PERSONA_VERSION, lote),
+            )
+        else:  # vereador
+            cur.execute(
+                """
+                SELECT v.sq_candidato, v.nome_completo, NULL::int
+                FROM vereadores_dados v
+                WHERE %s = TRUE
+                   OR NOT EXISTS (
+                       SELECT 1 FROM dossie_checkpoint dc
+                       WHERE dc.tipo = 'vereador' AND dc.politico_id = v.sq_candidato
+                         AND dc.versao = %s AND dc.status = 'ok'
+                   )
+                ORDER BY v.sq_candidato
+                LIMIT %s
+                """,
+                (regenerar, RAG_PERSONA_VERSION, lote),
+            )
+        rows = cur.fetchall()
+    return [(int(r[0]), str(r[1]), r[2]) for r in rows]
+
+
+def _run_lote(
+    lote: int,
+    query: str | None,
+    regenerar: bool,
+    tipo_politico: str = "deputado",
+) -> None:
+    """Gera personas em lote para políticos sem persona v8 (com checkpoint)."""
+    # Checkpoint de retomada (dossie_checkpoint): fila priorizada por cargo
+    _ensure_dossie_checkpoint_table()
+
+    if tipo_politico == "deputado":
+        with get_connection() as conn, conn.cursor() as cur:
+            if regenerar:
+                cur.execute(
+                    "SELECT deputado_id, nome, parlamentar_id FROM parlamentares_dados ORDER BY deputado_id LIMIT %s",
+                    (lote,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT pd.deputado_id, COALESCE(NULLIF(pd.nome, ''), pd.nome_urna) AS nome, pd.parlamentar_id
+                    FROM parlamentares_dados pd
+                    LEFT JOIN dossie_checkpoint dc
+                        ON dc.tipo = 'deputado' AND dc.politico_id = pd.deputado_id
+                        AND dc.versao = %s
+                    WHERE dc.politico_id IS NULL OR dc.status = 'fail'
+                    ORDER BY
+                        (SELECT COUNT(*)
+                         FROM parlamentar_alertas pa
+                         WHERE pa.parlamentar_nome IN (pd.nome, pd.nome_urna)
+                        ) DESC,
+                        (SELECT COUNT(*)
+                         FROM votos_camara vc
+                         WHERE vc.deputado_id = pd.deputado_id
+                        ) DESC,
+                        (SELECT COUNT(*)
+                         FROM planos_acao pa2
+                         JOIN parlamentares p ON pa2.parlamentar_id = p.parlamentar_id
+                         JOIN parlamentares_dados pd2 ON pd2.parlamentar_id = p.parlamentar_id
+                         WHERE pd2.deputado_id = pd.deputado_id
+                         ) DESC,
+                        pd.deputado_id ASC
+                    LIMIT %s
+                """,
+                    (
+                        RAG_PERSONA_VERSION,
+                        lote,
+                    ),
+                )
+            politicos = cur.fetchall()
+        politicos = [(r[0], r[1], r[2]) for r in politicos]
+    else:
+        # Cargos não-deputado: fila própria por tabela
+        politicos = _get_fila_por_tipo(tipo_politico, lote, regenerar)
+
+    if not politicos:
+        log.info(f"Nenhum político do tipo '{tipo_politico}' aguardando geracao de dossier.")
         return
 
-    log.info(f"Lote: {len(deputados)} deputados para processar.")
+    log.info(f"Lote: {len(politicos)} {tipo_politico}(s) para processar.")
 
     # model_scope mantém o modelo carregado durante todo o lote
     # e libera automaticamente no final, com refcount tracking.
@@ -1134,7 +1535,7 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
     def _process_one(
         dep_id: int, nome_real: str, parl_id: int | None
     ) -> tuple[str, int, int, float, list[str]] | None:
-        """Worker: gera e salva persona para um deputado (thread-safe)."""
+        """Worker: gera e salva persona para um político (thread-safe)."""
         try:
             # No lote, o model_scope externo prende o modelo de análise
             # (RAG_LLM_MODEL) durante todo o batch — o modelo do PREPARER
@@ -1142,7 +1543,7 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
             # esperar o timeout de VRAM a cada analista, pula o preparer
             # (analistas usam chunks crus diretamente, sem stall).
             analise, duracao, fontes, context_list, qualidade_ok = _generate_with_retry(
-                dep_id, nome_real, query, use_preparer=False
+                dep_id, nome_real, query, use_preparer=False, tipo_politico=tipo_politico
             )
             if analise.startswith("Dados insuficientes") or analise.startswith("Erro"):
                 log.warning(f"  -> {analise[:80]}")
@@ -1163,10 +1564,17 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
                     qualidade_ok=qualidade_ok,
                     modelo_usado=RAG_LLM_MODEL,
                     score_qualidade=score,
+                    tipo_politico=tipo_politico,
                 )
             finally:
                 worker_conn.close()
 
+            # Checkpoint de retomada (status ok/fail)
+            _mark_dossie_checkpoint(
+                tipo_politico,
+                dep_id,
+                ok=bool(qualidade_ok),
+            )
             return (nome_real, dep_id, len(analise), duracao, fontes)
         except Exception as e:
             log.error(f"Erro ao processar {nome_real} (ID: {dep_id}): {e}")
@@ -1181,7 +1589,7 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future_map = {
             executor.submit(_process_one, dep_id, nome_real, parl_id): (dep_id, nome_real)
-            for dep_id, nome_real, parl_id in deputados
+            for dep_id, nome_real, parl_id in politicos
         }
 
         concluidos = 0
@@ -1193,15 +1601,15 @@ def _run_lote(lote: int, query: str | None, regenerar: bool) -> None:
                 if result:
                     nome_r, _, n_chars, dur, fnts = result
                     log.info(
-                        f"[{concluidos}/{len(deputados)}] {nome_r}: "
+                        f"[{concluidos}/{len(politicos)}] {nome_r}: "
                         f"{n_chars} chars, {dur:.1f}s, fontes: {', '.join(fnts)}"
                     )
                 else:
-                    log.warning(f"[{concluidos}/{len(deputados)}] {nome_real}: skipped")
+                    log.warning(f"[{concluidos}/{len(politicos)}] {nome_real}: skipped")
             except Exception as e:
-                log.error(f"[{concluidos}/{len(deputados)}] {nome_real}: erro fatal: {e}")
+                log.error(f"[{concluidos}/{len(politicos)}] {nome_real}: erro fatal: {e}")
 
-    log.info(f"Lote concluido: {concluidos}/{len(deputados)} deputados processados.")
+    log.info(f"Lote concluido: {concluidos}/{len(politicos)} {tipo_politico}(s) processados.")
 
     # Liberar modelo no final do lote
     if _model_ctx_active:

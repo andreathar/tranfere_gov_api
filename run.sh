@@ -31,7 +31,7 @@ Comandos:
   import             Importar JSONs para o banco PostgreSQL
   report             Relatórios do banco (resumo|estado|objeto|negados|emenda|top|sql)
   dashboard          Dashboard interativo HTML com gráficos Plotly
-  web                Painel Web interativo do Deputado (FastAPI, porta 8000)
+  web                Painel Web interativo do Deputado (FastAPI, porta 8001)
   enrich             Pipeline de enriquecimento (CNPJ + IBGE + Câmara)
   validate           Validar CNPJs via BrasilAPI
   ibge               Enriquecer municípios via IBGE
@@ -47,6 +47,8 @@ Comandos:
    discursos          Extrai discursos da Câmara dos Deputados (--ano, --resumo)
   redator            Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
   transparencia      Buscar emendas no Portal da Transparência (--nome-autor, --ano, --db, --csv, --json)
+  dossie             Gerar dossiê RAG v8 (--nome, --tipo deputado|senador|governador|prefeito|vereador, --lote N)
+  dossie-bench       Benchmark de dossiês (--golden | --tipo T --lote N | --nomes X --tipo T --saida F)
   all                Extrair TODOS os objetos de 2026
   help               Mostrar esta ajuda
 
@@ -98,8 +100,8 @@ case "${1:-help}" in
         $PYTHON -m src.dash_app "${@:2}"
         ;;
     web)
-        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8000 ..."
-        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8001 ..."
+        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8001
         ;;
     enrich)
         $PYTHON -m src.enrichers.pipeline "${@:2}"
@@ -134,6 +136,17 @@ case "${1:-help}" in
         ;;
     cron-dossie)
         $PYTHON -m src.enrichers.rag_persona "${@:2}"
+        ;;
+    dossie)
+        # Gera dossiê RAG v8 (multi-cargo). Ex.: ./run.sh dossie --nome "RENAN CALHEIROS" --tipo senador
+        $PYTHON -m src.enrichers.rag_persona "${@:2}"
+        ;;
+    dossie-bench)
+        # Benchmark de dossiês (multi-cargo, checkpoint, golden). Ex.:
+        #   ./run.sh dossie-bench --golden
+        #   ./run.sh dossie-bench --tipo senador --lote 5
+        #   ./run.sh dossie-bench --nomes "ALFREDO GASPAR" --tipo deputado --saida reports/dossier_bench/run_x.jsonl
+        $PYTHON scripts/dossier_bench.py "${@:2}"
         ;;
     discursos)
         $PYTHON -m src.enrichers.camara_discursos "${@:2}"

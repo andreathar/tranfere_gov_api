@@ -1289,7 +1289,7 @@ async function loadVereadoresTab(query, uf, partido) {
   const tableBody = document.querySelector('#table-vereadores tbody');
   if (!tableBody) return;
 
-  tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem;"><div class="spinner" style="margin:0 auto 0.5rem;"></div>Carregando vereadores...</td></tr>';
+  tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem;"><div class="spinner" style="margin:0 auto 0.5rem;"></div>Carregando vereadores...</td></tr>';
 
   try {
     // 1. Carregar KPIs + gráfico de partido (uma vez)
@@ -1313,7 +1313,7 @@ async function loadVereadoresTab(query, uf, partido) {
     const res = await fetch(url).then(r => r.json());
     renderVereadoresTable(res);
   } catch (e) {
-    tableBody.innerHTML = `<tr><td colspan="7" style="color:var(--danger); text-align:center; padding:1.5rem;">Erro ao carregar vereadores: ${e.message}</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8" style="color:var(--danger); text-align:center; padding:1.5rem;">Erro ao carregar vereadores: ${e.message}</td></tr>`;
   }
 }
 
@@ -1369,12 +1369,12 @@ function renderVereadoresTable(rows) {
 
   // Guard: ensure rows is an array (API may return error dict)
   if (!Array.isArray(rows)) {
-    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--danger);">Resposta inválida da API. Verifique se a migration 018 foi executada.</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem; color:var(--danger);">Resposta inválida da API. Verifique se a migration 018 foi executada.</td></tr>';
     return;
   }
 
   if (rows.length === 0) {
-    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Nenhum vereador encontrado.</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Nenhum vereador encontrado.</td></tr>';
     return;
   }
 
@@ -1387,8 +1387,44 @@ function renderVereadoresTable(rows) {
       <td>${r.percentual_votos ? r.percentual_votos + '%' : '-'}</td>
       <td>${r.ibge_populacao ? formatNum(r.ibge_populacao) + ' hab' : '-'}</td>
       <td>${r.ano_eleicao || '-'}</td>
+      <td><button class="btn-auditar" style="background:var(--accent-blue); color:#fff; border:none; padding:0.35rem 0.75rem; border-radius:6px; font-weight:600; font-size:0.8rem; cursor:pointer;" onclick="openVereadorModal(${r.sq_candidato})">Ver Perfil</button></td>
     </tr>
   `).join('');
+}
+
+async function openVereadorModal(sqCandidato) {
+  const modal = document.getElementById('modal-generico');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  const body = document.getElementById('modal-generico-body');
+  body.innerHTML = '<div class="spinner" style="margin:1rem auto;"></div><p style="text-align:center;">Carregando perfil do vereador...</p>';
+  try {
+    const p = await fetch(`${API_BASE}/vereadores/${sqCandidato}/perfil`).then(r => r.json());
+    document.getElementById('modal-generico-title').innerText = `🗣️ ${p.nome_urna || p.nome_completo || 'Vereador'}`;
+    const campos = [
+      ['Nome Completo', p.nome_completo],
+      ['Nome de Urna', p.nome_urna],
+      ['Partido', p.sigla_partido],
+      ['UF', p.uf],
+      ['Município', p.municipio_nome],
+      ['Cargo', p.cargo],
+      ['Ano Eleição', p.ano_eleicao],
+      ['Situação', p.situacao_candidatura],
+      ['Coligação', p.coligacao],
+      ['Nº Candidato', p.numero_candidato],
+      ['Votos', p.votos != null ? formatNum(p.votos) : null],
+      ['% Votos Municipal', p.percentual_votos != null ? p.percentual_votos + '%' : null],
+    ];
+    body.innerHTML = `
+      <div style="flex:1; min-width:280px;">
+        ${campos.filter(c => c[1] != null && c[1] !== '').map(([k, v]) => `
+          <div style="display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid var(--border-color);">
+            <span style="color:var(--text-muted);">${k}</span><strong>${v}</strong>
+          </div>`).join('')}
+      </div>`;
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--danger); text-align:center;">Erro ao carregar perfil: ${e.message}</p>`;
+  }
 }
 
 // Reset cache when switching to vereadores tab

@@ -126,8 +126,159 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
                 return True
         return bool(total and abs(v - total) <= max(tol * max(abs(v), abs(total)), 1.0))
 
-    falsos = [v for v in out_vals if not fiel(v)]
-    return len(falsos) / len(out_vals)
+    # PITFALL 2026-08-11: o 3B preenche tabelas com 'R$ 0,00' para áreas
+    # sem emenda do político (placeholder de tabela, não fabricação).
+    # Contar zeros como invenção reprovava dossiers fieis (tematicas 82%).
+    # Zeros são neutros: ignorados na contagem de falsos e no denominador.
+    relevantes = [v for v in out_vals if v > 0]
+    if not relevantes:
+        return 0.0
+    falsos = [v for v in relevantes if not fiel(v)]
+    return len(falsos) / len(relevantes)
+
+# ---------------------------------------------------------------------------
+# Saída estruturada (JSON) — Fase 2 refactor 2026-08-10
+#
+# Contrato por analista:
+#   {
+#     "secoes": ["markdown narrativa..."],
+#     "fatos": [{"categoria": "...", "valor": "R$ 1.234,56", "fonte_chunk_id": "EMENDA"}],
+#     "flags": ["ALERTA", ...]
+#   }
+# - secoes[] alimenta o dossier final (renderização markdown inalterada)
+# - fatos[] permite QC determinístico: fidelidade R$ + rastreabilidade por chunk
+# - flags[] expõe alertas estruturados (anomalias, red flags)
+# ---------------------------------------------------------------------------
+
+
+def parse_structured_output(output: str) -> dict | None:
+    """Tenta parsear o JSON estruturado do output de um analista.
+
+    Estratégias em ordem: json.loads direto -> bloco ```json ... ``` ->
+    primeiro bloco {...} balanceado. Retorna None se nenhuma funcionar.
+    """
+    import json
+
+    output = output.strip()
+    if not output:
+        return None
+
+    # 1) Direto
+    try:
+        parsed = json.loads(output)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        pass
+
+    # 2) Bloco ```json ... ```
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", output, re.DOTALL)
+    if m:
+        try:
+            parsed = json.loads(m.group(1))
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            pass
+
+    # 3) Primeiro bloco { ... } balanceado
+    inicio = output.find("{")
+    if inicio != -1:
+        profundidade = 0
+        for i in range(inicio, len(output)):
+            ch = output[i]
+            if ch == "{":
+                profundidade += 1
+            elif ch == "}":
+                profundidade -= 1
+                if profundidade == 0:
+                    try:
+                        parsed = json.loads(output[inicio : i + 1])
+                        return parsed if isinstance(parsed, dict) else None
+                    except Exception:
+                        break
+    return None
+
+
+def render_secoes_markdown(content: str) -> str:
+    """Extrai a narrativa markdown de um output estruturado (secoes[]).
+
+    Se o conteúdo não for JSON estruturado, retorna o conteúdo original
+    (backward-compat com analistas v7 em markdown puro).
+    """
+    dados = parse_structured_output(content)
+    if dados and isinstance(dados.get("secoes"), list):
+        secoes = [str(s) for s in dados["secoes"] if str(s).strip()]
+        if secoes:
+            return "\n\n".join(secoes)
+    return content
+
+
+def qc_estruturado(
+    output: str,
+    chunks: list[str],
+    *,
+    campos_obrigatorios: list[str],
+    min_secoes: int = 1,
+    max_taxa_invencao: float = 0.2,
+) -> tuple[bool, float]:
+    """QC determinístico para saída estruturada (JSON).
+
+    Valida, nesta ordem:
+      1. JSON válido com os campos obrigatórios (senão 0).
+      2. Fidelidade R$: valores citados nos fatos/secoes devem existir nos
+         chunks (taxa_invencao_rs, tolerância 2%).
+      3. Rastreabilidade: cada fato com fonte_chunk_id deve corresponder a um
+         tipo de chunk presente no contexto (ex.: "EMENDA").
+      4. Cobertura: bônus por número de seções (>= min_secoes).
+
+    Returns:
+        (aprovado: bool, score: float 0-100). Aprovado se score >= 50.
+    """
+    dados = parse_structured_output(output)
+    if dados is None:
+        return False, 0.0
+
+    faltando = [c for c in campos_obrigatorios if c not in dados]
+    if faltando:
+        return False, 10.0
+
+    secoes = [str(s) for s in (dados.get("secoes") or []) if str(s).strip()]
+    fatos = [f for f in (dados.get("fatos") or []) if isinstance(f, dict)]
+
+    # 2. Fidelidade R$ sobre o texto inteiro (fatos + secoes)
+    texto_fatos = " ".join(str(f.get("valor", "")) for f in fatos)
+    texto_total = texto_fatos + "\n" + "\n".join(secoes)
+    chunks_text = "\n".join(chunks)
+    taxa = 0.0
+    try:
+        taxa = taxa_invencao_rs(texto_total, chunks_text)
+    except Exception:
+        taxa = 0.0
+
+    # 3. Rastreabilidade por tipo de chunk
+    tipos_contexto = {
+        c.split("]")[0].lstrip("[").strip().upper()
+        for c in chunks
+        if "]" in c
+    }
+    fontes_invalidas = sum(
+        1
+        for f in fatos
+        if f.get("fonte_chunk_id")
+        and str(f["fonte_chunk_id"]).strip().upper() not in tipos_contexto
+    )
+
+    # 4. Score
+    score = 50.0
+    score += min(len(secoes) / max(min_secoes, 1), 1.0) * 30.0
+    if taxa <= max_taxa_invencao:
+        score += 20.0
+    else:
+        score -= (taxa - max_taxa_invencao) * 100.0
+    if fontes_invalidas:
+        score -= min(fontes_invalidas * 5.0, 30.0)
+
+    score = round(min(max(score, 0.0), 100.0), 1)
+    return score >= 50.0, score
 
 
 # Import do Briefing (opcional — preparer pode nao estar disponivel)
@@ -283,6 +434,8 @@ class AnalystBase(ABC):
         nome: str,
         llm_model: str = "",
         use_preparer: bool | None = None,
+        shared_briefing: Briefing | None = None,
+        tipo_politico: str = "deputado",
     ) -> AnalystResult:
         """Executa o analista: prepara briefing -> monta prompt -> chama LLM -> quality check.
 
@@ -292,10 +445,17 @@ class AnalystBase(ABC):
           2. build_prompt() recebe briefing + chunks.
           3. O analista pode usar o briefing (recomendado) ou ignorá-lo.
 
+        Fase 1 (2026-08-10): se `shared_briefing` for fornecido (briefing ÚNICO
+        preparado pelo orquestrador), pula a preparação local — reduz o número
+        de chamadas LLM de ~7 para 1 por dossiê.
+
         Args:
             context: Lista de chunks filtrados para este analista.
             nome: Nome do deputado.
             llm_model: Modelo LLM a usar (padrao: definido em settings).
+            use_preparer: Força liga/desliga a preparação local (None = default da classe).
+            shared_briefing: Briefing compartilhado do dossiê (preparado 1× pelo
+                             orquestrador). Quando presente, use_preparer é ignorado.
 
         Returns:
             AnalystResult com o resultado completo (incluindo briefing usado).
@@ -305,11 +465,20 @@ class AnalystBase(ABC):
 
             llm_model = RAG_LLM_MODEL
 
-        # 1. Preparacao do briefing (se ativado)
+        # Cargo do político (Fase 3): expõe vocabulário PT-BR aos prompts
+        # via self._cargo (analistas usam self._cargo["singular"], etc.)
+        from src.analysts.cargo import get_cargo
+
+        self._cargo = get_cargo(tipo_politico)
+        self._tipo_politico = tipo_politico
+
+        # 1. Preparacao do briefing (se ativado e sem briefing compartilhado)
         # use_preparer: None usa o default da classe; True/False força.
         use_prep = self.use_preparer if use_preparer is None else use_preparer
         briefing: Briefing | None = None
-        if use_prep:
+        if shared_briefing is not None:
+            briefing = shared_briefing
+        elif use_prep:
             try:
                 from src.analysts.preparer import PromptPreparer
 
@@ -335,9 +504,18 @@ class AnalystBase(ABC):
         try:
             with localai_manager.model_scope(llm_model):
                 ai_client = LocalAIClient(model=llm_model)
+                # Enquadramento de cargo (Fase 3): instrui o LLM a usar o
+                # termo correto do cargo (senador, governador, etc.) mesmo
+                # quando o template do prompt cita "deputado".
+                cargo_line = (
+                    f"\nO político analisado é um(a) {self._cargo['singular']} "
+                    f"({self._tipo_politico}). Refira-se a ele(a) sempre como "
+                    f"'{self._cargo['singular']}' e à casa/instituição como "
+                    f"'{self._cargo['casa']}'."
+                )
                 resposta = ai_client.chat(
                     prompt=prompt,
-                    system=self.system_prompt,
+                    system=self.system_prompt + cargo_line,
                     temperature=0.1,
                 )
                 duracao = time.time() - inicio
@@ -360,7 +538,17 @@ class AnalystBase(ABC):
             )
 
         # 5. Quality check (com acesso aos chunks via self._last_chunks)
-        self._last_chunks = context
+        # Quando o analista usa o briefing COMPARTILHADO (preparado com o
+        # contexto completo), os valores R$ que ele cita podem vir do briefing
+        # (já validado por fidelidade na preparação) e não dos seus chunks
+        # filtrados. O QC então valida contra a UNIÃO (chunks + briefing):
+        # valores do briefing são fontes legítimas — sem isso o QC acusa
+        # "invenção" para valores corretos vindos de outros chunk types.
+        self._last_chunks = list(context)
+        if briefing is not None and briefing.is_useful:
+            self._last_chunks.append(briefing.text)
+            if briefing.fact_table:
+                self._last_chunks.append(briefing.fact_table)
         self._last_briefing = briefing
         qc_pass, qc_score = self.quality_check(resposta)
 

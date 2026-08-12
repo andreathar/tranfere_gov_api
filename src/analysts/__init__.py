@@ -1,5 +1,5 @@
 """
-Pacote Multi-Analista RAG v7.
+Pacote Multi-Analista RAG v8.
 
 Substitui o prompt monolitico do rag_persona.py por N analistas especialistas,
 cada um com prompt focado, subconjunto de chunks e quality check proprio.
@@ -45,13 +45,13 @@ def register_analyst(klass: type) -> type:
 # (os imports ficam DEPOIS de ANALYST_REGISTRY e register_analyst)
 # ---------------------------------------------------------------------------
 from src.analysts import (  # noqa: E402
-    alinhamento,  # noqa: F401, E402
     anomalias,  # noqa: F401, E402
-    classificador,  # noqa: F401, E402
     cruzamento,  # noqa: F401, E402
     discursos,  # noqa: F401, E402
     perfil,  # noqa: F401, E402
+    rede_politica,  # noqa: F401, E402
     tematicas,  # noqa: F401, E402
+    votacao,  # noqa: F401, E402
 )
 
 # ---------------------------------------------------------------------------
@@ -86,6 +86,7 @@ def _ensure_tematicas_area_summary(
     deputado_id: int,
     filtered: list[str],
     nome: str,
+    tipo_politico: str = "deputado",
 ) -> list[str]:
     """Garante que o chunk "Distribuição por área das emendas PIX" (resumo por
     objeto/área, ref "Resumo por área (objeto)") esteja no contexto do analista
@@ -101,7 +102,8 @@ def _ensure_tematicas_area_summary(
     """
     marker = "Distribuição por área das emendas PIX"
     if any(marker in c for c in filtered):
-        return filtered
+        return _dedupe_emendas_com_resumo(filtered)
+
     try:
         from src.enrichers.rag_persona import search_context_qdrant
 
@@ -110,7 +112,8 @@ def _ensure_tematicas_area_summary(
             "Distribuição por área das emendas PIX por objeto de execução, "
             "total exato por área e municípios beneficiários",
             limit=5,
-            chunk_types=["EMENDA"],
+            chunk_types=["EMENDA", "EMENDA_DISCRICIONARIA"],
+            tipo_politico=tipo_politico,
         )
         for text, _score in results:
             if marker in text:
@@ -119,10 +122,39 @@ def _ensure_tematicas_area_summary(
                     f"[tematicas] chunk 'Resumo por área (objeto)' injetado no "
                     f"topo do contexto ({len(filtered)} -> {len(injected)} chunks)"
                 )
-                return injected
+                return _dedupe_emendas_com_resumo(injected)
     except Exception as e:
         log.warning(f"[tematicas] falha ao injetar resumo por área: {e}")
     return list(filtered)
+
+
+def _dedupe_emendas_com_resumo(filtered: list[str]) -> list[str]:
+    """Remove chunks de emendas INDIVIDUAIS quando o resumo agregado por área
+    ('Distribuição por área das emendas PIX') já está no contexto.
+
+    Causa raiz (golden set 2026-08-10, ADOLFO VIANA QC 65.0): o analista
+    tematicas recebia o resumo com TOTAIS EXATOS + dezenas de chunks [EMENDA]
+    individuais; o modelo 3B ecoava a tabela inteira (27+ linhas repetidas)
+    em vez de agregar as 3-5 áreas. O resumo é a fonte canônica dos valores —
+    os chunks individuais são redundantes e induzem o eco.
+    """
+    marker = "Distribuição por área das emendas PIX"
+    if not any(marker in c for c in filtered):
+        return list(filtered)
+    out: list[str] = []
+    for c in filtered:
+        if marker in c:
+            out.append(c)
+            continue
+        # [EMENDA]/[EMENDA_DISCRICIONARIA] individuais são redundantes agora
+        if c.startswith("[EMENDA]") or c.startswith("[EMENDA_DISCRICIONARIA]"):
+            continue
+        out.append(c)
+    removed = len(filtered) - len(out)
+    if removed:
+        log.info(f"[tematicas] {removed} chunk(s) de emenda individual removido(s) "
+                 f"após injeção do resumo por área ({len(filtered)} -> {len(out)})")
+    return out
 
 
 def run_analyst_pipeline(
@@ -131,11 +163,17 @@ def run_analyst_pipeline(
     context_list: list[str],
     llm_model: str = "",
     use_preparer: bool | None = None,
+    tipo_politico: str = "deputado",
 ) -> list[AnalystResult]:
     """Executa todos os analistas ativos em paralelo (ThreadPoolExecutor).
 
     Cada analista recebe apenas os chunks do tipo que lhe interessa,
     gera sua secao via LLM, e faz quality check proprio.
+
+    Fase 3 (2026-08-10): `tipo_politico` (deputado/senador/governador/
+    prefeito/vereador) ajusta o vocabulário dos prompts (via cargo.py) e
+    remove o analista `votacao` para cargos sem voto nominal legislativo
+    (governador/prefeito).
 
     A paralelizacao usa max_workers=3 para nao sobrecarregar a GPU
     (o RLock interno do LocalAIManager serializa TODAS as transicoes de
@@ -145,18 +183,61 @@ def run_analyst_pipeline(
     Returns:
         Lista de AnalystResults (na ordem do registro).
     """
+    from src.analysts.cargo import tem_votacao
     from src.analysts.router import filter_chunks_by_analyst
 
-    # Ordem deterministica: mesma ordem do registry
+    # Ordem deterministica (v8: classificador+alinhamento -> votacao;
+    # novo analista rede_politica entre cruzamento e discursos)
     analyst_order = [
-        "classificador",
+        "votacao",
         "perfil",
         "tematicas",
         "cruzamento",
-        "alinhamento",
+        "rede_politica",
         "discursos",
         "anomalias",
     ]
+
+    # Cargos sem voto nominal legislativo (governador/prefeito): sem votacao.py
+    if not tem_votacao(tipo_politico):
+        analyst_order = [aid for aid in analyst_order if aid != "votacao"]
+        log.info(f"[{tipo_politico}] analista 'votacao' desativado (sem voto nominal).")
+
+    # Preparar briefing ÚNICO do dossiê (Fase 1 refactor 2026-08-10):
+    # antes eram até 7 preparações (uma por analista); agora 1 chamada de
+    # preparação com o contexto completo, e cada analista recebe o mesmo
+    # briefing via shared_briefing. Analistas com use_preparer=False
+    # (ex.: tematicas, data-first) continuam usando chunks crus.
+    use_prep_effective = use_preparer
+    if use_prep_effective is None:
+        use_prep_effective = any(
+            getattr(ANALYST_REGISTRY.get(aid), "use_preparer", True)
+            for aid in analyst_order
+            if ANALYST_REGISTRY.get(aid) is not None
+        )
+
+    shared_briefing = None
+    if use_prep_effective:
+        try:
+            from src.analysts.preparer import PromptPreparer
+
+            preparer = PromptPreparer()
+            shared_briefing = preparer.prepare(
+                chunks=context_list,
+                analyst_persona=(
+                    "Analistas especialistas em análise política, orçamentária "
+                    "e de rede (cross-esferas)."
+                ),
+                section_title="DOSSIE COMPLETO",
+                nome=nome,
+            )
+            log.info(
+                f"Briefing único preparado para {nome}: "
+                f"{shared_briefing.total_chars} chars "
+                f"(validação: {'OK' if shared_briefing.validation_pass else 'FALHOU'})"
+            )
+        except Exception as e:
+            log.warning(f"Falha ao preparar briefing único: {e}; analistas usam chunks crus.")
 
     # Preparar tarefas: cada analista ativo vira uma task
     tasks: list[tuple[str, type, list[str]]] = []
@@ -171,7 +252,7 @@ def run_analyst_pipeline(
         # contexto do tematicas — sem isso o modelo fabrica valores quando o
         # chunk fica fora do RRF top-30 (fix 2026-07-31).
         if analyst_id == "tematicas":
-            filtered = _ensure_tematicas_area_summary(deputado_id, filtered, nome)
+            filtered = _ensure_tematicas_area_summary(deputado_id, filtered, nome, tipo_politico)
         if len(filtered) < min_req:
             log.info(
                 f"Analista {analyst_id} ({getattr(klass, 'section_title', '?')}) "
@@ -185,22 +266,13 @@ def run_analyst_pipeline(
         log.warning("Nenhum analista ativo para os dados disponiveis.")
         return []
 
-    # Decidir paralelismo. Quando o PREPARER e o modelo de analise NAO cabem
-    # juntos na VRAM (ex: zero-gemma LARGE + llama na RTX 3060 6GB), rodar os
-    # analistas em paralelo causa deadlock de VRAM: um worker segura o preparer
-    # (refcount) enquanto outro pede o LLM -> LRU nao consegue descarregar o
-    # preparer (em uso) -> timeout de 60s -> FAIL em todas as secoes.
-    # Com max_workers=1 (serie), cada analista faz prepare() -> libera o
-    # preparer -> carrega o LLM -> libera, e o dossier e gerado com sucesso.
-    use_prep_effective = use_preparer
-    if use_prep_effective is None:
-        use_prep_effective = any(
-            getattr(ANALYST_REGISTRY.get(aid), "use_preparer", True)
-            for aid in analyst_order
-            if ANALYST_REGISTRY.get(aid) is not None
-        )
+    # Decidir paralelismo. Com o briefing único (Fase 1), o preparer roda ANTES
+    # do pool e é liberado — os analistas podem rodar em paralelo sem deadlock
+    # de VRAM (o LRU não precisa descarregar um preparer em uso).
+    # Mantém max_workers=3 como antes; a checagem de co-residência abaixo ainda
+    # protege o caso de modelos que não cabem juntos.
     max_workers = 3
-    if use_prep_effective:
+    if use_prep_effective and shared_briefing is None:
         try:
             from config.settings import RAG_LLM_MODEL
             from src.analysts.preparer import PREPARER_MODEL
@@ -243,6 +315,7 @@ def run_analyst_pipeline(
                 _aid: str = analyst_id,
                 _klass: type = analyst_klass,
                 _ctx: list[str] = filtered,
+                _briefing: object = shared_briefing,
             ) -> AnalystResult:
                 try:
                     instance = _klass()
@@ -251,6 +324,8 @@ def run_analyst_pipeline(
                         nome=nome,
                         llm_model=llm_model,
                         use_preparer=use_preparer,
+                        shared_briefing=_briefing,
+                        tipo_politico=tipo_politico,
                     )
                 except Exception as e:
                     log.error(f"Analista {_aid} falhou: {e}")
@@ -297,13 +372,18 @@ def assemble_dossier(results: list[AnalystResult]) -> str:
     """Concatena as secoes na ordem correta para formar o dossier final.
 
     Usa a ordem definida em ANALYST_ORDER.
+    v8 (Fase 2): analistas podem retornar JSON estruturado
+    {"secoes": [...]}; aqui renderizamos a narrativa markdown de volta
+    (render_secoes_markdown), mantendo o formato do dossier inalterado.
     """
+    from src.analysts.base import render_secoes_markdown
+
     ANALYST_ORDER = [
-        "classificador",
+        "votacao",
         "perfil",
         "tematicas",
         "cruzamento",
-        "alinhamento",
+        "rede_politica",
         "discursos",
         "anomalias",
     ]
@@ -317,7 +397,7 @@ def assemble_dossier(results: list[AnalystResult]) -> str:
         if r is None:
             continue
         # Se falhou, ainda inclui (o texto de erro vai)
-        section = r.content.strip()
+        section = render_secoes_markdown(r.content).strip()
         if not section:
             section = "*Dados insuficientes para esta seção.*"
         parts.append(f"### {r.section_title}\n\n{section}")
@@ -328,23 +408,24 @@ def assemble_dossier(results: list[AnalystResult]) -> str:
 def calculate_global_score(results: list[AnalystResult]) -> tuple[float, bool]:
     """Calcula score global ponderado e decide aprovacao.
 
-    Pesos:
-        classificador: 15%
+    Pesos (v8 — classificador+alinhamento fundidos em votacao 25%;
+    novo analista rede_politica com 10%):
+        votacao: 25%
         perfil: 10%
         tematicas: 20%
         cruzamento: 20%
-        alinhamento: 15%
+        rede_politica: 10%
         discursos: 10%
-        anomalias: 10%
+        anomalias: 5%
     """
     PESOS = {
-        "classificador": 0.15,
+        "votacao": 0.25,
         "perfil": 0.10,
         "tematicas": 0.20,
         "cruzamento": 0.20,
-        "alinhamento": 0.15,
+        "rede_politica": 0.10,
         "discursos": 0.10,
-        "anomalias": 0.10,
+        "anomalias": 0.05,
     }
 
     score_total = 0.0

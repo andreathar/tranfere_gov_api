@@ -53,6 +53,7 @@ from config.settings import (
 )
 from src.formatters import format_brl
 from src.http_cache import cache_get, cache_set
+from src.observability import observability
 from src.schemas import validate_records
 
 # ---------------------------------------------------------------------------
@@ -74,6 +75,7 @@ def make_request(session, params, use_cache=True):
     if use_cache:
         cached = cache_get(API_URL, params, ttl=int(SLEEP * 30))  # cache por ~30 páginas
         if cached is not None:
+            observability.inc("extract.api.cache_hits")
             logger.debug("Cache hit página %s", params["pageNumber"])
             return cached  # retorna dict em vez de Response
 
@@ -112,6 +114,7 @@ def make_request(session, params, use_cache=True):
                 MAX_RETRIES,
             )
         except requests.exceptions.RequestException as exc:
+            observability.inc("extract.api.failures")
             logger.error("Erro requisição: %s", exc)
             return None
         if attempt < MAX_RETRIES:
@@ -196,6 +199,8 @@ def extract_all(
             break
 
         all_records.extend(records)
+        observability.inc("extract.pages")
+        observability.inc("extract.records", len(records))
         logger.info(
             "Página %d: +%d | Acumulado: %d / %s",
             page,
@@ -649,6 +654,8 @@ def run_extraction(args: argparse.Namespace, ts: str) -> int:
     if args.db:
         logger.info("Importando %d registros para PostgreSQL...", len(df))
         db_imported, db_errors = import_to_db(records_for_df)
+        observability.inc("extract.db.imported", db_imported)
+        observability.inc("extract.db.errors", db_errors)
         logger.info("DB: %d importados, %d erros", db_imported, db_errors)
 
     # Export

@@ -292,8 +292,8 @@ class TestDeputadosRoutes:
 
         monkeypatch.setattr(
             deputados.db_service,
-            "get_dossie_deputado",
-            lambda _: {
+            "get_dossie_politico",
+            lambda tipo, pid: {
                 "analise_gerada": "Dossiê completo",
                 "data_analise": "2024-01-01",
                 "fontes_usadas": ["voto", "emenda"],
@@ -304,11 +304,33 @@ class TestDeputadosRoutes:
         assert resp.status_code == 200
         assert resp.json()["analise_gerada"] == "Dossiê completo"
 
+    def test_dossie_multi_cargo(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Dossiê de cargo não-deputado (Fase 3): ?tipo=senador repassa o tipo."""
+        from src.api.routes import deputados
+
+        capturado: dict = {}
+
+        def _fake(tipo: str, pid: int) -> dict | None:
+            capturado["tipo"] = tipo
+            capturado["pid"] = pid
+            return {
+                "analise_gerada": "Dossiê senador",
+                "data_analise": "2024-01-01",
+                "fontes_usadas": ["perfil"],
+            }
+
+        monkeypatch.setattr(deputados.db_service, "get_dossie_politico", _fake)
+
+        resp = client.get("/api/v1/deputados/5001/dossie?tipo=senador")
+        assert resp.status_code == 200
+        assert resp.json()["analise_gerada"] == "Dossiê senador"
+        assert capturado == {"tipo": "senador", "pid": 5001}
+
     def test_dossie_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Dossiê não encontrado → 404."""
         from src.api.routes import deputados
 
-        monkeypatch.setattr(deputados.db_service, "get_dossie_deputado", lambda _: None)
+        monkeypatch.setattr(deputados.db_service, "get_dossie_politico", lambda tipo, pid: None)
 
         resp = client.get("/api/v1/deputados/99999/dossie")
         assert resp.status_code == 404

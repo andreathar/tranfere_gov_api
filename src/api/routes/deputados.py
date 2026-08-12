@@ -163,9 +163,15 @@ async def get_full_report(deputado_id: int, ano: int = datetime.date.today().yea
 
 
 @router.get("/{deputado_id}/dossie")
-async def get_dossie(deputado_id: int):
-    """Retorna o dossiê comportamental RAG do deputado."""
-    dossie = db_service.get_dossie_deputado(deputado_id)
+async def get_dossie(deputado_id: int, tipo: str = "deputado"):
+    """Retorna o dossiê comportamental RAG do político (multi-cargo Fase 3).
+
+    - Deputado: GET /api/v1/deputados/160508/dossie
+    - Senador:  GET /api/v1/deputados/5001/dossie?tipo=senador
+    - Prefeito: GET /api/v1/deputados/3550308/dossie?tipo=prefeito
+    (politico_id = deputado_id no path; `tipo` seleciona o cargo)
+    """
+    dossie = db_service.get_dossie_politico(tipo, deputado_id)
     if not dossie:
         raise HTTPException(
             status_code=404,

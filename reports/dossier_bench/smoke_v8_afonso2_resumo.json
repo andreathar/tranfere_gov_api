@@ -1,0 +1,11 @@
+{
+  "n_deputados": 1,
+  "n_ok": 1,
+  "n_erro": 0,
+  "duracao_total_s": 182.4,
+  "chamadas_llm_total": 8,
+  "chamadas_llm_por_dossier": [
+    8
+  ],
+  "duracao_wallclock_s": 183.1
+}

@@ -56,3 +56,14 @@ async def get_por_municipio(municipio_id: int):
 async def get_por_uf(uf: str):
     """Retorna todos os vereadores eleitos de uma UF."""
     return db_service.get_vereadores_por_uf(uf)
+
+
+@router.get("/{sq_candidato}/perfil")
+async def perfil_vereador(sq_candidato: int):
+    """Perfil completo de um vereador eleito."""
+    perfil = db_service.get_perfil_vereador(sq_candidato)
+    if not perfil:
+        raise HTTPException(
+            status_code=404, detail="Vereador não encontrado"
+        )
+    return perfil

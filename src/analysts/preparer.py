@@ -43,12 +43,73 @@ log = logging.getLogger(__name__)
 # fidelidade — melhor para síntese de dados. Pode ser sobrescrito via PREPARER_MODEL env var.
 PREPARER_MODEL = "zero-gemma4-e4b-openzero-q5-k-m"
 
-# Máximo de chunks enviados ao preparador por chamada
-# (ctx do zero-gemma: 8192 tokens — 8 chunks ~2300 tok prompt + 1500 tok output cabem)
-PREPARER_MAX_CHUNKS = 8  # prompts grandes demoram — mantido conservador
+# Máximo de chunks enviados ao preparador por chamada.
+# ALTERADO 2026-08-10 (Fase 1 refactor): 8 -> 14 com truncamento SELETIVO por tipo
+# (antes cortava "do meio" e perdia os chunks mais ricos). O briefing é agora
+# ÚNICO por dossiê (1 chamada em vez de 7).
+PREPARER_MAX_CHUNKS = 14
 
 # Tamanho máximo do prompt enviado ao preparador em caracteres
 PREPARER_MAX_PROMPT_CHARS = 14000
+
+# Prioridade de tipos de chunk para o truncamento seletivo (mais ricos primeiro).
+# EMENDA carrega totais R$ exatos; VOTO carrega alinhamento; PROPOSICAO e
+# DISCURSO dão o contexto temático; CONEXAO_POLITICA e demais completam a rede.
+PREPARER_CHUNK_PRIORITY: list[str] = [
+    "[EMENDA]",
+    "[EMENDA_DISCRICIONARIA]",
+    "[VOTO]",
+    "[PROPOSICAO]",
+    "[DISCURSO_PLENARIO]",
+    "[CONEXAO_POLITICA]",
+    "[DIARIO_OFICIAL]",
+    "[RISCO_JUDICIAL]",
+    "[COMPRAS_MUNICIPIO]",
+    "[BENEFICIARIO]",
+    "[MUNICIPIO_FINANCEIRO]",
+    "[INDICADORES_SOCIAIS]",
+    "[INDICADORES_MUNICIPAL]",
+    "[DEMOGRAFIA_MUNICIPIO]",
+    "[FNDE_REPASSES]",
+    "[VEREADORES_RESUMO]",
+    "[PREFEITO]",
+    "[SENADOR]",
+    "[ESTADO_FINANCEIRO]",
+    "[PERFIL]",
+    "[PARLAMENTAR_RESUMO]",
+    "[PERSONA_EXISTENTE]",
+    "[PARLAMENTAR_ALERTAS]",
+]
+
+
+def _truncar_chunks_seletivo(chunks: list[str], max_chunks: int) -> list[str]:
+    """Mantém até max_chunks preservando 1 chunk de cada tipo prioritário.
+
+    Estratégia: primeira passada mantém o primeiro chunk de cada tipo na ordem
+    de prioridade; se ainda couber, completa com os demais na ordem original.
+    """
+    if len(chunks) <= max_chunks:
+        return list(chunks)
+
+    mantidos: list[str] = []
+    vistos: set[str] = set()
+    for prefix in PREPARER_CHUNK_PRIORITY:
+        if len(mantidos) >= max_chunks:
+            break
+        for c in chunks:
+            if c.startswith(prefix) and prefix not in vistos:
+                mantidos.append(c)
+                vistos.add(prefix)
+                break
+
+    # Completar com o restante na ordem original
+    for c in chunks:
+        if len(mantidos) >= max_chunks:
+            break
+        if c not in mantidos:
+            mantidos.append(c)
+
+    return mantidos
 
 # ---------------------------------------------------------------------------
 # Data
@@ -131,15 +192,16 @@ class PromptPreparer:
         analyst_persona: str,
         section_title: str,
         nome: str,
+        _depth: int = 0,
     ) -> str:
         """Monta o prompt para o modelo preparador."""
-        # Truncar chunks se necessário
+        # Truncar chunks se necessário (SELETIVO por tipo — Fase 1 refactor)
         if len(chunks) > PREPARER_MAX_CHUNKS:
             log.info(
                 f"Preparer: truncando {len(chunks)} -> {PREPARER_MAX_CHUNKS} "
-                f"chunks para '{section_title}'"
+                f"chunks para '{section_title}' (seletivo por tipo)"
             )
-            chunks = chunks[:PREPARER_MAX_CHUNKS]
+            chunks = _truncar_chunks_seletivo(chunks, PREPARER_MAX_CHUNKS)
 
         context_str = "\n".join(f"  [{i+1}] {c}" for i, c in enumerate(chunks))
 
@@ -173,17 +235,30 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 - [Lista de 0-5 insights, contradições ou anomalias, um por linha com "- "]
 """
 
-        # Truncar se exceder limite (para evitar estouro de contexto)
-        if len(prompt) > PREPARER_MAX_PROMPT_CHARS:
-            # Truncar chunks do meio
-            meio = len(chunks) // 2
-            chunks_keep = chunks[:meio] + chunks[meio + 2 :]
+        # Truncar se exceder limite (para evitar estouro de contexto).
+        # Fase 1: reaplica o truncamento seletivo (não corta mais "do meio").
+        # Guarda de profundidade: nunca recursa além de 3 níveis (evita loop
+        # quando um único chunk gigante ainda estoura o limite).
+        if len(prompt) > PREPARER_MAX_PROMPT_CHARS and _depth < 3:
+            reduzidos = _truncar_chunks_seletivo(chunks, max(1, len(chunks) - 2))
             log.warning(
                 f"Preparer: prompt excede {PREPARER_MAX_PROMPT_CHARS} chars "
-                f"({len(prompt)}), removendo chunks do meio. "
-                f"{len(chunks)} -> {len(chunks_keep)}"
+                f"({len(prompt)}), reaplicando truncamento seletivo. "
+                f"{len(chunks)} -> {len(reduzidos)}"
             )
-            return self._build_prep_prompt(chunks_keep, analyst_persona, section_title, nome)
+            return self._build_prep_prompt(
+                reduzidos, analyst_persona, section_title, nome, _depth=_depth + 1
+            )
+        elif len(prompt) > PREPARER_MAX_PROMPT_CHARS:
+            # Último recurso: corta o texto dos chunks (prefixo + 1200 chars).
+            log.warning(
+                f"Preparer: prompt ainda excede {PREPARER_MAX_PROMPT_CHARS} chars "
+                f"({len(prompt)}), truncando texto dos chunks."
+            )
+            chunks_curtos = [c[:1200] + "…" if len(c) > 1200 else c for c in chunks]
+            return self._build_prep_prompt(
+                chunks_curtos, analyst_persona, section_title, nome, _depth=3
+            )
 
         return prompt
 
@@ -237,63 +312,37 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         """Verifica se todos os valores R$ do briefing existem nos chunks fonte.
 
         Estratégia:
-          1. Extrai todos R$ do briefing (texto + fact_table).
-          2. Extrai todos R$ dos chunks.
-          3. Se >20% dos R$ do briefing não foram encontrados → reprova.
+         1. Extrai todos R$ do briefing (texto + fact_table).
+         2. Valida contra os chunks usando o MESMO parser numérico de
+            base.taxa_invencao_rs (tolerância 2% por valor — Fase 2 unificação:
+            antes eram duas implementações divergentes que podiam discordar
+            sobre o mesmo valor).
+         3. Se a taxa de invenção >20% → reprova.
 
         Returns:
             True se passar na validação (ou não houver R$ para validar).
         """
-        # Extrair R$ do briefing
-        texto_briefing = briefing.text + "\n" + briefing.fact_table
-        valores_briefing = set(m.group(0) for m in re.finditer(r"R\$\s*[\d.,]+", texto_briefing))
+        # Fase 2 (2026-08-10): validação unificada via base.taxa_invencao_rs
+        # (parse numérico BR/US + tolerância 2% por valor).
+        from src.analysts.base import taxa_invencao_rs
 
-        if not valores_briefing:
+        texto_briefing = briefing.text + "\n" + briefing.fact_table
+        from src.analysts.base import coletar_valores_rs
+
+        if not coletar_valores_rs(texto_briefing):
             # Sem valores para validar = passa automaticamente
             briefing.validation_pass = True
             return True
 
-        # Extrair R$ dos chunks
-        texto_chunks = "\n".join(chunks)
-        valores_chunks = set(m.group(0) for m in re.finditer(r"R\$\s*[\d.,]+", texto_chunks))
+        taxa = taxa_invencao_rs(texto_briefing, "\n".join(chunks))
 
-        # Normalizar para comparação: remover espaços, uppercase e
-        # normalizar decimais (aceitar 198,000.0 == 198,000.00)
-        def _normalize(val: str) -> str:
-            norm = val.replace(" ", "").upper()
-            # Padronizar casas decimais: R$1.234,56 ou R$1,234.56 ou R$1234.5
-            m = re.match(r"R\$([\d.,]+)", norm)
-            if not m:
-                return norm
-            num = m.group(1)
-            # Se tem vírgula como decimal (formato BR) ou ponto
-            if "," in num and "." in num:
-                # Formato BR: R$ 1.234,56 — ponto é milhar, vírgula é decimal
-                if num.rfind(",") > num.rfind("."):
-                    num = num.replace(".", "").replace(",", ".")
-                # Formato US: R$ 1,234.56
-                else:
-                    num = num.replace(",", "")
-            elif "," in num:
-                num = num.replace(",", ".")
-            # Truncar para 2 casas decimais
-            if "." in num:
-                inteiro, dec = num.split(".", 1)
-                dec = (dec + "00")[:2]
-                num = f"{inteiro}.{dec}"
-            else:
-                num = f"{num}.00"
-            return f"R${num}"
-
-        chunks_norm = {_normalize(v) for v in valores_chunks}
-
-        falsos = [v for v in valores_briefing if _normalize(v) not in chunks_norm]
-
-        if falsos:
-            log.warning(f"Valores R$ no briefing sem correspondência nos chunks: " f"{falsos[:5]}")
-            if len(falsos) / len(valores_briefing) > 0.2:
-                briefing.validation_pass = False
-                return False
+        if taxa > 0.2:
+            log.warning(
+                f"Valores R$ no briefing sem correspondência nos chunks: "
+                f"{taxa:.0%} de invenção estimada"
+            )
+            briefing.validation_pass = False
+            return False
 
         briefing.validation_pass = True
         return True

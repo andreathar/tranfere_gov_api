@@ -1,0 +1,15 @@
+{
+  "n_deputados": 3,
+  "n_ok": 3,
+  "n_erro": 0,
+  "n_aprovado_qc": 0,
+  "score_global_medio": 15.7,
+  "duracao_total_s": 511.1,
+  "chamadas_llm_total": 9,
+  "chamadas_llm_por_dossier": [
+    7,
+    1,
+    1
+  ],
+  "duracao_wallclock_s": 511.8
+}

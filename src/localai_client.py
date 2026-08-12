@@ -231,7 +231,8 @@ class LocalAIClient:
         }
         url = f"{self.base_url}/v1/chat/completions"
         with (
-            httpx.Client(timeout=self.timeout) as client,
+            # trust_env=False: httpx 0.28.1 quebra com no_proxy CIDR IPv6
+            httpx.Client(timeout=self.timeout, trust_env=False) as client,
             client.stream("POST", url, json=payload) as resp,
         ):
             resp.raise_for_status()
@@ -347,7 +348,8 @@ class LocalAIClient:
     def poll_job(self, job_id: str) -> dict[str, Any]:
         """Verifica status de um job assíncrono."""
         url = f"{self.base_url}/v1/jobs/{job_id}"
-        with httpx.Client(timeout=self.timeout) as client:
+        # trust_env=False: httpx 0.28.1 quebra com no_proxy CIDR IPv6
+        with httpx.Client(timeout=self.timeout, trust_env=False) as client:
             resp = client.get(url)
             resp.raise_for_status()
             return resp.json()
@@ -470,7 +472,7 @@ class LocalAIClient:
     def health(self) -> dict[str, Any]:
         """Verifica se o LocalAI está respondendo e lista modelos."""
         try:
-            with httpx.Client(timeout=10) as client:
+            with httpx.Client(timeout=10, trust_env=False) as client:
                 resp = client.get(f"{self.base_url}/v1/models")
                 resp.raise_for_status()
                 data = resp.json()
@@ -552,7 +554,7 @@ class LocalAIClient:
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
-                with httpx.Client(timeout=timeout) as client:
+                with httpx.Client(timeout=timeout, trust_env=False) as client:
                     resp = client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()
@@ -618,7 +620,7 @@ class LocalAIClient:
         last_exc: Exception | None = None
         for attempt in range(1, LOCALAI_MAX_RETRIES + 1):
             try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
                     resp = await client.post(url, json=payload, headers=headers)
                     resp.raise_for_status()
                     data = resp.json()

@@ -1,9 +1,10 @@
-"""
-Analista 3 — Cruzamento de Dados (Pragmatismo).
+"""Analista 3 — Cruzamento de Dados (Pragmatismo).
 
 Seção: "CRUZAMENTO DE DADOS"
 Chunks: TODOS (visão 360°)
 Tarefa: Identificar contradições entre votos, emendas, discursos e perfil.
+
+Fase 2 (2026-08-10): saída JSON estruturada + QC determinístico com fallback.
 """
 
 from __future__ import annotations
@@ -12,9 +13,23 @@ import logging
 import re
 
 from src.analysts import register_analyst
-from src.analysts.base import AnalystBase, Briefing, taxa_invencao_rs
+from src.analysts.base import AnalystBase, Briefing, qc_estruturado
 
 log = logging.getLogger(__name__)
+
+_SCHEMA = """{
+  "secoes": [
+    "**1. CONTRADIÇÕES VOTO vs. EMENDA**\\n- Insight 1: ...\\n- Insight 2: ...",
+    "**2. CONTRADIÇÕES DISCURSO vs. PRÁTICA**\\n- Insight 1: ...",
+    "**3. PADRÕES DE PRAGMATISMO**\\n- ...",
+    "**4. ANÁLISE GERAL**: ..."
+  ],
+  "fatos": [
+    {"categoria": "voto", "valor": "SIM/NAO", "fonte_chunk_id": "VOTO"},
+    {"categoria": "emenda", "valor": "R$ ...", "fonte_chunk_id": "EMENDA"}
+  ],
+  "flags": ["CONTRADICAO_VOTO_EMENDA" | "PRAGMATISMO" | "COERENTE"]
+}"""
 
 
 @register_analyst
@@ -28,7 +43,8 @@ class CruzamentoDados(AnalystBase):
         "Você é um analista de inteligência financeira e política. Seu papel é "
         "cruzar dados de diferentes fontes (votação, emendas, discursos, "
         "indicadores sociais) para identificar contradições, padrões de "
-        "pragmatismo e incoerências. Seja objetivo e aponte exemplos concretos."
+        "pragmatismo e incoerências. Seja objetivo e aponte exemplos concretos. "
+        "Responda APENAS com JSON válido."
     )
 
     def build_prompt(
@@ -37,12 +53,13 @@ class CruzamentoDados(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        if briefing and briefing.is_useful:
-            ctx = self._format_briefing(briefing)
-            origem = "BRIEFING SINTETIZADO (TODAS AS FONTES)"
-        else:
-            ctx = self._format_context(context)
-            origem = "TODOS OS DADOS DISPONÍVEIS"
+        # Data-first (2026-08-10, golden set): usar SEMPRE os chunks crus. O
+        # briefing sintetizado induz confabulação no modelo 3B (ADOLFO VIANA
+        # inventou "emenda nº 1234", "Senador João" — fatos sem fonte). Os
+        # chunks crus trazem os totais exatos literais (resumos por área/
+        # município) e a instrução de literalidade abaixo basta para citá-los.
+        ctx = self._format_context(context)
+        origem = "TODOS OS DADOS DISPONÍVEIS"
 
         return f"""Realize uma análise de pragmatismo político do deputado federal {nome}, cruzando TODAS as fontes disponíveis.
 
@@ -57,25 +74,24 @@ INSTRUÇÕES:
 2. Compare discursos com votos: "Fala em plenário contra corrupção, mas destinou emendas para entidades sob investigação".
 3. Compare perfil com alocação: "Deputado de região rica (alto IDHM) destina mais emendas para regiões pobres (baixo IDHM) — pragmatismo eleitoral ou redistribuição?".
 4. Identifique padrões de pragmatismo: vota contra o governo em pautas ideológicas mas apoia em pautas econômicas (ou vice-versa).
-
-FORMATO DE SAÍDA (Markdown):
-**1. CONTRADIÇÕES VOTO vs. EMENDA**
-- Insight 1: ...
-- Insight 2: ...
-
-**2. CONTRADIÇÕES DISCURSO vs. PRÁTICA**
-- Insight 1: ...
-
-**3. PADRÕES DE PRAGMATISMO**
-- ...
-
-**4. ANÁLISE GERAL**: (parágrafo conclusivo)
-
+5. FIDELIDADE NUMÉRICA (CRÍTICO): NUNCA invente valores R$. Cite SOMENTE valores que apareçam literalmente nos dados.
 Se não houver contradições significativas, declare "Nenhuma contradição significativa identificada — votos, emendas e discursos são coerentes."
+
+RESPONDA APENAS COM JSON VÁLIDO, neste schema exato (sem texto fora do JSON):
+{_SCHEMA}
 """
 
     def quality_check(self, output: str) -> tuple[bool, float]:
-        # 1. Deve conter ao menos 1 insight de contradicao ou analise
+        qc_pass, qc_score = qc_estruturado(
+            output,
+            getattr(self, "_last_chunks", []),
+            campos_obrigatorios=["secoes", "fatos"],
+            min_secoes=2,
+        )
+        if qc_pass or qc_score > 0:
+            return qc_pass, qc_score
+
+        # Fallback legado (markdown)
         palavras = len(output.split())
         tem_insight = any(
             word in output.upper()
@@ -90,13 +106,13 @@ Se não houver contradições significativas, declare "Nenhuma contradição sig
         )
         tem_r = bool(re.search(r"R\$\s*[\d.,]+", output))
 
-        # 2. Validação de fidelidade numérica (parse BR/US + tolerância 2%)
+        from src.analysts.base import taxa_invencao_rs
+
         try:
             chunks_text = "\n".join(getattr(self, "_last_chunks", []))
             taxa_invencao = taxa_invencao_rs(output, chunks_text)
         except Exception:
             taxa_invencao = 0.0
-
         penalidade = max(0.0, 1.0 - taxa_invencao * 2.0)
 
         score_base = 0.0
@@ -118,5 +134,4 @@ Se não houver contradições significativas, declare "Nenhuma contradição sig
                 f"[cruzamento] {taxa_invencao:.0%} dos R$ parecem inventados "
                 f"(score reduzido: {score})"
             )
-
         return aprovado, score

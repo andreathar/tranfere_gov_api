@@ -58,6 +58,7 @@ from config.settings import (
 from src.db_utils import get_connection
 from src.localai_client import LocalAIClient
 from src.localai_manager import manager as localai_manager
+from src.observability import observability
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -180,21 +181,27 @@ def embed_text_batch(texts: list[str]) -> list[list[float]]:
     for i in range(0, len(texts), SUB_BATCH):
         sub = texts[i : i + SUB_BATCH]
         try:
-            emb = client.embed(sub)
+            with observability.timed("rag.embedding.batch_ms"):
+                emb = client.embed(sub)
+            observability.inc("rag.embedding.batches")
             if not emb or len(emb) != len(sub):
                 raise RuntimeError("resposta de tamanho inesperado")
             out.extend(emb)
         except Exception as e:
+            observability.inc("rag.embedding.batch_failures")
             log.error(
                 f"Erro no batch embedding ({len(sub)} textos): {e}; "
                 "tentando texto a texto (pulando os que falharem)..."
             )
             for t in sub:
                 try:
-                    one = client.embed([t])
+                    with observability.timed("rag.embedding.single_ms"):
+                        one = client.embed([t])
                     if one:
                         out.append(one[0])
+                    observability.inc("rag.embedding.single")
                 except Exception:
+                    observability.inc("rag.embedding.single_failures")
                     log.warning(f"  embed individual falhou (pulando): {t[:80]!r}")
     return out
 
@@ -605,6 +612,12 @@ def _extract_emendas_discricionarias(
         (deputado_id,),
     )
     docs: list[dict[str, Any]] = []
+    # Resumo por OBJETO (área temática) também para discricionárias — espelha
+    # o resumo do extractor de emendas (type="emenda"). Sem ele, deputados que
+    # só têm emendas_discricionarias (ex: ADOLFO VIANA, golden set 2026-08-10)
+    # ficam sem o chunk "Distribuição por área das emendas PIX" e o analista
+    # tematicas ecoa a tabela de emendas individuais (QC 65.0, 27+ linhas repetidas).
+    por_objeto: dict[str, list[float]] = {}
     for row in cur.fetchall():
         ano, valor, objeto, status, ben_nome, ben_cnpj, num_convenio, tipo_emenda = row
         if not valor:
@@ -619,6 +632,31 @@ def _extract_emendas_discricionarias(
             f"R$ {valor:,.2f}{desc_part}.{status_part}{ben_part}{conv_part}{tipo_part}"
         )
         docs.append({"text": txt, "type": "emenda_discricionaria", "deputado_id": deputado_id})
+        if objeto:
+            por_objeto.setdefault(objeto, []).append(float(valor))
+
+    if por_objeto:
+        partes: list[str] = []
+        for obj, valores in sorted(
+            por_objeto.items(), key=lambda kv: -sum(kv[1])
+        ):
+            total_obj = sum(valores)
+            partes.append(
+                f"{obj}: R$ {total_obj:,.2f} ({len(valores)} emenda(s))"
+            )
+        total_geral = sum(sum(v) for v in por_objeto.values())
+        docs.append(
+            {
+                "text": (
+                    f"Distribuição por área das emendas PIX de {nome}: "
+                    + "; ".join(partes)
+                    + f". TOTAL GERAL exato R$ {total_geral:,.2f}."
+                ),
+                "type": "emenda_discricionaria",
+                "deputado_id": deputado_id,
+                "ref": "Resumo por área (objeto)",
+            }
+        )
     return docs
 
 
@@ -1455,6 +1493,360 @@ def _extract_personas_existentes(cur: Any, deputado_id: int, nome: str) -> list[
     return docs
 
 
+# ---------------------------------------------------------------------------
+# Fase 3 (2026-08-10): extratores por cargo (senador/governador/prefeito/vereador)
+# Os docs NÃO carregam deputado_id — o driver index_politico() injeta
+# tipo_politico + politico_id no payload (filtro uniforme no Qdrant).
+# ---------------------------------------------------------------------------
+
+
+def _extract_senador_perfil(cur: Any, politico_id: int, nome: str) -> list[dict[str, Any]]:
+    """[PERFIL] Senador — senadores_dados (senador_codigo = politico_id)."""
+    cur.execute(
+        "SELECT nome_completo, nome_parlamentar, sigla_partido, uf, "
+        "mandato_inicio, mandato_fim, situacao, total_votacoes, total_relatorias "
+        "FROM senadores_dados WHERE senador_codigo = %s",
+        (politico_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return []
+    nome_full, nome_parl, partido, uf, ini, fim, situacao, n_vot, n_rel = row
+    txt = (
+        f"Senador(a) {nome_full or nome} ({partido}/{uf}). "
+        f"Nome parlamentar: {nome_parl or 'N/I'}. Mandato: {ini or 'N/I'} a {fim or 'N/I'} "
+        f"({situacao or 'N/I'}). Participou de {n_vot or 0} votações e "
+        f"{n_rel or 0} relatorias no Senado Federal."
+    )
+    return [{"text": txt, "type": "perfil"}]
+
+
+def _extract_governador_perfil(cur: Any, politico_id: int, nome: str) -> list[dict[str, Any]]:
+    """[GOVERNADOR] — governadores_dados (chave natural: uf).
+
+    politico_id é um inteiro negativo estável derivado da UF:
+    -abs(hashtext(uf)) — consistente com a fila (_get_fila_por_tipo) e
+    com o filtro do Qdrant.
+    """
+    cur.execute(
+        "SELECT uf FROM governadores_dados WHERE -abs(hashtext(uf)) = %s",
+        (politico_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return []
+    uf = row[0]
+    cur.execute(
+        "SELECT nome_governador, nome_vice, sigla_partido, coligacao, ano_eleicao, "
+        "votos_t1, pct_votos_t1, votos_t2, pct_votos_t2, situacao "
+        "FROM governadores_dados WHERE uf = %s AND situacao ILIKE '%%EXERC%%'",
+        (uf,),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.execute(
+            "SELECT nome_governador, nome_vice, sigla_partido, coligacao, ano_eleicao, "
+            "votos_t1, pct_votos_t1, votos_t2, pct_votos_t2, situacao "
+            "FROM governadores_dados WHERE uf = %s",
+            (uf,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return []
+    (g_nome, vice, partido, colig, ano, v1, p1, v2, p2, situacao) = row
+    txt = (
+        f"Governador(a) {g_nome or nome} ({partido}/{uf}), eleito(a) em {ano or 'N/I'} "
+        f"({situacao or 'N/I'}). Vice: {vice or 'N/I'}. "
+        f"1º turno: {v1 or 0} votos ({p1 or 0}%)" +
+        (f"; 2º turno: {v2 or 0} votos ({p2 or 0}%)" if v2 else "") +
+        f". Coligação: {colig or 'N/I'}."
+    )
+    return [{"text": txt, "type": "governador"}]
+
+
+def _extract_prefeito_perfil(cur: Any, municipio_id: int, nome: str) -> list[dict[str, Any]]:
+    """[PREFEITO] + [MUNICIPIO_FINANCEIRO] — prefeitos_dados + SICONFI."""
+    cur.execute(
+        "SELECT municipio_nome, uf, prefeito_nome, sigla_partido, ano_eleicao, "
+        "situacao_candidatura, votos_totais, percentual_votos, vice_prefeito_nome, "
+        "patrimonio_total "
+        "FROM prefeitos_dados WHERE municipio_id = %s",
+        (municipio_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return []
+    mun_nome, uf, p_nome, partido, ano, situacao, votos, pct, vice, patr = row
+    docs: list[dict[str, Any]] = [
+        {
+            "text": (
+                f"Prefeito(a) {p_nome or nome} ({partido}/{uf}) de {mun_nome} "
+                f"(IBGE {municipio_id}), eleito(a) em {ano or 'N/I'} ({situacao or 'N/I'}). "
+                f"Votos: {votos or 0} ({pct or 0}%). Vice: {vice or 'N/I'}."
+            ),
+            "type": "prefeito",
+        }
+    ]
+    # Finanças do município (SICONFI — exercício mais recente)
+    cur.execute(
+        "SELECT exercicio, receitas_orcamentarias, despesas_orcamentarias, "
+        "arrec_receitas_correntes, arrec_cota_fpm, arrec_cota_icms, arrec_impostos_geral "
+        "FROM municipios_financeiro WHERE municipio_id = %s "
+        "ORDER BY exercicio DESC LIMIT 1",
+        (municipio_id,),
+    )
+    fin = cur.fetchone()
+    if fin:
+        (exerc, rec_orc, desp_orc, rec_corr, fpm, icms, imp_geral) = fin
+        docs.append(
+            {
+                "text": (
+                    f"Finanças de {mun_nome} (SICONFI {exerc}): "
+                    f"receitas orçamentárias R$ {rec_orc or 0:,.2f}, "
+                    f"despesas orçamentárias R$ {desp_orc or 0:,.2f}, "
+                    f"receitas correntes R$ {rec_corr or 0:,.2f}, "
+                    f"FPM R$ {fpm or 0:,.2f}, ICMS R$ {icms or 0:,.2f}, "
+                    f"impostos gerais R$ {imp_geral or 0:,.2f}."
+                ),
+                "type": "municipio_financeiro",
+            }
+        )
+    return docs
+
+
+def _extract_vereador_perfil(cur: Any, sq_candidato: int, nome: str) -> list[dict[str, Any]]:
+    """[VEREADOR] — vereadores_dados (sq_candidato = politico_id)."""
+    cur.execute(
+        "SELECT nome_completo, nome_urna, municipio_nome, uf, sigla_partido, "
+        "ano_eleicao, votos, percentual_votos, situacao_candidatura, coligacao "
+        "FROM vereadores_dados WHERE sq_candidato = %s",
+        (sq_candidato,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return []
+    (nome_full, nome_urna, mun, uf, partido, ano, votos, pct, situacao, colig) = row
+    txt = (
+        f"Vereador(a) {nome_full or nome} ({partido}/{uf}) de {mun}, eleito(a) em "
+        f"{ano or 'N/I'} ({situacao or 'N/I'}). Votos: {votos or 0} ({pct or 0}%). "
+        f"Coligação: {colig or 'N/I'}."
+    )
+    return [{"text": txt, "type": "vereador"}]
+
+
+# Extratores por cargo (fora do deputado). Chave: tipo_politico
+EXTRACTORS_POR_TIPO: dict[str, dict[str, str]] = {
+    "senador": {"perfil": "_extract_senador_perfil"},
+    "governador": {"governador": "_extract_governador_perfil"},
+    "prefeito": {"prefeito": "_extract_prefeito_perfil"},
+    "vereador": {"vereador": "_extract_vereador_perfil"},
+}
+
+# Filas de indexação por cargo (não-deputado). politico_id = chave natural:
+# municipio_id (prefeito), senador_codigo (senador), -abs(hashtext(uf))
+# (governador — consistente com rag_persona/Qdrant), sq_candidato (vereador).
+_FILA_INDEXACAO_POR_TIPO: dict[str, str] = {
+    "prefeito": (
+        "SELECT municipio_id, prefeito_nome FROM prefeitos_dados "
+        "ORDER BY municipio_id"
+    ),
+    "senador": (
+        "SELECT senador_codigo, nome_completo FROM senadores_dados "
+        "ORDER BY senador_codigo"
+    ),
+    "governador": (
+        "SELECT -abs(hashtext(uf)), nome_governador FROM governadores_dados "
+        "ORDER BY uf"
+    ),
+    # Vereadores: JOIN municipios_ibge p/ população. Filtros opcionais:
+    #   --eleitos (só eleitos), --pop-min/--pop-max (faixa de população).
+    # Ordenado por população DESC → municípios mais populosos primeiro.
+    "vereador": (
+        "SELECT v.sq_candidato, COALESCE(NULLIF(v.nome_completo, ''), v.nome_urna) "
+        "FROM vereadores_dados v "
+        "JOIN municipios_ibge m ON m.municipio_id = v.municipio_id "
+        "WHERE (%(so_eleitos)s = FALSE OR v.situacao_candidatura ILIKE '%%eleito%%') " \
+        "AND (%(pop_min)s IS NULL OR m.populacao >= %(pop_min)s) "
+        "AND (%(pop_max)s IS NULL OR m.populacao <= %(pop_max)s) "
+        "ORDER BY m.populacao DESC, v.municipio_id, v.sq_candidato"
+    ),
+}
+
+
+def _fila_indexacao_por_tipo(
+    tipo: str,
+    limit: int = 0,
+    *,
+    so_eleitos: bool = False,
+    pop_min: int | None = None,
+    pop_max: int | None = None,
+) -> list[tuple[int, str]]:
+    """Fila de políticos de um cargo para indexar (politico_id, nome).
+
+    Vereador aceita categorias: --eleitos (só eleitos) e faixa de população
+    (--pop-min/--pop-max, habitantes). Municípios mais populosos primeiro.
+    """
+    sql = _FILA_INDEXACAO_POR_TIPO[tipo]
+    if tipo == "vereador":
+        params: dict[str, Any] = {
+            "so_eleitos": so_eleitos,
+            "pop_min": pop_min,
+            "pop_max": pop_max,
+        }
+        if limit and limit > 0:
+            sql += " LIMIT %(limit)s"
+            params["limit"] = limit
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            return [(r[0], r[1] or str(r[0])) for r in cur.fetchall()]
+
+    # Demais cargos: SQL simples (sem filtros)
+    if limit and limit > 0:
+        sql += " LIMIT %s"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, (limit,))
+            return [(r[0], r[1] or str(r[0])) for r in cur.fetchall()]
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        return [(r[0], r[1] or str(r[0])) for r in cur.fetchall()]
+
+
+def _politicos_ja_indexados(client: QdrantClient, tipo: str) -> set[int]:
+    """Set de politico_id já presentes no Qdrant para o cargo.
+
+    Usa scroll só de payload (sem vectors) — barato e serve de checkpoint
+    natural de retomada: numa re-execução, os já indexados são pulados.
+    """
+    seen: set[int] = set()
+    filtro = qdrant_models.Filter(
+        must=[
+            qdrant_models.FieldCondition(
+                key="tipo_politico", match=qdrant_models.MatchValue(value=tipo)
+            )
+        ]
+    )
+    offset: Any = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=filtro,
+            limit=1000,
+            with_payload=True,
+            with_vectors=False,
+            offset=offset,
+        )
+        for p in points:
+            payload = p.payload or {}
+            pid = payload.get("politico_id")
+            if pid is not None:
+                seen.add(pid)
+        if offset is None:
+            break
+    return seen
+
+
+def index_politico(
+    client: QdrantClient,
+    tipo: str,
+    politico_id: int,
+    nome: str,
+    tipos_filtro: list[str] | None = None,
+    diff: bool = False,
+) -> int:
+    """Indexa um político de qualquer cargo no Qdrant (payload uniforme:
+    tipo_politico + politico_id). Deputados usam o fluxo existente
+    (get_deputado_texts); demais cargos usam EXTRACTORS_POR_TIPO.
+
+    Returns:
+        Número de vetores inseridos.
+    """
+    with get_connection() as conn, conn.cursor() as cur:
+        if tipo == "deputado":
+            docs, checkpoints = get_deputado_texts(politico_id, chunk_types=tipos_filtro, diff=diff)
+        else:
+            docs = []
+            for chunk_type, extractor_name in EXTRACTORS_POR_TIPO.get(tipo, {}).items():
+                if tipos_filtro and chunk_type not in tipos_filtro:
+                    continue
+                extractor = globals()[extractor_name]
+                try:
+                    docs.extend(extractor(cur, politico_id, nome) or [])
+                except Exception as e:  # noqa: BLE001 — resiliência por extrator
+                    log.error(f"  Erro no extrator {extractor_name} ({tipo} {politico_id}): {e}")
+
+    if not docs:
+        return 0
+
+    # Payload uniforme: tipo_politico + politico_id (mantém deputado_id no
+    # caminho de deputado para compatibilidade com queries antigas)
+    for doc in docs:
+        doc["tipo_politico"] = tipo
+        doc["politico_id"] = politico_id
+
+    texts = [d["text"] for d in docs]
+    vectors = embed_text_batch(texts)
+    sparse_vectors = texts_to_sparse_vectors(texts)
+
+    points: list[qdrant_models.PointStruct] = []
+    for doc, vector, sparse_vec in zip(docs, vectors, sparse_vectors):
+        if not vector or len(vector) != EMBEDDING_DIM:
+            observability.inc("rag.embedding.invalid_vectors")
+            continue
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{tipo}_{politico_id}_{doc['text']}"))
+        points.append(
+            qdrant_models.PointStruct(
+                id=point_id,
+                vector={"dense": vector, "bm25": sparse_vec},
+                payload=doc,
+            )
+        )
+
+    if points:
+        observability.inc("rag.qdrant.points", len(points))
+        for i in range(0, len(points), 20):
+            batch = points[i : i + 20]
+            with observability.timed("rag.qdrant.upsert_batch_ms"):
+                client.upsert(collection_name=QDRANT_COLLECTION, points=batch)
+            observability.inc("rag.qdrant.upsert_batches")
+    return len(points)
+
+
+def backfill_tipo_payload(client: QdrantClient, batch: int = 1000) -> int:
+    """Backfill one-shot: adiciona tipo_politico='deputado' e
+    politico_id=deputado_id a TODOS os pontos existentes (criados antes da
+    Fase 3). Não re-embedda nada — apenas atualiza payload via scroll +
+    set_payload por grupo de deputado. Retorna nº de pontos atualizados.
+    """
+    updated = 0
+    offset: Any = None
+    grupo: dict[int, list[Any]] = {}
+    while True:
+        page, offset = client.scroll(
+            collection_name=QDRANT_COLLECTION,
+            limit=batch,
+            with_payload=["deputado_id"],
+            with_vectors=False,
+            offset=offset,
+        )
+        if not page:
+            break
+        for pt in page:
+            dep_id = (pt.payload or {}).get("deputado_id")
+            if dep_id is not None and "tipo_politico" not in (pt.payload or {}):
+                grupo.setdefault(int(dep_id), []).append(pt.id)
+        if offset is None:
+            break
+    for dep_id, ids in grupo.items():
+        client.set_payload(
+            collection_name=QDRANT_COLLECTION,
+            payload={"tipo_politico": "deputado", "politico_id": dep_id},
+            points=ids,
+        )
+        updated += len(ids)
+        log.info(f"  backfill deputado {dep_id}: {len(ids)} pontos")
+    return updated
+
+
 # Mapa de extratores por tipo de chunk — usado pelo modo --types e --diff
 CHUNK_EXTRACTORS: dict[str, str] = {
     "perfil": "_extract_perfil",
@@ -1743,9 +2135,9 @@ def get_deputado_texts(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Popula o Qdrant com dados dos Deputados para RAG (v4+ com 18 chunk types)"
+        description="Popula o Qdrant com dados dos políticos para RAG (v8, 23 chunk types, multi-cargo)"
     )
-    parser.add_argument("--limit", type=int, default=10, help="Número de deputados a processar")
+    parser.add_argument("--limit", type=int, default=None, help="Número de políticos a processar (default deputado: 10; --todos: todos)")
     parser.add_argument("--nome", type=str, help="Nome do deputado (busca exata por ILIKE)")
     parser.add_argument("--rebuild", action="store_true", help="Recriar coleção do zero")
     parser.add_argument(
@@ -1761,6 +2153,48 @@ def main() -> None:
         "--checkpoint",
         action="store_true",
         help="Forcar verificacao/criacao da tabela de checkpoint",
+    )
+    parser.add_argument(
+        "--tipo",
+        type=str,
+        default="deputado",
+        choices=("deputado", "senador", "governador", "prefeito", "vereador"),
+        help="Cargo do político a indexar (default: deputado)",
+    )
+    parser.add_argument(
+        "--politico-id",
+        type=int,
+        default=None,
+        help="ID do político no cargo (senador_codigo, municipio_id, uf p/ governador, sq_candidato)",
+    )
+    parser.add_argument(
+        "--todos",
+        action="store_true",
+        help="Modo lote: indexa TODOS os políticos pendentes do cargo "
+        "(--tipo prefeito --todos). Retomável: os já presentes no Qdrant "
+        "(payload tipo_politico/politico_id) são pulados.",
+    )
+    parser.add_argument(
+        "--eleitos",
+        action="store_true",
+        help="Vereadores: só candidatos ELEITOS (situacao_candidatura ILIKE '%eleito%')",
+    )
+    parser.add_argument(
+        "--pop-min",
+        type=int,
+        default=None,
+        help="Vereadores: população mínima do município (habitantes, ex: 100000)",
+    )
+    parser.add_argument(
+        "--pop-max",
+        type=int,
+        default=None,
+        help="Vereadores: população máxima do município (habitantes)",
+    )
+    parser.add_argument(
+        "--backfill-tipo",
+        action="store_true",
+        help="One-shot: adiciona tipo_politico/politico_id aos pontos existentes (sem re-embed)",
     )
     args = parser.parse_args()
 
@@ -1784,8 +2218,55 @@ def main() -> None:
     localai_manager.ensure_model_loaded(EMBEDDER_MODEL)
 
     # 2. Conectar Qdrant
-    client = QdrantClient(url=QDRANT_URL)
+    # trust_env=False: httpx 0.28.1 quebra URLPattern com no_proxy CIDR IPv6
+    client = QdrantClient(url=QDRANT_URL, trust_env=False)
     ensure_collection(client, recreate=args.rebuild)
+
+    # --- Backfill one-shot de payload (pontos pré-Fase 3) ---
+    if args.backfill_tipo:
+        log.info("Backfill de tipo_politico/politico_id nos pontos existentes...")
+        n = backfill_tipo_payload(client)
+        log.info(f"Backfill concluído: {n} pontos atualizados.")
+        return
+
+    # --- Modo multi-cargo (senador/governador/prefeito/vereador) ---
+    if args.tipo != "deputado":
+        if not args.politico_id and not args.todos:
+            log.error("--politico-id (individual) ou --todos (lote) é obrigatório para --tipo != deputado.")
+            return
+
+        # Modo lote: fila do cargo, pula já indexados (Qdrant = checkpoint),
+        # indexa os pendentes com progresso. Retomável a qualquer momento.
+        if args.todos:
+            fila = _fila_indexacao_por_tipo(
+                args.tipo,
+                args.limit or 0,
+                so_eleitos=args.eleitos,
+                pop_min=args.pop_min,
+                pop_max=args.pop_max,
+            )
+            ja = _politicos_ja_indexados(client, args.tipo)
+            pendentes = [(pid, nome) for pid, nome in fila if pid not in ja]
+            log.info(
+                f"Lote {args.tipo}: {len(fila)} na fila, {len(ja)} já indexados, "
+                f"{len(pendentes)} pendentes."
+            )
+            total = 0
+            for i, (pid, nome) in enumerate(pendentes, 1):
+                n = index_politico(
+                    client, args.tipo, pid, nome, tipos_filtro=tipos_filtro, diff=args.diff
+                )
+                total += n
+                if i % 100 == 0 or i == len(pendentes):
+                    log.info(f"  [{i}/{len(pendentes)}] {args.tipo} {pid}: +{n} vetores (total {total})")
+            log.info(f"Lote {args.tipo} concluído: {total} vetores em {len(pendentes)} políticos.")
+            return
+
+        nome = args.nome or str(args.politico_id)
+        log.info(f"Indexando {args.tipo} {args.politico_id} ({nome})...")
+        n = index_politico(client, args.tipo, args.politico_id, nome, tipos_filtro=tipos_filtro, diff=args.diff)
+        log.info(f"Indexação {args.tipo} concluída: {n} vetores.")
+        return
 
     # 3. Buscar deputados para indexar
     with get_connection() as conn, conn.cursor() as cur:
@@ -1802,7 +2283,7 @@ def main() -> None:
             # Priorizar deputados com mais dados (alertas DO + votos + emendas)
             cur.execute(
                 """
-                SELECT pd.deputado_id, pd.nome,
+                SELECT pd.deputado_id, COALESCE(NULLIF(pd.nome, ''), pd.nome_urna) AS nome,
                     (SELECT COUNT(*) FROM parlamentar_alertas pa
                      WHERE pa.parlamentar_id = pd.parlamentar_id) as n_alertas,
                     (SELECT COUNT(*) FROM votos_camara vc
@@ -1813,7 +2294,7 @@ def main() -> None:
                 ORDER BY n_alertas DESC, n_votos DESC, n_emendas DESC, pd.deputado_id ASC
                 LIMIT %s
             """,
-                (args.limit,),
+                (args.limit or 10,),
             )
         deputados = cur.fetchall()
 
@@ -1850,6 +2331,9 @@ def main() -> None:
         for doc, vector, sparse_vec in zip(docs, vectors, sparse_vectors):
             if not vector or len(vector) != EMBEDDING_DIM:
                 continue
+            # Payload uniforme (Fase 3): tipo_politico + politico_id
+            doc.setdefault("tipo_politico", "deputado")
+            doc.setdefault("politico_id", deputado_id)
             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{deputado_id}_{doc['text']}"))
             points.append(
                 qdrant_models.PointStruct(

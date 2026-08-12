@@ -1,0 +1,41 @@
+# Golden set — dossiês de referência para avaliação de qualidade (RAG v8)
+#
+# Cobertura intencional: perfis variados + multi-cargo (Fase 3).
+# 1. Deputados com dados ricos (votos, emendas, discursos, rede)
+# 2. Deputado com perfil de risco (para validar anomalias)
+# 3. Senador, governador e prefeito (cargos novos)
+#
+# Uso:
+#   .venv/bin/python scripts/dossier_bench.py --golden
+#   .venv/bin/python scripts/dossier_bench.py --compare reports/dossier_bench/run_xxx.jsonl
+
+golden_set:
+  - tipo: deputado
+    id: 160508
+    nome: AFONSO FLORENCE
+    nota: "Deputado rico em dados (votos, emendas, discursos)"
+  - tipo: deputado
+    id: 204560
+    nome: ADOLFO VIANA
+    nota: "Perfil legislativo clássico (teste de regressão)"
+  - tipo: deputado
+    id: 133439
+    nome: ANDRÉ FIGUEIREDO
+    nota: "Emendas volumosas — valida fidelidade R$ e tematicas"
+  - tipo: senador
+    id: 70
+    nome: RENAN CALHEIROS
+    nota: "Senador (Fase 3) — valida vocabulário de cargo"
+  - tipo: governador
+    id: -5709455
+    nome: GLADSON CAMELI
+    nota: "Governador (Fase 3) — sem votacao, valida rede"
+  - tipo: prefeito
+    id: 1100015
+    nome: GIOVAN DAMO
+    nota: "Prefeito (Fase 3) — SICONFI + perfil"
+
+limiares:
+  score_min: 70.0
+  taxa_invencao_rs_max: 0.05
+  chamadas_llm_max: 12

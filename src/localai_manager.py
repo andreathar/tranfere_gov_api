@@ -90,6 +90,10 @@ class LocalAIManager:
         self._active_large_group: str | None = None
         # Flag para evitar loop de reload
         self._in_transition: bool = False
+        # Guard anti-loop de docker restart: True entre um restart aplicado e
+        # o próximo load bem-sucedido. Impede restart em cascata quando vários
+        # analistas paralelos falham por VRAM (todos chamariam docker_restart).
+        self._restart_guard: bool = False
         # Serializa TODAS as transições de load/unload entre threads.
         # O "_gpu_lock" que o pipeline multi-analista mencionava NÃO existia;
         # agora cada decisão de VRAM passa por este RLock (reentrante).
@@ -112,7 +116,7 @@ class LocalAIManager:
         last_exc: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
-                with httpx.Client(timeout=timeout) as client:
+                with httpx.Client(timeout=timeout, trust_env=False) as client:
                     resp = client.request(method, url, **kwargs)
                     return resp
             except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as exc:
@@ -479,6 +483,11 @@ class LocalAIManager:
                 continue  # não derruba o alvo
             if self._loaded_models.get(model_id, 0) > 0:
                 continue  # em uso neste processo — preserva
+            # Pular modelos sem processo na GPU: o unload deles retorna 500
+            # "model not found" (no-op), que gerava WARNING spam e, com o
+            # fallback anterior, docker restart desnecessário no meio do load.
+            if self._find_orphan_pid(model_id) is None:
+                continue
 
             if self.unload_model(model_id):
                 logger.info("Recuperação forçada: backend %s descarregado.", model_id)
@@ -629,9 +638,54 @@ class LocalAIManager:
                             target_vram,
                         )
                         if not self._wait_for_room(target_model):
+                            # Último recurso: reiniciar o container LocalAI.
+                            # É a única forma confiável de derrubar backends
+                            # órfãos (o LocalAI perde o tracking do nome e o
+                            # shutdown por nome/PID falha). Após o restart a
+                            # VRAM fica 100% livre e o modelo recarrega sob
+                            # demanda — por isso o RETRY, não o abort.
+                            logger.warning(
+                                "VRAM bloqueada para %s (%d MiB) mesmo após "
+                                "%.0fs. Aplicando docker restart como último "
+                                "recurso...",
+                                target_model,
+                                target_vram,
+                                _VRAM_WAIT_TIMEOUT,
+                            )
+                            try:
+                                if self._restart_guard:
+                                    logger.error(
+                                        "docker restart já aplicado para %s e "
+                                        "retry falhou — abortando (estado "
+                                        "preservado).",
+                                        target_model,
+                                    )
+                                    raise RuntimeError(
+                                        f"VRAM insuficiente para carregar "
+                                        f"{target_model} mesmo após docker "
+                                        f"restart."
+                                    )
+                                from src.models_config import docker_restart
+
+                                if docker_restart():
+                                    logger.info(
+                                        "docker restart aplicado — tentando "
+                                        "carregar %s novamente.",
+                                        target_model,
+                                    )
+                                    self._restart_guard = True
+                                    self._loaded_models.clear()
+                                    self._active_large_group = None
+                                    time.sleep(10)  # aguarda servidor voltar
+                                    return self._ensure_model_loaded_locked(
+                                        target_model
+                                    )
+                            except Exception as exc:
+                                logger.debug("docker restart falhou: %s", exc)
                             logger.error(
-                                "VRAM insuficiente para %s mesmo após %.0fs de espera. "
-                                "Abortando carregamento (estado preservado).",
+                                "VRAM insuficiente para %s mesmo após %.0fs "
+                                "de espera e docker restart. Abortando "
+                                "carregamento (estado preservado).",
                                 target_model,
                                 _VRAM_WAIT_TIMEOUT,
                             )
@@ -644,6 +698,8 @@ class LocalAIManager:
         self._loaded_models[target_model] = self._loaded_models.get(target_model, 0) + 1
         if target_group and target_group not in ("embedding-cpu", None) and is_large:
             self._active_large_group = target_group
+        # Reset do guard de restart: o ciclo restart->load terminou com sucesso
+        self._restart_guard = False
 
         logger.info(
             "Modelo %s assegurado. VRAM estimada: %d MiB usada de %d MiB total.",
@@ -757,10 +813,16 @@ class LocalAIManager:
             # Backend já morto (processo terminou) = memória já liberada.
             # "unimplemented" ocorre quando o gRPC do backend não responde
             # porque o processo foi encerrado — o unload efetivamente ocorreu.
+            #
+            # PITFALL 2026-08-11: o LocalAI retorna 500 "model not found"
+            # também quando o backend ESTÁ VIVO mas o tracking interno do
+            # nome do modelo foi perdido (backend órfão). Nesse caso o
+            # processo continua na GPU (nvidia-smi mostra a VRAM ocupada) e
+            # tratar como "descarregado" é mentira — o LRU fica cego e o
+            # próximo load grande aborta por VRAM insuficiente.
             if (
                 "unimplemented" in text
                 or "eof" in text
-                or "not found" in text
                 or "not loaded" in text
             ):
                 logger.info(
@@ -772,6 +834,54 @@ class LocalAIManager:
                 self._sync_from_localai()
                 self._cond.notify_all()
                 return True
+
+            if "not found" in text:
+                # Distinguir entre "modelo não carregado" (no-op → True) e
+                # "backend órfão vivo na GPU" (tem PID com VRAM compatível).
+                # PITFALL 2026-08-11: o LocalAI retorna 500 "model not found"
+                # também quando o backend ESTÁ VIVO mas o tracking interno do
+                # nome do modelo foi perdido. Verificar a VRAM real resolve:
+                # sem processo na GPU → nada a descarregar → True.
+                pid = self._find_orphan_pid(model_id)
+                if pid is None:
+                    logger.info(
+                        "Modelo %s: 500 'not found' e sem processo na GPU "
+                        "— nada a descarregar. Considerando descarregado.",
+                        model_id,
+                    )
+                    self._loaded_models.pop(model_id, None)
+                    self._sync_from_localai()
+                    self._cond.notify_all()
+                    return True
+                # Backend órfão REAL: processo na GPU mas LocalAI perdeu o
+                # tracking. Tentar shutdown por PID; sem sucesso, retornar
+                # False honesto (o docker restart final em ensure_model_loaded
+                # resolve).
+                logger.warning(
+                    "Modelo %s: 500 'not found' mas PID %s segue na GPU "
+                    "(%d MiB) — backend órfão. Tentando shutdown por PID...",
+                    model_id, pid, self._get_gpu_vram_for_pid(pid),
+                )
+                resp = self._request(
+                    "POST",
+                    "/backend/shutdown",
+                    timeout=_POST_TIMEOUT,
+                    json={"model": model_id, "pid": int(pid)},
+                )
+                if resp is not None and resp.status_code in (200, 204):
+                    logger.info(
+                        "Modelo %s: backend órfão derrubado por PID.", model_id
+                    )
+                    self._loaded_models.pop(model_id, None)
+                    self._sync_from_localai()
+                    self._cond.notify_all()
+                    return True
+                logger.warning(
+                    "Modelo %s: backend órfão (PID %s) resistente ao "
+                    "shutdown — docker restart será aplicado no load.",
+                    model_id, pid,
+                )
+                return False
         logger.warning(
             "Falha ao descarregar %s (HTTP %d): %s",
             model_id,
@@ -779,6 +889,77 @@ class LocalAIManager:
             resp.text,
         )
         return False
+
+    def _get_gpu_vram_for_pid(self, pid: int) -> int:
+        """Retorna VRAM usada (MiB) de um PID na GPU, ou 0 se ausente."""
+        try:
+            import subprocess
+
+            out = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+                 "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if out.returncode != 0:
+                return 0
+            for line in out.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 2 or parts[0] != str(pid):
+                    continue
+                try:
+                    return int(parts[1].replace("MiB", "").strip())
+                except ValueError:
+                    return 0
+        except Exception:
+            pass
+        return 0
+
+    def _find_orphan_pid(self, model_id: str) -> int | None:
+        """Acha PID na GPU com VRAM compatível com o modelo (backend órfão).
+
+        Retorna o PID de um processo na GPU cujo consumo está dentro de
+        +/-25% (ou 512 MiB) do VRAM esperado do modelo. Usado para
+        distinguir 'modelo não carregado' (sem processo) de 'backend órfão'
+        (processo vivo mas com tracking perdido no LocalAI).
+        """
+        try:
+            import subprocess
+
+            out = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid,used_memory",
+                 "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if out.returncode != 0:
+                logger.debug("nvidia-smi falhou: %s", out.stderr.strip())
+                return None
+
+            target_vram = get_vram_mib(model_id)
+            if target_vram <= 0:
+                return None
+            for line in out.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 2:
+                    continue
+                pid, used = parts[0], parts[1]
+                try:
+                    used_mib = int(used.replace("MiB", "").strip())
+                except ValueError:
+                    continue
+                if abs(used_mib - target_vram) > max(512, target_vram * 0.25):
+                    continue
+                logger.info(
+                    "Backend órfão %s: PID %s usa %d MiB (esperado ~%d).",
+                    model_id, pid, used_mib, target_vram,
+                )
+                return int(pid)
+        except Exception as exc:
+            logger.debug("find_orphan_pid falhou: %s", exc)
+        return None
 
     def unload_group(self, group: str) -> bool:
         """Descarrega todos os modelos de um grupo de afinidade.
@@ -920,7 +1101,7 @@ class LocalAIManager:
                 "temperature": 0.0,
             }
             url = f"{self.base_url}/v1/chat/completions"
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=timeout, trust_env=False) as client:
                 resp = client.post(url, json=payload)
                 if resp.status_code == 200:
                     logger.info("Warmup de %s concluido.", model_id)

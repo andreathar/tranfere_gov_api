@@ -16,13 +16,18 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
-    "classificador": [
+    "votacao": [
         "[VOTO]",
         "[DISCURSO_PLENARIO]",
     ],
     "perfil": [
         "[PERFIL]",
         "[PARLAMENTAR_RESUMO]",
+        # Fase 3 (multi-cargo): dossiês de senador/governador/prefeito/vereador
+        "[SENADOR]",
+        "[GOVERNADOR]",
+        "[PREFEITO]",
+        "[VEREADOR]",
     ],
     "tematicas": [
         "[EMENDA]",
@@ -52,10 +57,19 @@ CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
         "[FNDE_REPASSES]",
         "[INDICADORES_MUNICIPAL]",
         "[VEREADORES_RESUMO]",
+        "[GOVERNADOR]",
+        "[VEREADOR]",
     ],
-    "alinhamento": [
-        "[VOTO]",
-        "[DISCURSO_PLENARIO]",
+    "rede_politica": [
+        "[CONEXAO_POLITICA]",
+        "[PREFEITO]",
+        "[SENADOR]",
+        "[GOVERNADOR]",
+        "[VEREADOR]",
+        "[VEREADORES_RESUMO]",
+        "[ESTADO_FINANCEIRO]",
+        "[EMENDA]",
+        "[DIARIO_OFICIAL]",
     ],
     "discursos": [
         "[DISCURSO_PLENARIO]",
@@ -110,6 +124,22 @@ def filter_chunks_by_analyst(
             if upper.startswith(prefix):
                 filtered.append(chunk)
                 break
+
+    # Prioridade de ordenação (Fase 2, plano 2.4): para o analista tematicas,
+    # chunks do resumo por área ("Distribuição por área das emendas PIX" — que
+    # traz os TOTAIS EXATOS R$ por objeto) sobem para o topo do contexto.
+    # Antes isso era garantido apenas por busca dedicada no Qdrant
+    # (_ensure_tematicas_area_summary), que agora vira fallback.
+    if analyst_id == "tematicas":
+        marker = "DISTRIBUIÇÃO POR ÁREA DAS EMENDAS PIX"
+        com_marker = [c for c in filtered if marker in c.upper()]
+        sem_marker = [c for c in filtered if marker not in c.upper()]
+        if com_marker:
+            log.info(
+                f"[tematicas] {len(com_marker)} chunk(s) de resumo por área "
+                f"priorizados no topo do contexto"
+            )
+            filtered = com_marker + sem_marker
     return filtered
 
 

@@ -28,8 +28,10 @@ import src.graphs.intel_proposicoes  # noqa: F401, E501
 import src.graphs.parlamentar  # noqa: F401, E501
 import src.graphs.prefeitos  # noqa: F401, E501
 import src.graphs.radar_diario  # noqa: F401, E501
+import src.graphs.senadores  # noqa: F401, E501
 import src.graphs.siconfi  # noqa: F401, E501
 import src.graphs.socioeconomico  # noqa: F401, E501
+import src.graphs.vereadores  # noqa: F401, E501
 import src.graphs.votacoes  # noqa: F401, E501
 from src.graphs.registry import (
     CHART_REGISTRY,

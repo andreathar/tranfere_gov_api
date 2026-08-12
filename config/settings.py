@@ -276,10 +276,31 @@ RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m")
 # Fallback: se o modelo principal falhar ou quality check reprovar, tenta este
 RAG_FALLBACK_MODEL = os.getenv("RAG_FALLBACK_MODEL", "llama-3.2-3b-instruct:q4_k_m")
 RAG_PERSONA_VERSION = (
-    7  # v7: 7 analistas especialistas + PromptPreparer, 15 queries tematicas, RRF k=60
+    8  # v8: 6 analistas (votacao fundido, rede_politica novo) + briefing único + QC estruturado
 )
 RAG_MIN_CHUNKS = 3  # Mínimo de chunks para gerar persona (evitar análises vazias)
 RAG_MAX_CHUNKS = 30  # Máximo de chunks por deputado no contexto final
+
+# --- RAG v8 (Fase 3): dossiês multi-cargo ---
+TIPOS_POLITICOS = ("deputado", "senador", "governador", "prefeito", "vereador")
+# Limites por cargo (cargos novos têm menos fontes disponíveis no Qdrant).
+# min=1 para cargos não-deputado: o piloto valida o pipeline E2E com o
+# chunk de perfil; a riqueza de chunks virá de novos extratores (votos de
+# senador, proposições, etc.) em iteração futura do indexador.
+RAG_MIN_CHUNKS_BY_TIPO: dict[str, int] = {
+    "deputado": RAG_MIN_CHUNKS,
+    "senador": 1,
+    "governador": 1,
+    "prefeito": 1,
+    "vereador": 1,
+}
+RAG_MAX_CHUNKS_BY_TIPO: dict[str, int] = {
+    "deputado": RAG_MAX_CHUNKS,
+    "senador": 25,
+    "governador": 20,
+    "prefeito": 20,
+    "vereador": 15,
+}
 RAG_BATCH_SIZE = 50  # Tamanho do batch para embedding em lote
 RAG_MAX_RETRIES = 2  # Tentativas com fallback se quality check reprovar
 

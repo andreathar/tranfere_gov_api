@@ -294,17 +294,30 @@ def get_municipios_por_parlamentar_id(parlamentar_id: int) -> list[dict]:
 
 def get_dossie_deputado(deputado_id: int) -> dict | None:
     """Retorna o dossiê comportamental (RAG) mais recente do deputado."""
+    return get_dossie_politico("deputado", deputado_id)
+
+
+def get_dossie_politico(tipo_politico: str, politico_id: int) -> dict | None:
+    """Retorna o dossiê comportamental (RAG) mais recente de um político.
+
+    Fase 3 (2026-08-10): multi-cargo — deputado/senador/governador/prefeito/
+    vereador. Deputados têm politico_id = deputado_id (fallback preservado).
+    """
     with _get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
                 SELECT analise_gerada, data_analise, duracao_segundos,
                        versao_prompt, fontes_usadas
                 FROM parlamentares_personas
-                WHERE deputado_id = %s
+                WHERE tipo_politico = %s
+                  AND (
+                        politico_id = %s
+                        OR (tipo_politico = 'deputado' AND deputado_id = %s)
+                  )
                 ORDER BY data_analise DESC
                 LIMIT 1
             """,
-            (deputado_id,),
+            (tipo_politico, politico_id, politico_id),
         )
         row = cur.fetchone()
         if not row:
@@ -691,6 +704,24 @@ def get_vereadores_por_uf(uf: str) -> list[dict]:
             (uf.upper(),),
         )
         return _rows_to_list(cur.fetchall())
+
+
+def get_perfil_vereador(sq_candidato: int) -> dict | None:
+    """Perfil completo de um vereador eleito."""
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT sq_candidato, municipio_id, municipio_nome, uf,
+                       nome_completo, nome_urna, sigla_partido, numero_candidato,
+                       ano_eleicao, votos, percentual_votos,
+                       situacao_candidatura, coligacao, cargo
+                FROM vereadores_dados
+                WHERE sq_candidato = %s
+            """,
+            (sq_candidato,),
+        )
+        row = cur.fetchone()
+        return _row_to_dict(row) if row else None
 
 
 # ---------------------------------------------------------------------------

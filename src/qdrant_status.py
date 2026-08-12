@@ -16,7 +16,8 @@ from src.db_utils import get_connection
 
 
 def main():
-    qdrant = QdrantClient(url=QDRANT_URL)
+    # trust_env=False: httpx 0.28.1 quebra URLPattern com no_proxy CIDR IPv6
+    qdrant = QdrantClient(url=QDRANT_URL, trust_env=False)
     conn = get_connection()
     cur = conn.cursor()
 
