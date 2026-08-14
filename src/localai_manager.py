@@ -929,11 +929,60 @@ class LocalAIManager:
                     self._sync_from_localai()
                     self._cond.notify_all()
                     return True
+                # Último recurso: docker exec pkill dentro do container.
+                # O API shutdown falhou (backend órfão resistente), mas o
+                # processo está vivo na GPU e bloqueando a VRAM. Matar via
+                # docker exec é mais rápido que um docker restart completo
+                # (que reinicia o LocalAI inteiro e demora 15-30s).
                 logger.warning(
                     "Modelo %s: backend órfão (PID %s) resistente ao "
-                    "shutdown — docker restart será aplicado no load.",
+                    "shutdown via API — tentando docker exec pkill...",
                     model_id, pid,
                 )
+                try:
+                    import subprocess as _sp
+                    # Identificar nome do container LocalAI
+                    _container = os.environ.get(
+                        "LOCALAI_CONTAINER_NAME", "localai-orchestrator"
+                    )
+                    _kill = _sp.run(
+                        ["docker", "exec", _container,
+                         "pkill", "-9", "-f", "llama-cpp"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    if _kill.returncode in (0, 1):  # 0=killed, 1=nenhum processo
+                        logger.info(
+                            "Modelo %s: docker exec pkill enviado (rc=%d). "
+                            "Aguardando VRAM liberar...",
+                            model_id, _kill.returncode,
+                        )
+                        # Aguardar até 10s para VRAM ser liberada
+                        for _w in range(10):
+                            time.sleep(1)
+                            if self._get_gpu_vram_for_pid(pid) == 0:
+                                logger.info(
+                                    "Modelo %s: VRAM liberada após pkill (%ds).",
+                                    model_id, _w + 1,
+                                )
+                                self._loaded_models.pop(model_id, None)
+                                self._sync_from_localai()
+                                self._cond.notify_all()
+                                return True
+                        logger.warning(
+                            "Modelo %s: pkill enviado mas VRAM não liberou em 10s.",
+                            model_id,
+                        )
+                    else:
+                        logger.warning(
+                            "Modelo %s: docker exec pkill falhou (rc=%d): %s",
+                            model_id, _kill.returncode, _kill.stderr[:200],
+                        )
+                except Exception as _exc:
+                    logger.warning(
+                        "Modelo %s: docker exec pkill erro: %s — "
+                        "docker restart será aplicado no load.",
+                        model_id, _exc,
+                    )
                 return False
         logger.warning(
             "Falha ao descarregar %s (HTTP %d): %s",

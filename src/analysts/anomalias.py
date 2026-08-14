@@ -69,11 +69,10 @@ class AnomaliasFisiologismo(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        # Data-first (2026-08-10, golden set): usar SEMPRE os chunks crus. O
-        # briefing sintetizado induz confabulação no modelo 3B (ADOLFO VIANA:
-        # 53% dos R$ citados não existiam em nenhuma fonte — QC 0.0). Os
-        # resumos por área/município nos chunks crus trazem os totais exatos
-        # literais para a auditoria citar sem inventar.
+        # GPU zero-gemma4 (2026-08-12): Embora o modelo zero-gemma4 na GPU
+        # reduza significativamente a confabulação, usamos SEMPRE os chunks crus
+        # aqui (Data-first). Os resumos por área/município nos chunks crus trazem
+        # os totais exatos (R$) literais para a auditoria citar sem inventar.
         ctx = self._format_context(context)
         origem = "DADOS PARA AUDITORIA"
 

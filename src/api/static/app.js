@@ -285,7 +285,7 @@ function switchTab(tabName) {
 
 async function loadTabData(tab) {
   const id = state.currentDeputadoId;
-  const modosGlobais = ['inteligencia', 'saude-explorer', 'diario', 'prefeitos', 'vereadores', 'senadores', 'governadores', 'financeiro', 'fnde'];
+  const modosGlobais = ['inteligencia', 'saude-explorer', 'diario', 'prefeitos', 'vereadores', 'senadores', 'governadores', 'financeiro', 'fnde', 'rag'];
   if(!id && !modosGlobais.includes(tab)) return;
 
 
@@ -350,13 +350,14 @@ async function loadTabData(tab) {
     }
 
     // --- Abas novas (módulo carregado sob demanda) ---
-    if(tab === 'senadores' || tab === 'governadores' || tab === 'financeiro' || tab === 'fnde') {
+    if(tab === 'senadores' || tab === 'governadores' || tab === 'financeiro' || tab === 'fnde' || tab === 'rag') {
       carregarAbasNovas().then(() => {
         const T = window.TabsNovos;
         if (tab === 'senadores') T.Senadores.init();
         if (tab === 'governadores') T.Governadores.init();
         if (tab === 'financeiro') T.Financeiro.carregar('estados');
         if (tab === 'fnde') T.Fnde.init();
+        if (tab === 'rag') T.RagEfficiency.init();
       });
     }
     if(tab === 'discursos') {

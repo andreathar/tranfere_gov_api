@@ -34,6 +34,7 @@ src/api/
 │   ├── governadores.py     /api/v1/governadores/*  (5 endpoints)
 │   ├── senadores.py        /api/v1/senadores/*     (4 endpoints)
 │   ├── financeiro.py       /api/v1/financeiro/*    (4 endpoints)
+│   ├── rag_efficiency.py   /api/v1/rag-efficiency/* (2 endpoints)
 │   └── municipios.py       /api/v1/municipios/*    (2 endpoints)
 ├── services/
 │   ├── db_service.py       Consultas PostgreSQL (psycopg2, 45+ funcoes, TTLCache 300s em agregados)
@@ -50,7 +51,7 @@ src/api/
 
 ---
 
-## Endpoints — 68 totais
+## Endpoints — 70 totais
 
 ### Deputados (13)
 
@@ -166,8 +167,14 @@ src/api/
 
 | Metodo | Rota | Descricao | Fonte |
 |--------|------|-----------|-------|
-| GET | `/api/v1/municipios/{municipio_id}/indicadores` | Indicadores consolidados (IBGE + saude + educacao + violencia) | DB (JOIN multiplo) |
 | GET | `/api/v1/municipios/{municipio_id}/financeiro` | Financeiro SICONFI do municipio | DB |
+
+### RAG Efficiency (2)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/rag-efficiency/runs` | Historico de execucoes de eficiencia do RAG | DB (rag_efficiency_runs) |
+| GET | `/api/v1/rag-efficiency/runs/{run_id}/metrics` | Detalhamento das metricas por pergunta | DB (rag_efficiency_metrics) |
 
 ---
 

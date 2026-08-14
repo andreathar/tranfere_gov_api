@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -54,6 +56,72 @@ from src.localai_circuit import circuit_breaker
 from src.localai_metrics import metrics
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TokenLogprob:
+    """Logprob de um token gerado + alternativas top-K (logit lens surrogate)."""
+
+    token: str
+    logprob: float
+    top_logprobs: list[tuple[str, float]] = field(default_factory=list)
+
+    @property
+    def prob(self) -> float:
+        """Probabilidade do token (exp do logprob)."""
+        return math.exp(self.logprob)
+
+    @property
+    def entropy(self) -> float:
+        """Entropia da distribuição top-K (aproximação da incerteza local).
+
+        Normaliza os top-K logprobs para estimar a incerteza do modelo no
+        passo — o core do contexto-gain do logit lens.
+        """
+        probs = [math.exp(lp) for _, lp in self.top_logprobs]
+        total = sum(probs)
+        if total <= 0.0:
+            return 0.0
+        return -sum((p / total) * math.log(p / total) for p in probs)
+
+
+@dataclass
+class ChatLogprobs:
+    """Resposta de chat anotada com logprobs por token."""
+
+    text: str
+    tokens: list[TokenLogprob] = field(default_factory=list)
+
+    @property
+    def mean_logprob(self) -> float:
+        if not self.tokens:
+            return 0.0
+        return sum(t.logprob for t in self.tokens) / len(self.tokens)
+
+    @property
+    def mean_entropy(self) -> float:
+        if not self.tokens:
+            return 0.0
+        return sum(t.entropy for t in self.tokens) / len(self.tokens)
+
+    @property
+    def min_logprob(self) -> float:
+        return min((t.logprob for t in self.tokens), default=0.0)
+
+
+def _parse_top_logprobs(raw: Any) -> list[tuple[str, float]]:
+    """Normaliza top_logprobs dos formatos OpenAI/vLLM (lista) e llama.cpp (dict)."""
+    items: list[tuple[str, float]] = []
+    if isinstance(raw, dict):
+        items = [(str(tok), float(lp)) for tok, lp in raw.items()]
+    elif isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                items.append(
+                    (str(entry.get("token", "")), float(entry.get("logprob") or 0.0))
+                )
+    items.sort(key=lambda x: -x[1])
+    return items
 
 
 class LocalAIClient:
@@ -161,6 +229,18 @@ class LocalAIClient:
         max_tokens: int = 2048,
     ) -> str:
         """Chat completion simples — retorna a resposta como string."""
+        # Pré-validação de contexto (Pre-flight check) para evitar HTTP 500 no backend
+        estimated_prompt_tokens = (len(prompt) + len(system or "")) // 3.5
+        max_allowed_prompt_tokens = 14000  # Limite de segurança para context_size=16384
+        if estimated_prompt_tokens > max_allowed_prompt_tokens:
+            logger.warning(
+                "Prompt estimado em %d tokens (acima do limite seguro de %d). Aplicando truncamento de emergência.",
+                estimated_prompt_tokens,
+                max_allowed_prompt_tokens,
+            )
+            max_chars = int(max_allowed_prompt_tokens * 3.5)
+            prompt = prompt[:max_chars] + "\n\n[...texto truncado por limite de contexto...]"
+
         messages = self._build_messages(prompt, system)
         payload = {
             "model": model or self.model,
@@ -210,6 +290,62 @@ class LocalAIClient:
         except Exception:
             # Fallback
             return json.loads(cleaned)
+
+    # ------------------------------------------------------------------
+    # Chat com logprobs (surrogate de logit lens)
+    # ------------------------------------------------------------------
+    def chat_with_logprobs(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 256,
+        top_logprobs: int = 5,
+    ) -> ChatLogprobs:
+        """Chat completion retornando logprobs por token (logit lens surrogate).
+
+        Os logprobs permitem medir confiança, entropia e "colapso de incerteza"
+        antes/depois da injeção de contexto RAG — base do relatório de
+        eficiência do RAG v7 (src/logit_lens_probe.py).
+
+        Args:
+            temperature: 0.0 (determinístico) para comparações justas entre
+                o cenário sem contexto e com contexto.
+            top_logprobs: quantas alternativas por token retornar.
+
+        Returns:
+            ChatLogprobs com tokens anotados (logprob, top-K alternativas).
+        """
+        messages = self._build_messages(prompt, system)
+        payload = {
+            "model": model or self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "logprobs": True,
+            "top_logprobs": top_logprobs,
+        }
+        data = self._post("/chat/completions", payload)
+        return self._parse_logprobs(data)
+
+    @staticmethod
+    def _parse_logprobs(data: dict[str, Any]) -> ChatLogprobs:
+        """Normaliza o bloco logprobs do response OpenAI-compatível."""
+        choice = data["choices"][0]
+        text = choice["message"]["content"] or ""
+        lp_block = choice.get("logprobs") or {}
+        tokens: list[TokenLogprob] = []
+        for item in lp_block.get("content") or []:
+            tokens.append(
+                TokenLogprob(
+                    token=str(item.get("token", "")),
+                    logprob=float(item.get("logprob") or 0.0),
+                    top_logprobs=_parse_top_logprobs(item.get("top_logprobs")),
+                )
+            )
+        return ChatLogprobs(text=text, tokens=tokens)
 
     # ------------------------------------------------------------------
     # Chat (async)

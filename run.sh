@@ -43,8 +43,11 @@ Comandos:
    qdrant-staleness   Staleness do Qdrant — deputados desatualizados vs checkpoint
    localai-health     Saúde do LocalAI (API, modelos, VRAM, circuit breaker)
    cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
+   rag-efficiency     Coletor de métricas RAG Efficiency (--politico-id)
+   logit-lens-runner  Roda o Logit Lens offline para um run de efficiency (--run-id)
    vllm               Gerencia servidor vLLM local (start|stop|status|chat) — ver scripts/serve_vllm.sh
-   vllm-bench         Benchmark comparativo vLLM vs LocalAI — ver scripts/benchmark_vllm_vs_localai.py
+    vllm-bench         Benchmark comparativo vLLM vs LocalAI — ver scripts/benchmark_vllm_vs_localai.py
+    logit-lens         Logit lens probe — eficiência do RAG v7 (--nome, --tipo, --pergunta)
    discursos          Extrai discursos da Câmara dos Deputados (--ano, --resumo)
   redator            Redator oficial de documentos (nota-técnica | ofício | parecer | despacho | validar)
   transparencia      Buscar emendas no Portal da Transparência (--nome-autor, --ano, --db, --csv, --json)
@@ -166,6 +169,15 @@ case "${1:-help}" in
         ;;
     redator)
         $PYTHON -m src.redator_transferegov "${@:2}"
+        ;;
+    rag-efficiency)
+        $PYTHON -m src.enrichers.rag_efficiency_collector "${@:2}"
+        ;;
+    logit-lens-runner)
+        $PYTHON -m scripts.logit_lens_runner "${@:2}"
+        ;;
+    logit-lens)
+        $PYTHON -m src.logit_lens_probe "${@:2}"
         ;;
     all)
         $PYTHON -m src.transferegov_extract --objeto all --ano 2026 --csv "${@:2}"

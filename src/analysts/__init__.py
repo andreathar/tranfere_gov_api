@@ -266,12 +266,29 @@ def run_analyst_pipeline(
         log.warning("Nenhum analista ativo para os dados disponiveis.")
         return []
 
-    # Decidir paralelismo. Com o briefing único (Fase 1), o preparer roda ANTES
-    # do pool e é liberado — os analistas podem rodar em paralelo sem deadlock
-    # de VRAM (o LRU não precisa descarregar um preparer em uso).
-    # Mantém max_workers=3 como antes; a checagem de co-residência abaixo ainda
-    # protege o caso de modelos que não cabem juntos.
-    max_workers = 3
+    # Decidir paralelismo. Com parallel=1 no YAML do modelo backend, o
+    # llama.cpp só processa 1 requisição por vez — enviar 2 simultâneas causa
+    # 500 imediato. Verificar a config do modelo antes de decidir workers.
+    max_workers = 1  # default seguro; sobe para 2 apenas se modelo suportar
+    try:
+        from config.settings import RAG_LLM_MODEL
+        from src.models_config import get_model_parallel
+        _model_name = llm_model or RAG_LLM_MODEL
+        _parallel = get_model_parallel(_model_name)  # None = auto (LocalAI decide)
+        if _parallel is None or _parallel >= 2:
+            max_workers = 2
+            log.debug(
+                f"Modelo {_model_name} suporta parallel={_parallel} → "
+                f"analistas em paralelo (max_workers=2)."
+            )
+        else:
+            log.info(
+                f"Modelo {_model_name} tem parallel={_parallel} no YAML → "
+                f"analistas em SÉRIE (max_workers=1) para evitar 500s."
+            )
+    except Exception as _e:
+        log.debug(f"Não foi possível ler parallel do modelo: {_e} → max_workers=1 (seguro)")
+
     if use_prep_effective and shared_briefing is None:
         try:
             from config.settings import RAG_LLM_MODEL

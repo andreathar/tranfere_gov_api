@@ -22,6 +22,7 @@
                 <button class="nav-btn" data-nav="financeiro" onclick="switchNavMode('financeiro')">💰 Financeiro</button>
                 <button class="nav-btn" data-nav="fnde" onclick="switchNavMode('fnde')">🎓 FNDE</button>
                 <button class="nav-btn" data-nav="inteligencia" onclick="switchNavMode('inteligencia')">🚀 Inteligência</button>
+                <button class="nav-btn" data-nav="rag" onclick="switchNavMode('rag')">🧠 Auditoria RAG</button>
                 <button class="nav-btn" data-nav="saude-explorer" onclick="switchNavMode('saude-explorer')">🏥 Saúde</button>
                 <button class="nav-btn" data-nav="diario" onclick="switchNavMode('diario')">📰 Diário Oficial</button>
             </nav>
@@ -584,6 +585,58 @@
                     </header>
                     <div id="diario-results" class="table-card" style="padding:1.5rem;">
                         <p style="color:var(--text-muted); text-align:center;">Selecione um deputado ou digite um termo acima para buscar matérias publicadas no Diário Oficial.</p>
+                    </div>
+                </div>
+
+                <!-- Auditoria RAG (Logit Lens) Tab -->
+                <div id="tab-rag" class="tab-pane">
+                    <header class="section-header" style="margin-bottom: 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2 style="font-size:1.5rem;">Auditoria RAG (Logit Lens) 🧠</h2>
+                            <p style="color:var(--text-muted); font-size:0.9rem;">Métricas de eficiência de Recuperação (Qdrant) vs Geração (Llama-3.2) e interpretabilidade mecanística das camadas de atenção.</p>
+                        </div>
+                        <div style="display:flex; gap:0.5rem;">
+                            <button id="btn-load-rag" style="background:var(--accent); color:var(--text-main); border:none; padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-weight:600;">Recarregar Dados</button>
+                        </div>
+                    </header>
+                    
+                    <div class="charts-row" style="margin-bottom: 2rem;">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>Evolução da Eficiência (Hit Rate vs Faithfulness)</h3>
+                            <div id="chart-rag-evolution" class="chart-container" style="height:350px;">
+                                <p style="color:var(--text-muted); text-align:center; padding-top:100px;">Carregando métricas de evolução...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="charts-row" style="margin-bottom: 2rem;">
+                        <div class="chart-card" style="flex: 1;">
+                            <h3>Logit Lens (Groundedness Depth) - Camada de Decisão</h3>
+                            <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom: 1rem;">Camadas iniciais (verdes) indicam conhecimento sólido embutido ou extraído do prompt. Camadas finais (vermelhas) sugerem adivinhação.</p>
+                            <div id="chart-logit-lens" class="chart-container" style="height:400px; overflow-y:auto;">
+                                <p style="color:var(--text-muted); text-align:center; padding-top:100px;">Carregando mapa de ativação...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-card">
+                        <h3>Detalhamento das Respostas</h3>
+                        <div class="table-responsive">
+                            <table id="table-rag-metrics">
+                                <thead>
+                                    <tr>
+                                        <th>Run ID</th>
+                                        <th style="min-width: 250px;">Pergunta</th>
+                                        <th style="min-width: 200px;">Resposta Esperada</th>
+                                        <th style="min-width: 250px;">Geração do Modelo</th>
+                                        <th>Emergence Layer</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Clique em Recarregar Dados</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

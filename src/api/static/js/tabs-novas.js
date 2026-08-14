@@ -569,6 +569,150 @@ const DeputadoExtra = {
   },
 };
 
+/* ---------- Auditoria RAG (Logit Lens) ---------- */
+const TabsRagEfficiency = {
+  async init() {
+    this.carregarDados();
+    document.getElementById('btn-load-rag')?.addEventListener('click', () => this.carregarDados());
+  },
+
+  async carregarDados() {
+    try {
+      // 1. Carregar métricas de evolução (hit rate e faithfulness dos runs)
+      const runs = await fetch(`${API_BASE}/rag-efficiency/runs?limit=50`).then(r => r.json());
+      this.renderEvolucao(runs);
+
+      // 2. Tentar carregar detalhes de métricas com logit lens para o último run
+      if (runs && runs.length > 0) {
+        const lastRunId = runs[0].id;
+        const metrics = await fetch(`${API_BASE}/rag-efficiency/runs/${lastRunId}/metrics`).then(r => {
+          if (!r.ok) return [];
+          return r.json();
+        });
+        this.renderMetricsTable(metrics, lastRunId);
+        this.renderLogitLens(metrics);
+      } else {
+        document.getElementById('chart-rag-evolution').innerHTML = '<p style="color:var(--text-muted); text-align:center; padding-top:100px;">Nenhum dado encontrado. Execute o benchmark offline.</p>';
+      }
+    } catch(e) {
+      console.error("Erro ao carregar auditoria RAG:", e);
+    }
+  },
+
+  renderEvolucao(runs) {
+    if (!runs || runs.length === 0) return;
+    
+    // Sort chronologically
+    const sortedRuns = [...runs].sort((a,b) => new Date(a.run_date) - new Date(b.run_date));
+    
+    const x = sortedRuns.map(r => r.id);
+    const hitRates = sortedRuns.map(r => (r.avg_retrieval_hit_rate || 0) * 100);
+    const faithfulness = sortedRuns.map(r => (r.avg_generation_faithfulness || 0) * 100);
+
+    const trace1 = {
+      x: x, y: hitRates,
+      type: 'scatter', mode: 'lines+markers',
+      name: 'Hit Rate @ 5 (%)',
+      line: {color: '#3498db'}
+    };
+    
+    const trace2 = {
+      x: x, y: faithfulness,
+      type: 'scatter', mode: 'lines+markers',
+      name: 'Faithfulness (%)',
+      line: {color: '#2ecc71'}
+    };
+
+    const layout = {
+      ...plotlyDarkLayout(''),
+      margin: {t:40, r:20, l:40, b:40},
+      yaxis: { range: [0, 105], gridcolor: '#334155' }
+    };
+    
+    Plotly.newPlot('chart-rag-evolution', [trace1, trace2], layout);
+  },
+
+  renderMetricsTable(metrics, runId) {
+    const tbody = document.querySelector('#table-rag-metrics tbody');
+    if (!tbody) return;
+    
+    if (!metrics || metrics.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Sem métricas detalhadas para o último run.</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = metrics.map(m => {
+      // Determine emergence layer badge color
+      let emLayerStr = '-';
+      if (m.emergence_layer !== null && m.emergence_layer !== undefined) {
+        const layer = m.emergence_layer;
+        // Layers: 0-10 (green), 11-20 (yellow), >20 (red) for 32-layer Llama-3.2
+        let color = layer <= 10 ? '#2ecc71' : (layer <= 20 ? '#f1c40f' : '#e74c3c');
+        emLayerStr = `<span class="badge" style="background-color: transparent; border: 1px solid ${color}; color: ${color};">Camada ${layer}</span>`;
+      }
+      
+      return `
+        <tr>
+          <td>${runId || '-'}</td>
+          <td style="font-size: 0.85rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${(m.question||'').replace(/"/g, '&quot;')}">${m.question}</td>
+          <td style="font-size: 0.85rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${(m.expected_answer||'').replace(/"/g, '&quot;')}">${m.expected_answer || '-'}</td>
+          <td style="font-size: 0.85rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${(m.actual_answer||'').replace(/"/g, '&quot;')}">${m.actual_answer || '-'}</td>
+          <td>${emLayerStr}</td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  renderLogitLens(metrics) {
+    const container = document.getElementById('chart-logit-lens');
+    if (!container) return;
+    
+    const validMetrics = metrics.filter(m => m.emergence_layer !== null && m.emergence_layer !== undefined);
+    
+    if (validMetrics.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding-top:100px;">Nenhum dado de Logit Lens (emergence layer) encontrado no último run.</p>';
+      return;
+    }
+    
+    const questions = validMetrics.map(m => 'Q: ' + m.question.substring(0, 40) + '...');
+    const layers = validMetrics.map(m => m.emergence_layer);
+    
+    const MAX_LAYERS = 32;
+    const colors = layers.map(l => {
+        if (l <= 10) return '#2ecc71';
+        if (l <= 20) return '#f1c40f';
+        return '#e74c3c';
+    });
+    
+    const trace = {
+      y: questions.reverse(),
+      x: layers.reverse(),
+      type: 'bar',
+      orientation: 'h',
+      marker: {
+        color: colors.reverse(),
+        line: { width: 1, color: '#1e293b' }
+      },
+      text: layers.map(l => `Camada ${l}`),
+      textposition: 'auto',
+      hoverinfo: 'x+y'
+    };
+    
+    const layout = {
+      ...plotlyDarkLayout(''),
+      margin: {t:20, r:20, l:350, b:40},
+      xaxis: { 
+          title: 'Emergence Layer', 
+          range: [0, MAX_LAYERS], 
+          gridcolor: '#334155' 
+      },
+      yaxis: { autorange: true }
+    };
+    
+    Plotly.newPlot('chart-logit-lens', [trace], layout);
+  }
+};
+
 /* Registro global para o loader do app.js */
 window.TabsNovos = {
   Senadores: TabsSenadores,
@@ -577,4 +721,5 @@ window.TabsNovos = {
   Fnde: TabsFnde,
   Municipio: TabsMunicipio,
   DeputadoExtra,
+  RagEfficiency: TabsRagEfficiency,
 };

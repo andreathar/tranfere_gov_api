@@ -52,12 +52,14 @@ class AnalistaDiscursos(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        # Data-first (2026-08-10, golden set): usar SEMPRE os chunks crus. O
-        # briefing sintetizado induz confabulação no modelo 3B (mesmo padrão
-        # de cruzamento/rede_politica/anomalias — ADOLFO VIANA QC 40.0).
-        # Os discursos crus são a fonte literal do posicionamento público.
-        ctx = self._format_context(context)
-        origem = "DISCURSOS DE PLENÁRIO"
+        # GPU zero-gemma4 (2026-08-12): Agora suportamos o briefing sintetizado
+        # com maior precisão e menor risco de confabulação do modelo legado 3B.
+        if briefing and briefing.is_useful:
+            ctx = self._format_briefing(briefing)
+            origem = "BRIEFING SINTETIZADO DE DISCURSOS"
+        else:
+            ctx = self._format_context(context)
+            origem = "DISCURSOS DE PLENÁRIO"
 
         return f"""Analise os discursos do deputado federal {nome} no plenário da Câmara.
 

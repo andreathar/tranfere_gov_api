@@ -43,9 +43,9 @@ class AreasTematicas(AnalystBase):
         "[DISCURSO_PLENARIO]",
     ]
     min_chunks = 2
-    # Data-first: usar os chunks crus (que trazem "Distribuição por área" com
-    # TOTAIS EXATOS) em vez do briefing do preparer. O modelo fabrica valores
-    # ao agregar; com os totais literais no contexto ele só transcreve.
+    # Ativar preparer para sintetizar contexto e evitar prompts gigantescos (>18k chars) que causam timeout no LocalAI
+    use_preparer = True
+    # Usar chunks crus para manter os valores R$ exatos da distribuição por área, mas com limite de 12.000 chars
     use_preparer = False
 
     system_prompt = (
@@ -63,7 +63,7 @@ class AreasTematicas(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        ctx = self._format_context(context)
+        ctx = self._format_context(context, max_chars=9500)
         origem = "DADOS (EMENDAS + PROPOSIÇÕES + DISCURSOS)"
 
         return f"""Identifique as áreas que mais receberam recursos do deputado federal {nome} via emendas e compare com a produção legislativa e os discursos dele.

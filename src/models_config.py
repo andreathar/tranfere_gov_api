@@ -584,6 +584,33 @@ def get_config(model_name: str) -> ModelConfig | None:
     return configs.get(model_name)
 
 
+def get_model_parallel(model_name: str) -> int | None:
+    """Retorna o valor de `parallel` configurado no YAML do modelo.
+
+    Returns:
+        int  — valor explícito de `parallel` (ex: 1 = serial, 2 = dois slots)
+        None — campo não definido no YAML (LocalAI auto-tuning decide)
+    """
+    cfg = get_config(model_name)
+    if cfg is None:
+        return None
+    raw = cfg.raw_yaml
+    # `parallel` pode estar no top-level ou dentro de `parameters`
+    if "parallel" in raw:
+        try:
+            return int(raw["parallel"])
+        except (TypeError, ValueError):
+            return None
+    if "parameters" in raw and isinstance(raw["parameters"], dict):
+        val = raw["parameters"].get("parallel")
+        if val is not None:
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def set_kv_offloading(model_name: str, enabled: bool) -> bool:
     """Ativa/desativa o offloading do KV cache para RAM.
 

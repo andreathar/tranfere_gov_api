@@ -1147,6 +1147,7 @@ def generate_persona_analysis(
 
 
 def main() -> None:
+    global RAG_LLM_MODEL
     parser = argparse.ArgumentParser(
         description="Gera dossies comportamentais via RAG v8 (multi-query + RRF, multi-cargo)"
     )
@@ -1169,7 +1170,7 @@ def main() -> None:
     parser.add_argument(
         "--modelo",
         type=str,
-        default=None,
+        default="Qwen2.5-Coder-7B-Instruct-GGUF",
         help="Modelo LLM para persona (padrão: llama-3.2-3b-instruct:q4_k_m)",
     )
     parser.add_argument(
@@ -1192,6 +1193,7 @@ def main() -> None:
         import config.settings as _s
 
         _s.RAG_LLM_MODEL = args.modelo
+        RAG_LLM_MODEL = args.modelo
 
     # --- Modo lote ---
     if args.lote:

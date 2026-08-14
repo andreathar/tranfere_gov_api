@@ -77,7 +77,7 @@ Modelo de embeddings: `embeddinggemma-300m` (768d) | Metrica: Cosine | Checkpoin
 
 **23 tipos de chunks indexados** (exemplos): `perfil`, `parlamentar_resumo`, `emenda`, `emenda_discricionaria`, `beneficiario`, `voto`, `proposicao`, `discurso_plenario`, `conexao_politica`, `risco_judicial`, `compras_municipio`, `demografia_municipio`, `municipio_financeiro`, `estado_financeiro`, `indicadores_sociais`, `indicadores_municipal`, `fnde_repasses`, `diario_oficial`, `senador`, `prefeito`, `vereadores_resumo`, `parlamentar_alertas`, `persona_existente`.
 
-Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types voto,emenda`, `--rebuild`, `--checkpoint`. Cada chunk type é isolado em try/except — falha em um não aborta os demais.
+Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types voto,emenda`, `--rebuild`, `--checkpoint`. Cada chunk type é isolado em try/except — falha em um não aborta os demais. **NOTA**: Para indexar TODOS os deputados, não use `--todos` (ele é ignorado para deputados), use `--limit 600`.
 
 ### Gerador de Personas (`rag_persona.py`) — RAG v7 Multi-Analista
 
@@ -211,7 +211,7 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 19. `votacoes_temas.py` depende do LocalAI com modelo `llama` carregado -- se o modelo nao estiver disponivel, o script falha ao classificar temas
 20. `fnde.py` depende de APIs OData v4 do FNDE (Olinda) -- se indisponiveis, nao ha fallback e a fase retorna vazio
 21. `diario_oficial_worker.py` usa MCP para busca + LLM para NER -- dupla dependencia externa (MCP server + LocalAI)
-22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` e modelo `embeddinggemma-300m` carregado no LocalAI -- sem esses, indexacao falha (nomic-embed-text-v1.5 foi substituído)
+22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` (versão v1.19.0+) e modelo `embeddinggemma-300m` carregado no LocalAI -- sem esses, indexacao falha (nomic-embed-text-v1.5 foi substituído). Verifique se o modelo possui YAML configurado para acelerar via GPU (`backend: cuda13-llama-cpp`).
 23. `rag_persona.py` usa Multi-Query RAG v7 (15 queries + 7 analistas + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
 24. `tcu_compras.py` e auditoria/consulta (nao enriquecimento) -- nao escreve tabelas novas, usa MCP para consultas sob demanda
 25. `tse_deputados.py` sincroniza dados eleitorais do TSE com `parlamentares_dados` -- requer que `camara.py` (fase 2) tenha rodado antes para popular a tabela base

@@ -89,6 +89,7 @@ async def sync_prefeitos(
     unmatched_count = 0
 
     for r in tse_rows:
+        sq_candidato = r.get("sq_candidato")
         nome_candidato = r.get("nm_candidato") or r.get("nm_urna_candidato") or ""
         partido = r.get("sg_partido") or ""
         uf = (r.get("sg_uf") or "").upper()
@@ -113,6 +114,7 @@ async def sync_prefeitos(
                     situacao,
                     coligacao,
                     vice_nome,
+                    sq_candidato,
                 )
             )
         else:
@@ -128,9 +130,9 @@ async def sync_prefeitos(
         insert_sql = """
             INSERT INTO prefeitos_dados (
                 municipio_id, municipio_nome, uf, prefeito_nome,
-                sigla_partido, ano_eleicao, situacao_candidatura, coligacao, vice_prefeito_nome, updated_at
+                sigla_partido, ano_eleicao, situacao_candidatura, coligacao, vice_prefeito_nome, sq_candidato, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (municipio_id) DO UPDATE SET
                 prefeito_nome = EXCLUDED.prefeito_nome,
                 sigla_partido = EXCLUDED.sigla_partido,
@@ -138,6 +140,7 @@ async def sync_prefeitos(
                 situacao_candidatura = EXCLUDED.situacao_candidatura,
                 coligacao = EXCLUDED.coligacao,
                 vice_prefeito_nome = EXCLUDED.vice_prefeito_nome,
+                sq_candidato = EXCLUDED.sq_candidato,
                 updated_at = NOW()
         """
         cur.executemany(insert_sql, matched_records)

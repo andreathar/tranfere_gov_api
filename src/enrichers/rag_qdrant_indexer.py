@@ -368,6 +368,22 @@ def _extract_emendas(cur: Any, deputado_id: int, nome: str) -> list[dict[str, An
             }
         )
 
+    # Detalhes Individuais das Emendas: agrupado por status
+    for idx, row in enumerate(rows[:50]): # Limite de 50 para evitar OOM no indexing
+        municipio, emp_uf, obj, valor, status = row[0], row[1], row[2], row[3], row[4]
+        if valor is not None:
+            docs.append(
+                {
+                    "text": (
+                        f"Emenda PIX individual do deputado {nome} para {municipio}-{emp_uf} "
+                        f"em área de {obj}. Valor: R$ {float(valor):,.2f}. Status: {status}."
+                    ),
+                    "type": "emenda_detalhe",
+                    "deputado_id": deputado_id,
+                    "ref": f"Emenda {idx} para {municipio}",
+                }
+            )
+
     # Resumo por OBJETO (área temática): TOTAL EXATO de cada área, para o
     # analista de temáticas ranquear áreas citando valores literais em vez de
     # estimar/somar (mesmo approach do resumo por município que consertou o
@@ -2177,7 +2193,7 @@ def main() -> None:
     parser.add_argument(
         "--eleitos",
         action="store_true",
-        help="Vereadores: só candidatos ELEITOS (situacao_candidatura ILIKE '%eleito%')",
+        help="Vereadores: só candidatos ELEITOS (situacao_candidatura ILIKE '%%eleito%%')",
     )
     parser.add_argument(
         "--pop-min",

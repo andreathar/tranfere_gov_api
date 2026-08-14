@@ -472,9 +472,18 @@ class AnalystBase(ABC):
         """
         ...
 
-    def _format_context(self, context: list[str]) -> str:
-        """Formata a lista de chunks para inclusao no prompt."""
-        return "\n".join(f"  - {c}" for c in context)
+    def _format_context(self, context: list[str], max_chars: int = 18000) -> str:
+        """Formata a lista de chunks para inclusao no prompt com limite de caracteres."""
+        formatted: list[str] = []
+        total_chars = 0
+        for c in context:
+            line = f"  - {c}"
+            if total_chars + len(line) > max_chars:
+                formatted.append("  - [...demais chunks omitidos para limite de contexto...]")
+                break
+            formatted.append(line)
+            total_chars += len(line)
+        return "\n".join(formatted)
 
     def _format_briefing(self, briefing: Briefing) -> str:
         """Formata o briefing para inclusao no prompt.

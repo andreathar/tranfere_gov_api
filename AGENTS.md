@@ -58,9 +58,11 @@ python3 -m src.enrichers.governadores [--dry-run] [--limit N]
 python3 -m src.enrichers.violencia [--dry-run] [--uf UF] [--ano ANO]
 python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 
-# Diagnóstico Qdrant
+# Diagnóstico Qdrant & RAG Efficiency
 ./run.sh qdrant-status                          # painel de status da indexação
 ./run.sh qdrant-staleness                       # deputados desatualizados vs checkpoint
+./run.sh rag-efficiency --politico-id 4291      # RAG Efficiency Metrics (Retrieval + Generation)
+./run.sh logit-lens-runner --run-id 1           # Logit Lens Offline Panel (Emergence Layer)
 
 # vLLM (engine alternativa ao LocalAI)
 ./run.sh vllm start|stop|status|chat            # gerencia server vLLM local (porta 8001)
@@ -145,6 +147,7 @@ src/
 │   ├── classificador.py | perfil.py | tematicas.py | cruzamento.py
 │   └── alinhamento.py | discursos.py | anomalias.py
 ├── mcp_tool_bridge.py        Ponte MCP ↔ modelos locais
+├── rag_efficiency_collector.py Coleta de métricas (hit rate, faithfulness)
 ├── api/                      FastAPI (ver src/api/AGENTS.md)
 │   ├── app.py                  App principal
 │   ├── routes/                 8 routers (deputados, prefeitos, analytics, auditoria, diario, compras, vereadores, fnde)
@@ -163,8 +166,8 @@ src/
     ├── diario_oficial_worker.py | sync_proposicoes.py
     ├── votacoes_camara.py | votacoes_temas.py
 config/settings.py            API, DB, paths, ENRICH_*
-data/                         schema.sql, migrations 002-014, swagger.yaml
-scripts/                      db_inspect.sh, run_siconfi_batch.sh
+data/                         schema.sql, migrations 002-040, swagger.yaml
+scripts/                      db_inspect.sh, run_siconfi_batch.sh, logit_lens_runner.py
 docs/                         MIGRATIONS.md, manual.txt, plans/
 output/                       Gitignored (xlsx, csv, json, logs)
 ```
@@ -380,6 +383,7 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
   - `./run.sh cron-qdrant --limit 10` — indexa N deputados mais relevantes
   - `./run.sh cron-qdrant --nome "Nome"` — indexa deputado específico
   - `./run.sh cron-qdrant --diff --limit 50` — **modo incremental**: pula chunks com hash inalterado (mais rápido)
+  - `./run.sh cron-qdrant --limit 600` — **modo todos deputados**: para processar todos os deputados, `--limit` alto é obrigatório, pois `--todos` é ignorado para cargo deputado.
   - `./run.sh cron-qdrant --types voto,emenda` — indexa **apenas tipos específicos**
   - `./run.sh cron-qdrant --rebuild` — limpa e reindexa tudo do zero
   - `./run.sh cron-qdrant --checkpoint` — força criação da tabela de checkpoint
@@ -411,6 +415,13 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 - **PromptPreparer (`src/analysts/preparer.py`)**: sintetiza até 8 chunks brutos → **Briefing estruturado + Fact Table + Insights** usando modelo rápido (`PREPARER_MODEL`), com **validação de fidelidade numérica R$** pós-geração — reduz tokens do analista principal em 5-10x e preserva exatidão
 - **Retry com fallback**: se o modelo falhar ou reprovar no quality check, tenta automaticamente `RAG_FALLBACK_MODEL` (`RAG_MAX_RETRIES`)
 - Roda via: `./run.sh cron-dossie --lote 50` ou `./run.sh cron-dossie --nome "Nome" --modelo llama-3.2-3b-instruct:q4_k_m`
+
+### RAG Efficiency & Logit Lens
+Métricas automáticas de performance do pipeline RAG:
+1. **Retrieval Efficiency**: `hit_rate@k` e `mrr` baseados em um Golden Set dinâmico extraído do banco relacional (ex: total emendas, partido, UF).
+2. **Generation Efficiency**: `faithfulness` via **juiz híbrido** — match lexical normalizado (exato/limite de palavra, sem custo de LLM) e LLM-as-a-judge só em caso ambíguo (RAG Answer vs Golden Answer).
+3. **Groundedness via Logit Lens**: Pipeline offline (`scripts/logit_lens_runner.py`) usando HF `transformers` para medir em qual camada de atenção (emergence layer) o modelo sabe a resposta. Ajuda a distinguir grounding real de alucinação (guessing).
+- Registrado no DB (`rag_efficiency_runs` e `rag_efficiency_metrics`). Dashboard visual na aba de Auditoria.
 
 ### Quality Check v7
 
@@ -448,14 +459,17 @@ Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSI�
 12. Novos gráficos: `@register_chart` em módulo `src/graphs/`, auto-import via `__init__.py`
 13. Portal da Transparência: requer `TRANSPARENCIA_API_KEY` no `.env` (definir via variável de ambiente)
 14. Connection pooling: `psycopg2.pool.ThreadedConnectionPool` (min=2, max=10)
-14. RREO A03 (`--rreo`): usa `nr_periodo=6` (consolidação anual), parser normaliza acentos
-15. VRAM LocalAI: sempre invocar `localai_manager.ensure_model_loaded(model)` antes de requisições pesadas para evitar crash de GPU
-16. Qdrant: collection `deputados_perfis` requer embedding `embeddinggemma-300m` (768d) — não misturar dimensões (nomic-embed-text-v1.5 foi substituído)
-17. MCP Tool Bridge: `mcp_tool_bridge.py` depende de `localai_manager` — verificar GPU antes de invocar
-18. Diario Oficial: worker (`diario_oficial_worker.py`) faz scraping web — quebra se layout do DOU mudar
-19. RAG v7: `PREPARER_MODEL` (zero-gemma4, 21.9 tok/s) substituiu qwen2.5-1.5b no PromptPreparer — qwen dava timeout; cada analista tem QC próprio e ativação adaptativa (`get_active_analysts()`)
-20. Migrations 015-025: série `parlamentar_id` unifica a identidade do parlamentar (JOIN por ID em vez de nome/ILIKE) — novas queries devem usar `parlamentar_id` quando disponível
-21. vLLM: `USE_LOCAL_VLLM`/`USE_MODAL_VLLM` no `.env`; local roda na porta 8001 (não conflitar com LocalAI :8080). `models_config.py` altera YAMLs do LocalAI em disco — revisar antes de `docker restart`
+15. RREO A03 (`--rreo`): usa `nr_periodo=6` (consolidação anual), parser normaliza acentos
+16. VRAM LocalAI: sempre invocar `localai_manager.ensure_model_loaded(model)` antes de requisições pesadas para evitar crash de GPU
+17. Qdrant: atualizado para **v1.19.0**. Collection `deputados_perfis` requer embedding `embeddinggemma-300m` (768d) — não misturar dimensões (nomic-embed-text-v1.5 foi substituído)
+18. MCP Tool Bridge: `mcp_tool_bridge.py` depende de `localai_manager` — verificar GPU antes de invocar
+19. Diario Oficial: worker (`diario_oficial_worker.py`) faz scraping web — quebra se layout do DOU mudar
+20. RAG v7: `PREPARER_MODEL` (zero-gemma4, 21.9 tok/s) substituiu qwen2.5-1.5b no PromptPreparer — qwen dava timeout; cada analista tem QC próprio e ativação adaptativa (`get_active_analysts()`)
+21. Migrations 015-025: série `parlamentar_id` unifica a identidade do parlamentar (JOIN por ID em vez de nome/ILIKE) — novas queries devem usar `parlamentar_id` quando disponível
+22. vLLM: `USE_LOCAL_VLLM`/`USE_MODAL_VLLM` no `.env`; local roda na porta 8001 (não conflitar com LocalAI :8080). `models_config.py` altera YAMLs do LocalAI em disco — revisar antes de `docker restart`
+23. **Qdrant Indexação em Lote**: Ao rodar `./run.sh cron-qdrant --todos`, o script ignora a flag se o tipo for `deputado`. Para processar todos os deputados de uma vez, é OBRIGATÓRIO passar `--limit 600` (ou valor maior).
+24. **LocalAI GPU**: Modelos baixados da galeria (como `embeddinggemma-300m` e `gemma-4`) podem vir sem YAML local, caindo para CPU-fallback (`cpu-llama-cpp`). Para forçar aceleração via GPU, deve-se criar manualmente o YAML (ex: `embeddinggemma-300m.yaml`) definindo `backend: cuda13-llama-cpp` e `gpu_layers: 40`.
+25. **Integração API Câmara**: Os scripts `votacoes_camara.py` e `camara_discursos.py` buscam dados nativamente da API REST da Câmara (dadosabertos.camara.leg.br) para 2026, ignorando o proxy local do DuckDB (utilizado para dados históricos do TSE).
 
 ---
 

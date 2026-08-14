@@ -31,6 +31,7 @@ CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
     ],
     "tematicas": [
         "[EMENDA]",
+        "[EMENDA_DETALHE]",
         "[EMENDA_DISCRICIONARIA]",
         "[PROPOSICAO]",
         "[DISCURSO_PLENARIO]",
@@ -39,6 +40,7 @@ CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
         # Todos os tipos — visao 360°
         "[VOTO]",
         "[EMENDA]",
+        "[EMENDA_DETALHE]",
         "[PROPOSICAO]",
         "[DISCURSO_PLENARIO]",
         "[DIARIO_OFICIAL]",
@@ -69,6 +71,7 @@ CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
         "[VEREADORES_RESUMO]",
         "[ESTADO_FINANCEIRO]",
         "[EMENDA]",
+        "[EMENDA_DETALHE]",
         "[DIARIO_OFICIAL]",
     ],
     "discursos": [
@@ -76,6 +79,7 @@ CHUNK_TYPE_TO_ANALYST: dict[str, list[str]] = {
     ],
     "anomalias": [
         "[EMENDA]",
+        "[EMENDA_DETALHE]",
         "[CONEXAO_POLITICA]",
         "[RISCO_JUDICIAL]",
         "[COMPRAS_MUNICIPIO]",

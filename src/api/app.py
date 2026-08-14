@@ -33,6 +33,7 @@ from src.api.routes import (
     prefeitos,
     senadores,
     vereadores,
+    rag_efficiency,
 )
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,9 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytic
 
 # Register auditoria routes
 app.include_router(auditoria.router, prefix="/api/v1/auditoria", tags=["auditoria"])
+
+# Register RAG Efficiency routes
+app.include_router(rag_efficiency.router, prefix="/api/v1/rag-efficiency", tags=["rag", "efficiency"])
 
 # Register diario oficial routes
 app.include_router(diario.router, prefix="/api/v1/diario", tags=["diario"])

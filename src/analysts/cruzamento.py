@@ -53,13 +53,14 @@ class CruzamentoDados(AnalystBase):
         nome: str,
         briefing: Briefing | None = None,
     ) -> str:
-        # Data-first (2026-08-10, golden set): usar SEMPRE os chunks crus. O
-        # briefing sintetizado induz confabulação no modelo 3B (ADOLFO VIANA
-        # inventou "emenda nº 1234", "Senador João" — fatos sem fonte). Os
-        # chunks crus trazem os totais exatos literais (resumos por área/
-        # município) e a instrução de literalidade abaixo basta para citá-los.
-        ctx = self._format_context(context)
-        origem = "TODOS OS DADOS DISPONÍVEIS"
+        # GPU zero-gemma4 (2026-08-12): Agora suportamos o briefing sintetizado
+        # com maior precisão e menor risco de confabulação do modelo legado 3B.
+        if briefing and briefing.is_useful:
+            ctx = self._format_briefing(briefing)
+            origem = "BRIEFING SINTETIZADO (VISÃO 360°)"
+        else:
+            ctx = self._format_context(context)
+            origem = "TODOS OS DADOS DISPONÍVEIS"
 
         return f"""Realize uma análise de pragmatismo político do deputado federal {nome}, cruzando TODAS as fontes disponíveis.
 
