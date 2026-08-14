@@ -67,6 +67,14 @@ _LARGE_MODEL_THRESHOLD_MIB = 4000
 _VRAM_WAIT_TIMEOUT = float(os.getenv("LOCALAI_VRAM_WAIT_TIMEOUT", "60.0"))
 
 
+class LocalAIMonitorError(RuntimeError):
+    """Falha indeterminada do /backend/monitor — modelo pode estar carregado.
+
+    Levantada quando o monitor retorna erro de backend (gRPC morto, EOF,
+    conexão recusada) e não há como afirmar que o modelo NÃO está na memória.
+    """
+
+
 class LocalAIManager:
     """Gerencia modelos no LocalAI com orquestração inteligente de VRAM.
 
@@ -99,6 +107,8 @@ class LocalAIManager:
         # agora cada decisão de VRAM passa por este RLock (reentrante).
         self._lock = threading.RLock()
         self._cond = threading.Condition(self._lock)
+        # Contador de falhas indeterminadas do /backend/monitor (LocalAIMonitorError)
+        self._monitor_failures: int = 0
 
     # ------------------------------------------------------------------
     # HTTP helpers (mantidos do original)
@@ -220,16 +230,28 @@ class LocalAIManager:
             timeout=3,
         )
         if resp is None:
-            return False
+            raise LocalAIMonitorError(
+                f"Falha ao consultar /backend/monitor para {model_id}: resposta vazia"
+            )
         if resp.status_code == 200:
             return True
         if resp.status_code == 500:
             text = resp.text.lower()
-            if "is not currently loaded" in text or "no grpc backend" in text:
+            if "is not currently loaded" in text:
                 return False
-            # Backend morto (processo encerrado) — gRPC não responde
-            if "unimplemented" in text or "eof" in text:
-                return False
+            if (
+                "no grpc backend" in text
+                or "connection refused" in text
+                or "connection error" in text
+                or "rpc error" in text
+                or "unimplemented" in text
+                or "eof" in text
+            ):
+                raise LocalAIMonitorError(
+                    f"/backend/monitor para {model_id} retornou backend indisponível "
+                    f"(HTTP 500): {resp.text[:300]}"
+                )
+            return False
         return False
 
     def is_model_active_internal(self, model_id: str) -> bool:
@@ -391,6 +413,26 @@ class LocalAIManager:
         """Corpo real de _sync_from_localai (chamar apenas com self._lock)."""
         try:
             loaded = self.get_currently_loaded()
+        except LocalAIMonitorError as exc:
+            # Falha indeterminada do monitor: NÃO podemos afirmar que o modelo
+            # saiu da memória — preserva o tracker para não criar órfão.
+            self._monitor_failures += 1
+            logger.error("sync_from_localai: monitor indeterminado (%s) — tracker preservado", exc)
+            try:
+                from src.localai_metrics import metrics
+
+                metrics.record(
+                    model="monitor",
+                    endpoint="/backend/monitor",
+                    latency_ms=0,
+                    tokens=0,
+                    error=True,
+                )
+            except Exception:
+                pass
+            return
+        try:
+            self._monitor_failures = 0
             # Remove do tracker o que não está mais carregado
             for model_id in list(self._loaded_models.keys()):
                 if model_id not in loaded:
@@ -553,7 +595,18 @@ class LocalAIManager:
             return
 
         # --- Verificar se o LocalAI já tem o modelo (Cognee pode ter carregado) ---
-        if not self.is_model_active_internal(target_model) and self.is_model_loaded(target_model):
+        try:
+            ja_carregado = self.is_model_active_internal(
+                target_model
+            ) or self.is_model_loaded(target_model)
+        except LocalAIMonitorError as exc:
+            logger.warning(
+                "ensure_model_loaded: monitor indeterminado para %s (%s) — assumindo não carregado",
+                target_model,
+                exc,
+            )
+            ja_carregado = False
+        if not self.is_model_active_internal(target_model) and ja_carregado:
             logger.info(
                 "Modelo %s já está carregado no LocalAI (ex: Cognee). Rastreando.", target_model
             )
@@ -1081,9 +1134,16 @@ class LocalAIManager:
     ) -> bool:
         start = time.monotonic()
         while time.monotonic() - start < timeout:
-            if self.is_model_loaded(model_id):
-                logger.info("Modelo %s carregado em %.1fs.", model_id, time.monotonic() - start)
-                return True
+            try:
+                if self.is_model_loaded(model_id):
+                    logger.info("Modelo %s carregado em %.1fs.", model_id, time.monotonic() - start)
+                    return True
+            except LocalAIMonitorError as exc:
+                logger.warning(
+                    "wait_for_model_loaded: monitor indeterminado para %s (%s) — aguardando",
+                    model_id,
+                    exc,
+                )
             time.sleep(interval)
         logger.warning("Timeout aguardando carregamento de %s (%.1fs).", model_id, timeout)
         return False
@@ -1106,7 +1166,13 @@ class LocalAIManager:
                 if resp.status_code == 200:
                     logger.info("Warmup de %s concluido.", model_id)
                     return True
-                logger.warning("Warmup de %s retornou HTTP %d.", model_id, resp.status_code)
+                corpo = resp.text[:300] if resp.text else ""
+                logger.warning(
+                    "Warmup de %s retornou HTTP %d.%s",
+                    model_id,
+                    resp.status_code,
+                    f" Corpo: {corpo}" if corpo else "",
+                )
                 return False
         except Exception as exc:
             logger.warning("Warmup de %s falhou: %s", model_id, exc)
@@ -1140,8 +1206,13 @@ class LocalAIManager:
         loaded: list[str] = []
         check_models = [model] if model else models[:5]
         for m in check_models:
-            if self.is_model_loaded(m):
-                loaded.append(m)
+            try:
+                if self.is_model_loaded(m):
+                    loaded.append(m)
+            except LocalAIMonitorError as exc:
+                logger.warning(
+                    "health_check: monitor indeterminado para %s (%s) — ignorando", m, exc
+                )
 
         status = "ok" if (not model or model in loaded) else "degraded"
         if cb_status["state"] != "closed":

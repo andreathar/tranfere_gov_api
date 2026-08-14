@@ -41,6 +41,7 @@ Comandos:
   cron-diario        Roda o worker do Diário Oficial (baixa DOU e gera resumo)
    qdrant-status      Status da indexação no Qdrant (vetores, deputados, cobertura)
    qdrant-staleness   Staleness do Qdrant — deputados desatualizados vs checkpoint
+   localai-health     Saúde do LocalAI (API, modelos, VRAM, circuit breaker)
    cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
    vllm               Gerencia servidor vLLM local (start|stop|status|chat) — ver scripts/serve_vllm.sh
    vllm-bench         Benchmark comparativo vLLM vs LocalAI — ver scripts/benchmark_vllm_vs_localai.py
@@ -127,6 +128,9 @@ case "${1:-help}" in
         ;;
     qdrant-staleness)
         $PYTHON -m src.qdrant_staleness "${@:2}"
+        ;;
+    localai-health)
+        $PYTHON -m src.localai_health "${@:2}"
         ;;
     cron-diario)
         $PYTHON -m src.enrichers.diario_oficial_worker "${@:2}"

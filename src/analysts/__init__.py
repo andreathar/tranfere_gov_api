@@ -326,6 +326,7 @@ def run_analyst_pipeline(
                         use_preparer=use_preparer,
                         shared_briefing=_briefing,
                         tipo_politico=tipo_politico,
+                        politico_id=deputado_id,
                     )
                 except Exception as e:
                     log.error(f"Analista {_aid} falhou: {e}")

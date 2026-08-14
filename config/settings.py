@@ -153,8 +153,8 @@ USE_MODAL_VLLM = os.getenv("USE_MODAL_VLLM", "false").lower() == "true"
 
 # Modelos categorizados por tarefa (validados via benchmark de qualidade/desempenho)
 LOCALAI_MODELS = {
-    # Dossiê comportamental RAG (Melhor qualidade 100/100, 18.3s, 24 tok/s)
-    "dossie": "llama-3.2-3b-instruct:q4_k_m",
+    # Dossiê comportamental RAG (padrão; registry LocalAI local)
+    "dossie": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Análise profunda / auditoria pesada (agente customizado)
     "analysis": "agente-dossie-investigativo",
     # Tarefas ultra-rápidas / Triagem (agente rápido — 7.4s, 83.9 tok/s)
@@ -164,7 +164,7 @@ LOCALAI_MODELS = {
     # Código
     "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Uso geral
-    "general": "llama-3.2-3b-instruct:q4_k_m",
+    "general": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Embeddings
     "embedding": "embeddinggemma-300m",
     # Roteamento inteligente
@@ -173,6 +173,9 @@ LOCALAI_MODELS = {
 
 # Modelo padrão para jobs de pipeline
 LOCALAI_DEFAULT_MODEL = LOCALAI_MODELS["dossie"]
+
+# Telemetria QC dos analistas RAG (persistir resultados em dossie_analyst_qc)
+RAG_PERSIST_QC = os.getenv("RAG_PERSIST_QC", "false").lower() == "true"
 
 # ---------------------------------------------------------------------------
 # vLLM Local — Engine de inferência local alternativa (GGUF models)
@@ -272,9 +275,10 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_COLLECTION = "deputados_perfis"
 EMBEDDER_MODEL = "embeddinggemma-300m"
 EMBEDDING_DIM = 768
-RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "llama-3.2-3b-instruct:q4_k_m")
+RAG_LLM_MODEL = os.getenv("RAG_LLM_MODEL", "Qwen2.5-Coder-7B-Instruct-GGUF")
+PREPARER_MODEL = os.getenv("PREPARER_MODEL", "Qwen2.5-Coder-7B-Instruct-GGUF")
 # Fallback: se o modelo principal falhar ou quality check reprovar, tenta este
-RAG_FALLBACK_MODEL = os.getenv("RAG_FALLBACK_MODEL", "llama-3.2-3b-instruct:q4_k_m")
+RAG_FALLBACK_MODEL = os.getenv("RAG_FALLBACK_MODEL", "Qwen2.5-Coder-7B-Instruct-GGUF")
 RAG_PERSONA_VERSION = (
     8  # v8: 6 analistas (votacao fundido, rede_politica novo) + briefing único + QC estruturado
 )

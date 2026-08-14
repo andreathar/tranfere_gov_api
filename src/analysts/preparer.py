@@ -24,11 +24,14 @@ Uso:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
+
+from config.settings import PREPARER_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +44,6 @@ log = logging.getLogger(__name__)
 # era thinking (max_tokens baixo = content vazio). zero-gemma4-e4b-openzero:
 # reasoning model validado a 21.9 tok/s (gpu_layers=40), preserva R$ com
 # fidelidade — melhor para síntese de dados. Pode ser sobrescrito via PREPARER_MODEL env var.
-PREPARER_MODEL = "zero-gemma4-e4b-openzero-q5-k-m"
 
 # Máximo de chunks enviados ao preparador por chamada.
 # ALTERADO 2026-08-10 (Fase 1 refactor): 8 -> 14 com truncamento SELETIVO por tipo
@@ -57,6 +59,7 @@ PREPARER_MAX_PROMPT_CHARS = 14000
 # DISCURSO dão o contexto temático; CONEXAO_POLITICA e demais completam a rede.
 PREPARER_CHUNK_PRIORITY: list[str] = [
     "[EMENDA]",
+    "[EMENDA_DETALHE]",
     "[EMENDA_DISCRICIONARIA]",
     "[VOTO]",
     "[PROPOSICAO]",
@@ -218,7 +221,8 @@ INSTRUÇÕES:
 2. Agrupe fatos relacionados por tema.
 3. Destaque contradições, anomalias ou padrões relevantes.
 4. Remova informações redundantes ou irrelevantes para a seção "{section_title}".
-5. Seja conciso — máximo 800 palavras.
+5. ATENÇÃO MÁXIMA PARA NÚMEROS: Ao gerar a Fact Table, nunca some ou agregue valores por conta própria. Mantenha as categorias e totais EXATAMENTE como fornecidos nos resumos (ex: totais de emendas PIX ou de áreas).
+6. Seja conciso — máximo 800 palavras.
 
 FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 
@@ -226,9 +230,10 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 [Síntese narrativa em 2-4 parágrafos, organizada por tema, com números exatos]
 
 ---FACT TABLE---
-| Categoria | Entidade | Valor | Detalhe |
+| Categoria | Entidade | Valor Financeiro/Quantitativo | Detalhe |
 [Linhas de dados, uma por linha, pipe-separated. Ex:]
-| Emenda PIX | Município X | R$ 1.500.000,00 | Objeto: Saúde |
+| Total de Emendas PIX | Deputado | R$ 28.788.030,99 | Conforme [PARLAMENTAR_RESUMO] |
+| Emendas | Município X | R$ 1.500.000,00 | Objeto: Saúde |
 | Votação | PL 123/2024 | Sim | Tema: Educação |
 
 ---KEY INSIGHTS---
@@ -250,12 +255,15 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
                 reduzidos, analyst_persona, section_title, nome, _depth=_depth + 1
             )
         elif len(prompt) > PREPARER_MAX_PROMPT_CHARS:
-            # Último recurso: corta o texto dos chunks (prefixo + 1200 chars).
+            # Último recurso: corta o texto dos chunks preservando a cauda
+            # (onde ficam os valores R$ e totais agregados)
             log.warning(
                 f"Preparer: prompt ainda excede {PREPARER_MAX_PROMPT_CHARS} chars "
                 f"({len(prompt)}), truncando texto dos chunks."
             )
-            chunks_curtos = [c[:1200] + "…" if len(c) > 1200 else c for c in chunks]
+            chunks_curtos = [
+                (c[:800] + "\n[…]" + c[-400:]) if len(c) > 1200 else c for c in chunks
+            ]
             return self._build_prep_prompt(
                 chunks_curtos, analyst_persona, section_title, nome, _depth=3
             )
@@ -298,11 +306,74 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
                 if line.strip().startswith("-")
             ]
 
-        # Se não extraiu briefing formatado, usa resposta inteira
+        # Se não extraiu briefing formatado, tenta formatos alternativos
+        if not briefing.text and not briefing.fact_table:
+            self._parse_alternativos(briefing, resposta)
+
+        # Último recurso: usa resposta inteira
         if not briefing.text and not briefing.fact_table:
             briefing.text = resposta.strip()
 
         return briefing
+
+    def _parse_alternativos(self, briefing: Briefing, resposta: str) -> None:
+        """Tenta JSON, Markdown (##) ou rótulos (:) quando o formato --- não foi usado."""
+        texto = resposta.strip()
+
+        # (a) JSON: objeto único com briefing/fact_table/insights
+        bloco_json = None
+        try:
+            inicio = texto.find("{")
+            fim = texto.rfind("}")
+            if inicio != -1 and fim > inicio:
+                bloco_json = texto[inicio : fim + 1]
+                dados = json.loads(bloco_json)
+                if isinstance(dados, dict):
+                    briefing.text = str(
+                        dados.get("briefing") or dados.get("text") or dados.get("texto") or ""
+                    ).strip()
+                    ft = dados.get("fact_table") or dados.get("fatos")
+                    briefing.fact_table = str(ft).strip() if ft else ""
+                    ins = dados.get("insights") or dados.get("secoes")
+                    if isinstance(ins, list):
+                        briefing.insights = [str(x).strip() for x in ins if str(x).strip()]
+        except (ValueError, TypeError, AttributeError):
+            bloco_json = None
+        if briefing.text or briefing.fact_table:
+            return
+
+        # (b) Markdown: seções ## BRIEFING / ## FACT TABLE / ## KEY INSIGHTS
+        if re.search(r"^##\s*BRIEFING", texto, re.MULTILINE | re.IGNORECASE):
+            _md = re.split(r"^##\s*FACT TABLE|^##\s*KEY INSIGHTS", texto, flags=re.MULTILINE | re.IGNORECASE)
+            if _md:
+                briefing.text = _md[0].split("## BRIEFING", 1)[-1].split("## briefing", 1)[-1].strip()
+            m_ft = re.search(r"^##\s*FACT TABLE\s*\n(.*?)(?=^##|\Z)", texto, re.MULTILINE | re.IGNORECASE | re.DOTALL)
+            if m_ft:
+                briefing.fact_table = m_ft.group(1).strip()
+            m_ins = re.search(r"^##\s*KEY INSIGHTS\s*\n(.*?)(?=^##|\Z)", texto, re.MULTILINE | re.IGNORECASE | re.DOTALL)
+            if m_ins:
+                briefing.insights = [
+                    line.strip().lstrip("- ").strip()
+                    for line in m_ins.group(1).split("\n")
+                    if line.strip().startswith("-")
+                ]
+            if briefing.text or briefing.fact_table:
+                return
+
+        # (c) Rótulos: "BRIEFING:" / "Fact Table:" / "Key Insights:"
+        m_b = re.search(r"BRIEFING:\s*(.*?)(?=Fact Table:|Key Insights:|\Z)", texto, re.DOTALL | re.IGNORECASE)
+        if m_b:
+            briefing.text = m_b.group(1).strip()
+        m_ft = re.search(r"Fact Table:\s*(.*?)(?=Key Insights:|\Z)", texto, re.DOTALL | re.IGNORECASE)
+        if m_ft:
+            briefing.fact_table = m_ft.group(1).strip()
+        m_ins = re.search(r"Key Insights:\s*(.*?)(?=\Z)", texto, re.DOTALL | re.IGNORECASE)
+        if m_ins:
+            briefing.insights = [
+                line.strip().lstrip("- ").strip()
+                for line in m_ins.group(1).split("\n")
+                if line.strip().startswith("-")
+            ]
 
     # -----------------------------------------------------------------------
     # Validação de fidelidade numérica
@@ -334,7 +405,13 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
             briefing.validation_pass = True
             return True
 
-        taxa = taxa_invencao_rs(texto_briefing, "\n".join(chunks))
+        try:
+            taxa = taxa_invencao_rs(texto_briefing, "\n".join(chunks))
+        except Exception as exc:
+            # Falha ao medir fidelidade: reprova (não pode validar R$)
+            log.warning("taxa_invencao_rs falhou no _validate_fidelity: %s", exc)
+            briefing.validation_pass = False
+            return False
 
         if taxa > 0.2:
             log.warning(

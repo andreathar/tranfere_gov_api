@@ -70,6 +70,7 @@ class LocalAIClient:
 
     # Modelos que devem SEMPRE usar LocalAI, não Modal
     _EMBEDDING_MODELS = {"nomic-embed-text-v1.5", "nomic-embed-text", "embeddinggemma-300m"}
+    _warned_missing: set[str] = set()
 
     @staticmethod
     def _is_cloud_proxy_model(model: str) -> bool:
@@ -115,6 +116,31 @@ class LocalAIClient:
             self.base_url = LOCALAI_BASE_URL.rstrip("/")
             self.token = None
             self.timeout = timeout or LOCALAI_TIMEOUT
+
+        self._warn_if_model_missing()
+
+    def _warn_if_model_missing(self) -> None:
+        """Avisa 1x se o modelo configurado não existe no registry LocalAI (best-effort, nunca levanta)."""
+        if USE_LOCAL_VLLM or USE_MODAL_VLLM or self._is_cloud_proxy_model(self.model):
+            return
+        if self.model in LocalAIClient._warned_missing:
+            return
+        try:
+            with httpx.Client(timeout=3, trust_env=False) as client:
+                resp = client.get(f"{self.base_url}/v1/models")
+            if resp.status_code != 200:
+                return
+            modelos = {str(m.get("id")) for m in resp.json().get("data", [])}
+            if self.model not in modelos:
+                LocalAIClient._warned_missing.add(self.model)
+                logger.warning(
+                    "Modelo '%s' não encontrado no registry LocalAI (GET %s/v1/models)."
+                    " Verifique o YAML em /mnt/data/Projects_SSD/LocalAI/models/.",
+                    self.model,
+                    self.base_url,
+                )
+        except Exception:
+            return
 
     @staticmethod
     def _is_embedding_model(model: str) -> bool:
@@ -573,11 +599,17 @@ class LocalAIClient:
                 last_exc = exc
                 if attempt < LOCALAI_MAX_RETRIES:
                     wait = 2**attempt
+                    corpo = (
+                        exc.response.text[:300]
+                        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None
+                        else ""
+                    )
                     logger.warning(
-                        "LocalAI tentativa %d/%d falhou (%s), retry em %ds",
+                        "LocalAI tentativa %d/%d falhou (%s)%s, retry em %ds",
                         attempt,
                         LOCALAI_MAX_RETRIES,
                         exc,
+                        f" - {corpo}" if corpo else "",
                         wait,
                     )
                     time.sleep(wait)
@@ -641,11 +673,17 @@ class LocalAIClient:
                     import asyncio
 
                     await asyncio.sleep(2**attempt)
+                    corpo = (
+                        exc.response.text[:300]
+                        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None
+                        else ""
+                    )
                     logger.warning(
-                        "LocalAI async tentativa %d/%d falhou (%s)",
+                        "LocalAI async tentativa %d/%d falhou (%s)%s",
                         attempt,
                         LOCALAI_MAX_RETRIES,
                         exc,
+                        f" - {corpo}" if corpo else "",
                     )
 
         latency_ms = (time.monotonic() - start) * 1000

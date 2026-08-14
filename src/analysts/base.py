@@ -243,6 +243,11 @@ def qc_estruturado(
 
     secoes = [str(s) for s in (dados.get("secoes") or []) if str(s).strip()]
     fatos = [f for f in (dados.get("fatos") or []) if isinstance(f, dict)]
+    fatos_invalidos = sum(
+        1
+        for f in fatos
+        if not str(f.get("valor", "")).strip() or not str(f.get("fonte_chunk_id", "")).strip()
+    )
 
     # 2. Fidelidade R$ sobre o texto inteiro (fatos + secoes)
     texto_fatos = " ".join(str(f.get("valor", "")) for f in fatos)
@@ -251,8 +256,10 @@ def qc_estruturado(
     taxa = 0.0
     try:
         taxa = taxa_invencao_rs(texto_total, chunks_text)
-    except Exception:
-        taxa = 0.0
+    except Exception as exc:
+        # Falha ao medir fidelidade: pior caso, tratar como invenção total
+        log.warning("taxa_invencao_rs falhou no QC estruturado: %s", exc)
+        taxa = 1.0
 
     # 3. Rastreabilidade por tipo de chunk
     tipos_contexto = {
@@ -276,6 +283,10 @@ def qc_estruturado(
         score -= (taxa - max_taxa_invencao) * 100.0
     if fontes_invalidas:
         score -= min(fontes_invalidas * 5.0, 30.0)
+    if not fatos:
+        score -= 10.0
+    if fatos_invalidos:
+        score -= min(fatos_invalidos * 5.0, 20.0)
 
     score = round(min(max(score, 0.0), 100.0), 1)
     return score >= 50.0, score
@@ -341,10 +352,67 @@ class AnalystResult:
             "quality_ok": self.quality_ok,
             "quality_score": self.quality_score,
             "duration": self.duration,
-            "content_len": len(self.content),
-            "chunks_count": len(self.chunks_used),
-            "briefing_chars": self.briefing.total_chars if self.briefing else 0,
-        }
+             "content_len": len(self.content),
+             "chunks_count": len(self.chunks_used),
+             "briefing_chars": self.briefing.total_chars if self.briefing else 0,
+         }
+
+
+def persistir_qc(
+    *,
+    politico_id: int,
+    tipo_politico: str,
+    analyst_id: str,
+    section_title: str,
+    quality_ok: bool,
+    quality_score: float,
+    duration: float,
+    chunks_count: int,
+    briefing_chars: int,
+    llm_model: str,
+) -> None:
+    """Persiste o resultado do QC de um analista em dossie_analyst_qc.
+
+    Best-effort: nunca levanta exceção — telemetria não pode quebrar a
+    geração do dossiê. Controlada por RAG_PERSIST_QC (config/settings.py).
+    """
+    try:
+        from config.settings import RAG_PERSIST_QC
+
+        if not RAG_PERSIST_QC:
+            return
+
+        from src.db_utils import get_connection
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO dossie_analyst_qc
+                        (politico_id, tipo_politico, analyst_id, section_title,
+                         quality_ok, quality_score, duration_sec, chunks_count,
+                         briefing_chars, llm_model)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        politico_id,
+                        tipo_politico,
+                        analyst_id,
+                        section_title,
+                        quality_ok,
+                        quality_score,
+                        duration,
+                        chunks_count,
+                        briefing_chars,
+                        llm_model,
+                    ),
+                )
+            conn.commit()
+    except Exception as e:
+        log.warning(
+            f"persistir_qc: falha ao salvar QC do analista {analyst_id} "
+            f"({tipo_politico} {politico_id}): {e}"
+        )
 
 
 class AnalystBase(ABC):
@@ -436,6 +504,7 @@ class AnalystBase(ABC):
         use_preparer: bool | None = None,
         shared_briefing: Briefing | None = None,
         tipo_politico: str = "deputado",
+        politico_id: int | None = None,
     ) -> AnalystResult:
         """Executa o analista: prepara briefing -> monta prompt -> chama LLM -> quality check.
 
@@ -551,6 +620,20 @@ class AnalystBase(ABC):
                 self._last_chunks.append(briefing.fact_table)
         self._last_briefing = briefing
         qc_pass, qc_score = self.quality_check(resposta)
+
+        if politico_id is not None:
+            persistir_qc(
+                politico_id=politico_id,
+                tipo_politico=tipo_politico,
+                analyst_id=self.analyst_id,
+                section_title=self.section_title,
+                quality_ok=qc_pass,
+                quality_score=qc_score,
+                duration=duracao,
+                chunks_count=len(context),
+                briefing_chars=briefing.total_chars if briefing else 0,
+                llm_model=llm_model,
+            )
 
         return AnalystResult(
             analyst_id=self.analyst_id,
