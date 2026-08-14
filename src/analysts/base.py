@@ -103,20 +103,27 @@ def coletar_valores_rs(texto: str) -> list[float]:
     return valores
 
 
-def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
-    """Fracao (0-1) dos R$ do output que NAO batem com os numeros dos chunks.
+def valores_rs_sem_fonte(
+    output: str, chunks_text: str, tol: float = 0.02
+) -> list[float]:
+    """R$ do output sem correspondência nos chunks (dentro de tol).
 
     Um valor do output é considerado fiel se:
       - bate com algum valor do chunk dentro de tol relativa (±2%), OU
       - bate com a SOMA de todos os R$ dos chunks (agregado "total").
+
+    Retorna a lista de valores R$ (float) do output que NÃO passam nesse
+    teste — Fase 3 (2026-08-14): usada pelo repair pass do preparer para
+    isolar exatamente os valores ofensores. É a fonte única de verdade:
+    taxa_invencao_rs delega para cá (mesma lógica, mesma tolerância).
     """
     out_vals = coletar_valores_rs(output)
     if not out_vals:
-        return 0.0
+        return []
     chunk_vals = coletar_valores_rs(chunks_text)
     if not chunk_vals:
         # Sem valores reais para comparar -> nao temos como acusar invencao
-        return 0.0
+        return []
 
     total = sum(chunk_vals)
 
@@ -124,7 +131,10 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
         for c in chunk_vals:
             if abs(v - c) <= max(tol * max(abs(v), abs(c)), 1.0):
                 return True
-        return bool(total and abs(v - total) <= max(tol * max(abs(v), abs(total)), 1.0))
+        return bool(
+            total
+            and abs(v - total) <= max(tol * max(abs(v), abs(total)), 1.0)
+        )
 
     # PITFALL 2026-08-11: o 3B preenche tabelas com 'R$ 0,00' para áreas
     # sem emenda do político (placeholder de tabela, não fabricação).
@@ -133,9 +143,22 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
     # Hardening 2026-08-14: eco de tabela (mesmo R$ repetido N vezes) não pode
     # inflar o denominador — valores idênticos contam 1× para a taxa.
     relevantes = list(dict.fromkeys(v for v in out_vals if v > 0))
+    return [v for v in relevantes if not fiel(v)]
+
+
+def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
+    """Fracao (0-1) dos R$ do output que NAO batem com os numeros dos chunks.
+
+    Fase 3 (2026-08-14): delega a conta de "sem fonte" para
+    valores_rs_sem_fonte — mesma lógica, fonte única de verdade (usada
+    também pelo repair pass do preparer para isolar valores ofensores).
+    """
+    relevantes = list(
+        dict.fromkeys(v for v in coletar_valores_rs(output) if v > 0)
+    )
     if not relevantes:
         return 0.0
-    falsos = [v for v in relevantes if not fiel(v)]
+    falsos = valores_rs_sem_fonte(output, chunks_text, tol)
     return len(falsos) / len(relevantes)
 
 # ---------------------------------------------------------------------------

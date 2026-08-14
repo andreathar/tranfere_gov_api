@@ -8,6 +8,14 @@ Fluxo:
     → Validador de fidelidade numérica (R$ do briefing existem nos chunks?)
     → Analista principal (gemma-4 / llama-3.1-8b) gera análise final
 
+Fase 3 (2026-08-14) — reasoning em estágios:
+  O prompt agora exige um protocolo em 6 estágios na MESMA resposta:
+  INVENTÁRIO (fixa TODOS os números antes de escrever) → AGRUPAMENTO →
+  BRIEFING (escrito SOMENTE a partir do inventário) → FACT TABLE (fonte
+  obrigatória) → VERIFICAÇÃO (auto-check máquina-legível OK/FALTA_FONTE/
+  CONFLITO) → KEY INSIGHTS. Se a validação de fidelidade falhar, um repair
+  pass corrige cirurgicamente os valores sem fonte antes do fallback cru.
+
 Benefícios:
   - Reduz tokens do modelo principal em 5-10x
   - Preserva exatidão numérica (validação pós-geração)
@@ -53,6 +61,11 @@ PREPARER_MAX_CHUNKS = 14
 
 # Tamanho máximo do prompt enviado ao preparador em caracteres
 PREPARER_MAX_PROMPT_CHARS = 14000
+
+# Máximo de tentativas de repair pass (Fase 3, 2026-08-14): quando a validação
+# de fidelidade R$ falha, o preparer tenta corrigir cirurgicamente os valores
+# sem fonte ANTES de cair no fallback cru (chunks crus).
+PREPARER_MAX_REPAIR_ATTEMPTS = 2
 
 # Prioridade de tipos de chunk para o truncamento seletivo (mais ricos primeiro).
 # EMENDA carrega totais R$ exatos; VOTO carrega alinhamento; PROPOSICAO e
@@ -138,6 +151,14 @@ class Briefing:
     validation_pass: bool = False
     raw_fallback: bool = False
     chunks_pre_count: int = 0
+    # Fase 3 (2026-08-14): reasoning em estágios — estágios visíveis do
+    # protocolo INVENTÁRIO → AGRUPAMENTO → BRIEFING → FACT TABLE → VERIFICAÇÃO.
+    inventario: str = ""
+    agrupamento: str = ""
+    verificacao: str = ""
+    # Fase 3: repair pass — correção cirúrgica aplicada após falha de validação.
+    repair_used: bool = False
+    repair_attempts: int = 0
 
     @property
     def is_useful(self) -> bool:
@@ -220,28 +241,65 @@ PERFIL DO ANALISTA QUE RECEBERÁ ESTE BRIEFING:
 DADOS BRUTOS ({len(chunks)} chunks):
 {context_str}
 
-INSTRUÇÕES:
-1. Extraia e PRESERVE todos os valores monetários (R$), percentuais, datas e IDs exatamente como aparecem.
-2. Agrupe fatos relacionados por tema.
-3. Destaque contradições, anomalias ou padrões relevantes.
-4. Remova informações redundantes ou irrelevantes para a seção "{section_title}".
-5. ATENÇÃO MÁXIMA PARA NÚMEROS: Ao gerar a Fact Table, nunca some ou agregue valores por conta própria. Mantenha as categorias e totais EXATAMENTE como fornecidos nos resumos (ex: totais de emendas PIX ou de áreas).
-6. Seja conciso — máximo 800 palavras.
+RACIOCÍNIO EM ESTÁGIOS — Fase 3 (2026-08-14): produza TODOS os estágios
+abaixo, na ordem, em UMA única resposta. Os estágios 1 e 2 são seu raciocínio
+visível: fixam os fatos ANTES de qualquer escrita. Os estágios 3-6 são o que
+os analistas consomem.
+
+ESTÁGIO 1 — INVENTÁRIO (fixe TODOS os números AQUI primeiro):
+Liste cada fato relevante em uma linha, no formato pipe:
+| entidade | valor | unidade (R$/%/data/ID/Sim-Não) | tema | fonte=[TIPO_DO_CHUNK] |
+Inclua TODOS os valores monetários (R$), percentuais, datas e IDs relevantes à
+seção "{section_title}", EXATAMENTE como aparecem. Cada número usado nos
+estágios seguintes DEVE constar aqui. Se um dado estiver ausente, escreva 'N/D'.
+Nunca invente.
+
+ESTÁGIO 2 — AGRUPAMENTO (sem números novos):
+Agrupe as linhas do inventário por tema relevante ao analista e à seção
+"{section_title}". Destaque contradições, anomalias ou padrões.
+
+ESTÁGIO 3 — BRIEFING (escreva SOMENTE a partir do inventário):
+Síntese narrativa em 2-4 parágrafos, organizada por tema, com números exatos.
+Todo número usado deve constar no ESTÁGIO 1. Remova informação redundante.
+Máximo 800 palavras.
+
+ESTÁGIO 4 — FACT TABLE (fonte obrigatória por linha):
+| Categoria | Entidade | Valor Financeiro/Quantitativo | Detalhe (fonte=[TIPO_DO_CHUNK]) |
+ATENÇÃO MÁXIMA PARA NÚMEROS: nunca some ou agregue valores por conta própria.
+Mantenha categorias e totais EXATAMENTE como fornecidos nos resumos (ex:
+totais de emendas PIX ou de áreas). Ex:
+| Total de Emendas PIX | Deputado | R$ 28.788.030,99 | Conforme [PARLAMENTAR_RESUMO] |
+| Emendas | Município X | R$ 1.500.000,00 | Objeto: Saúde; fonte=[EMENDA] |
+| Votação | PL 123/2024 | Sim | Tema: Educação; fonte=[VOTO] |
+
+ESTÁGIO 5 — VERIFICAÇÃO (auto-check máquina-legível):
+Re-liste cada R$/%/data usada nos estágios 3 e 4, uma por linha:
+| valor | OK |          (consta no inventário)
+| valor | FALTA_FONTE |  (não está no inventário)
+| valor | CONFLITO |     (divergente do inventário)
+
+ESTÁGIO 6 — KEY INSIGHTS:
+Lista de 0-5 insights, contradições ou anomalias, um por linha com "- ".
 
 FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 
+---INVENTÁRIO---
+[linhas pipe do Estágio 1]
+
+---AGRUPAMENTO---
+[temas agrupados do Estágio 2]
+
 ---BRIEFING---
-[Síntese narrativa em 2-4 parágrafos, organizada por tema, com números exatos]
+[Síntese narrativa do Estágio 3]
 
 ---FACT TABLE---
-| Categoria | Entidade | Valor Financeiro/Quantitativo | Detalhe |
-[Linhas de dados, uma por linha, pipe-separated. Ex:]
-| Total de Emendas PIX | Deputado | R$ 28.788.030,99 | Conforme [PARLAMENTAR_RESUMO] |
-| Emendas | Município X | R$ 1.500.000,00 | Objeto: Saúde |
-| Votação | PL 123/2024 | Sim | Tema: Educação |
+[linhas pipe do Estágio 4]
+
+---VERIFICAÇÃO---
+[linhas | valor | status | do Estágio 5]
 
 ---KEY INSIGHTS---
-- [Lista de 0-5 insights, contradições ou anomalias, um por linha com "- "]
+[insights do Estágio 6]
 """
 
         # Truncar se exceder limite (para evitar estouro de contexto).
@@ -279,29 +337,66 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
     # -----------------------------------------------------------------------
 
     def _parse_response(self, resposta: str, chunks: list[str]) -> Briefing:
-        """Parseia resposta do modelo em Briefing."""
+        """Parseia resposta do modelo em Briefing.
+
+        Fase 3 (2026-08-14): suporta o protocolo em estágios
+        (INVENTÁRIO → AGRUPAMENTO → BRIEFING → FACT TABLE → VERIFICAÇÃO →
+        KEY INSIGHTS). Mantém compatibilidade com o formato antigo (apenas
+        BRIEFING/FACT TABLE/KEY INSIGHTS) — estágios ausentes viram "".
+        Cabeçalhos são tolerantes a acentos (INVENTÁRIO/INVENTARIO,
+        VERIFICAÇÃO/VERIFICACAO).
+        """
         briefing = Briefing(chunks_pre_count=len(chunks))
+
+        # Fase 3: estágios de reasoning — inventário/agrupamento/verificação
+        m = re.search(
+            r"---\s*INVENT[AÁ]RIO---\s*\n(.*?)(?=---\s*AGRUPAMENTO---|---\s*BRIEFING---|$)",
+            resposta,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if m:
+            briefing.inventario = m.group(1).strip()
+
+        m = re.search(
+            r"---\s*AGRUPAMENTO---\s*\n(.*?)(?=---\s*BRIEFING---|$)",
+            resposta,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if m:
+            briefing.agrupamento = m.group(1).strip()
+
+        m = re.search(
+            r"---\s*VERIFICA[CÇ][AÃ]?[CÇ]?[AÃ]?O---\s*\n(.*?)(?=---\s*KEY\s*INSIGHTS---|$)",
+            resposta,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if m:
+            briefing.verificacao = m.group(1).strip()
 
         # Extrair seção ---BRIEFING---
         m = re.search(
-            r"---BRIEFING---\s*\n(.*?)(?=---FACT TABLE---|---KEY INSIGHTS---|$)",
+            r"---\s*BRIEFING---\s*\n(.*?)(?=---\s*FACT\s*TABLE---|---\s*KEY\s*INSIGHTS---|$)",
             resposta,
-            re.DOTALL,
+            re.DOTALL | re.IGNORECASE,
         )
         if m:
             briefing.text = m.group(1).strip()
 
         # Extrair seção ---FACT TABLE---
         m = re.search(
-            r"---FACT TABLE---\s*\n(.*?)(?=---KEY INSIGHTS---|$)",
+            r"---\s*FACT\s*TABLE---\s*\n(.*?)(?=---\s*VERIFICA[CÇ][AÃ]?[CÇ]?[AÃ]?O---|---\s*KEY\s*INSIGHTS---|$)",
             resposta,
-            re.DOTALL,
+            re.DOTALL | re.IGNORECASE,
         )
         if m:
             briefing.fact_table = m.group(1).strip()
 
         # Extrair seção ---KEY INSIGHTS---
-        m = re.search(r"---KEY INSIGHTS---\s*\n(.*?)$", resposta, re.DOTALL)
+        m = re.search(
+            r"---\s*KEY\s*INSIGHTS---\s*\n(.*?)$",
+            resposta,
+            re.DOTALL | re.IGNORECASE,
+        )
         if m:
             insights_text = m.group(1).strip()
             briefing.insights = [
@@ -379,8 +474,74 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
                 if line.strip().startswith("-")
             ]
 
+    # -----------------------------------------------------------------------    # Helpers (Fase 3, 2026-08-14): reasoning em estágios e repair pass
     # -----------------------------------------------------------------------
-    # Validação de fidelidade numérica
+
+    def _model_scope(self) -> Any:
+        """Carrega o modelo via model_scope (refcount) se não for cloud proxy.
+
+        Returns:
+            Contexto do model_scope (liberar com _release_model) ou None para
+            modelos cloud proxy (sem gerenciamento local de VRAM).
+        """
+        from config.settings import CLOUD_PROXY_MODEL_NAMES
+
+        if self.model in CLOUD_PROXY_MODEL_NAMES:
+            return None
+        from src.localai_manager import manager as lm
+
+        ctx = lm.model_scope(self.model)
+        ctx.__enter__()
+        return ctx
+
+    @staticmethod
+    def _release_model(lm_ctx: Any) -> None:
+        """Libera o contexto do model_scope (já libera refcount)."""
+        if lm_ctx is not None:
+            try:
+                lm_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    def _valores_sem_fonte_rs(
+        self, briefing: Briefing, chunks: list[str]
+    ) -> list[float]:
+        """R$ do briefing sem correspondência nos chunks (Fase 3).
+
+        Reusa a MESMA lógica da validação (base.valores_rs_sem_fonte) para que
+        o repair pass corrija exatamente o que a validação reprova.
+        """
+        from src.analysts.base import valores_rs_sem_fonte
+
+        texto_briefing = briefing.text + "\n" + briefing.fact_table
+        return valores_rs_sem_fonte(texto_briefing, "\n".join(chunks))
+
+    def _problemas_verificacao(self, briefing: Briefing) -> list[str]:
+        """Extrai da seção VERIFICAÇÃO os valores marcados FALTA_FONTE/CONFLITO.
+
+        Formato esperado das linhas (Estágio 5):
+            | valor | OK |
+            | valor | FALTA_FONTE |
+            | valor | CONFLITO |
+        """
+        if not briefing.verificacao:
+            return []
+        problemas: list[str] = []
+        for linha in briefing.verificacao.splitlines():
+            if not linha.strip().startswith("|"):
+                continue
+            if not re.search(
+                r"FALTA_FONTE|CONFLITO|SEM[_\s]*FONTE|N[AÃ]O.*FONTE",
+                linha,
+                re.IGNORECASE,
+            ):
+                continue
+            partes = [p.strip() for p in linha.strip().strip("|").split("|")]
+            if partes:
+                problemas.append(partes[0])
+        return problemas
+
+    # -----------------------------------------------------------------------    # Validação de fidelidade numérica
     # -----------------------------------------------------------------------
 
     def _validate_fidelity(self, briefing: Briefing, chunks: list[str]) -> bool:
@@ -425,8 +586,164 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
             briefing.validation_pass = False
             return False
 
+        # Fase 3: cross-check da auto-verificação do modelo (Estágio 5). Não
+        # altera a validação determinística, mas registra divergências para
+        # observabilidade e serve de insumo ao repair pass.
+        problemas = self._problemas_verificacao(briefing)
+        if problemas:
+            log.info(
+                f"Preparer: VERIFICAÇÃO do modelo reportou {len(problemas)} "
+                f"valores problemáticos: {problemas[:5]}"
+            )
+
         briefing.validation_pass = True
         return True
+
+    # -----------------------------------------------------------------------
+    # Repair pass (Fase 3, 2026-08-14)
+    # -----------------------------------------------------------------------
+
+    def _build_repair_prompt(
+        self,
+        briefing: Briefing,
+        chunks: list[str],
+        analyst_persona: str,
+        section_title: str,
+        nome: str,
+    ) -> str:
+        """Monta prompt de repair cirúrgico.
+
+        Informa ao modelo quais valores do briefing NÃO têm fonte nos chunks e
+        pede apenas a correção desses valores, preservando o restante da
+        síntese — em vez de descartar tudo para o fallback cru.
+        """
+        sem_fonte = self._valores_sem_fonte_rs(briefing, chunks)
+        problemas = self._problemas_verificacao(briefing)
+
+        if sem_fonte:
+            valores_txt = "\n".join(
+                f"- R$ {v:,.2f}"
+                .replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".")
+                for v in sem_fonte[:12]
+            )
+        elif problemas:
+            valores_txt = "\n".join(f"- {p}" for p in problemas[:12])
+        else:
+            valores_txt = (
+                "- (não foi possível isolar os valores — revise os números)"
+            )
+
+        chunks_txt = "\n".join(
+            f"  [{i+1}] {c}" for i, c in enumerate(chunks[:10])
+        )
+
+        return f"""Você está CORRIGINDO um briefing da seção "{section_title}" do dossiê do deputado {nome}.
+
+PERFIL DO ANALISTA QUE RECEBERÁ ESTE BRIEFING:
+{analyst_persona}
+
+DADOS BRUTOS ({len(chunks)} chunks) — estes são a ÚNICA fonte de verdade:
+{chunks_txt}
+
+BRIEFING ANTERIOR (contém valores SEM FONTE):
+{briefing.text}
+
+FACT TABLE ANTERIOR:
+{briefing.fact_table}
+
+VALORES SEM FONTE (corrija ou remova):
+{valores_txt}
+
+INSTRUÇÕES:
+1. Reemita o briefing CORRIGIDO usando exatamente os cabeçalhos abaixo.
+2. Corrija APENAS os valores sem fonte: ajuste para o valor exato dos chunks
+   ou remova a afirmação. Preserve os demais fatos.
+3. NUNCA some ou agregue valores por conta própria. Nunca invente números.
+4. Máximo 600 palavras.
+
+FORMATO DE SAÍDA (estrito):
+
+---BRIEFING---
+[síntese corrigida]
+
+---FACT TABLE---
+| Categoria | Entidade | Valor Financeiro/Quantitativo | Detalhe (fonte=[TIPO_DO_CHUNK]) |
+[apenas linhas com fonte confiável nos chunks]
+
+---KEY INSIGHTS---
+- [insights, se houver]
+"""
+
+    def _repair_pass(
+        self,
+        briefing: Briefing,
+        chunks: list[str],
+        analyst_persona: str,
+        section_title: str,
+        nome: str,
+    ) -> Briefing:
+        """Tenta corrigir um briefing reprovado na validação de fidelidade.
+
+        Em vez de cair direto no fallback cru, faz uma segunda chamada com
+        prompt cirúrgico apontando os valores sem fonte. Se o repair também
+        falhar, retorna fallback (raw_fallback=True).
+        """
+        briefing.repair_attempts += 1
+        briefing.repair_used = True
+
+        lm_ctx = None
+        try:
+            lm_ctx = self._model_scope()
+        except Exception as e:
+            log.warning(
+                f"Preparer: repair não pôde carregar {self.model} para "
+                f"'{section_title}': {e}"
+            )
+            fb = self._build_fallback(chunks)
+            fb.repair_used = True
+            fb.repair_attempts = briefing.repair_attempts
+            return fb
+
+        try:
+            client = self._get_client()
+            prompt = self._build_repair_prompt(
+                briefing, chunks, analyst_persona, section_title, nome
+            )
+            resposta = client.chat(
+                prompt=prompt, system=self._system_prompt(), max_tokens=1200
+            )
+        except Exception as e:
+            log.warning(
+                f"Preparer: repair pass falhou para '{section_title}': {e}"
+            )
+            fb = self._build_fallback(chunks)
+            fb.repair_used = True
+            fb.repair_attempts = briefing.repair_attempts
+            return fb
+        finally:
+            self._release_model(lm_ctx)
+
+        if not resposta or not resposta.strip():
+            log.warning(f"Preparer: repair pass vazio para '{section_title}'")
+            fb = self._build_fallback(chunks)
+            fb.repair_used = True
+            fb.repair_attempts = briefing.repair_attempts
+            return fb
+
+        novo = self._parse_response(resposta, chunks)
+        novo.chunks_pre_count = len(chunks)
+        novo.repair_used = True
+        novo.repair_attempts = briefing.repair_attempts
+        self._validate_fidelity(novo, chunks)
+
+        log.info(
+            f"Preparer: repair pass '{section_title}' "
+            f"(tentativa {novo.repair_attempts}) — "
+            f"validação: {'OK' if novo.validation_pass else 'AINDA FALHOU'}"
+        )
+        return novo
 
     # -----------------------------------------------------------------------
     # Fallback
@@ -492,13 +809,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         # Carregar modelo rápido via model_scope (refcount tracking)
         lm_ctx = None
         try:
-            from config.settings import CLOUD_PROXY_MODEL_NAMES
-
-            if self.model not in CLOUD_PROXY_MODEL_NAMES:
-                from src.localai_manager import manager as lm
-
-                lm_ctx = lm.model_scope(self.model)
-                lm_ctx.__enter__()
+            lm_ctx = self._model_scope()
         except Exception as e:
             # Não conseguiu carregar (ex: VRAM bloqueada por modelo em uso e
             # timeout em _wait_for_room). Não adianta chamar o chat sem o
@@ -520,23 +831,14 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
             # Só a 1a chamada do processo paga o load; nas demais o backend
             # já está na GPU (model_scope mantém refcount e o LRU só descarrega
             # quando precisa de VRAM).
-            resposta = client.chat(prompt=prompt, system=self._system_prompt(), max_tokens=1500)
+            resposta = client.chat(
+                prompt=prompt, system=self._system_prompt(), max_tokens=1500
+            )
         except Exception as e:
             log.warning(f"Preparer falhou para '{section_title}': {e}")
-            # Garantir release do modelo
-            if lm_ctx is not None:
-                try:
-                    lm_ctx.__exit__(None, None, None)
-                except Exception:
-                    pass
             return self._build_fallback(chunks)
-
-        # Garantir release do modelo (já libera refcount)
-        if lm_ctx is not None:
-            try:
-                lm_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
+        finally:
+            self._release_model(lm_ctx)
 
         if not resposta or not resposta.strip():
             log.warning(f"Preparer retornou vazio para '{section_title}'")
@@ -549,11 +851,22 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         # Validar fidelidade numérica
         self._validate_fidelity(briefing, chunks)
 
+        # Fase 3 (2026-08-14): repair pass — se a validação falhar, tenta
+        # corrigir cirurgicamente os valores sem fonte antes do fallback cru.
+        if not briefing.validation_pass and not briefing.raw_fallback:
+            for _ in range(PREPARER_MAX_REPAIR_ATTEMPTS):
+                if briefing.validation_pass or briefing.raw_fallback:
+                    break
+                briefing = self._repair_pass(
+                    briefing, chunks, analyst_persona, section_title, nome
+                )
+
         log.info(
             f"Preparer '{section_title}': {len(chunks)} chunks -> "
             f"{briefing.total_chars} chars briefing "
             f"(validação: {'OK' if briefing.validation_pass else 'FALHOU'}, "
-            f"fallback: {briefing.raw_fallback})"
+            f"fallback: {briefing.raw_fallback}, "
+            f"repair: {briefing.repair_attempts})"
         )
 
         return briefing
