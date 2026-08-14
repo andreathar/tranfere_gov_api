@@ -142,7 +142,11 @@ class Briefing:
     @property
     def is_useful(self) -> bool:
         """Retorna True se o briefing tem conteúdo utilizável e passou validação."""
-        return bool(self.text or self.fact_table) and not self.raw_fallback
+        return (
+            bool(self.text or self.fact_table)
+            and not self.raw_fallback
+            and self.validation_pass
+        )
 
     @property
     def total_chars(self) -> int:
@@ -448,7 +452,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
 
         return Briefing(
             text=fallback_text,
-            validation_pass=True,
+            validation_pass=False,
             raw_fallback=True,
             chunks_pre_count=len(chunks),
         )
@@ -479,7 +483,7 @@ FORMATO DE SAÍDA (estrito — use exatamente estes cabeçalhos):
         if not chunks:
             return Briefing(
                 text="Sem dados disponíveis para esta seção.",
-                validation_pass=True,
+                validation_pass=False,
                 chunks_pre_count=0,
             )
 

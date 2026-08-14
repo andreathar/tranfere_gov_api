@@ -41,7 +41,8 @@ Comandos:
   cron-diario        Roda o worker do Diário Oficial (baixa DOU e gera resumo)
    qdrant-status      Status da indexação no Qdrant (vetores, deputados, cobertura)
    qdrant-staleness   Staleness do Qdrant — deputados desatualizados vs checkpoint
-   localai-health     Saúde do LocalAI (API, modelos, VRAM, circuit breaker)
+    localai-health     Saúde do LocalAI (API, modelos, VRAM, circuit breaker)
+    localai-observability Cadeia de eventos LocalAI (traces, backend-logs, anomalias)
    cron-qdrant        Roda o Indexador do Qdrant para alimentar RAG
    rag-efficiency     Coletor de métricas RAG Efficiency (--politico-id)
    logit-lens-runner  Roda o Logit Lens offline para um run de efficiency (--run-id)
@@ -134,6 +135,9 @@ case "${1:-help}" in
         ;;
     localai-health)
         $PYTHON -m src.localai_health "${@:2}"
+        ;;
+    localai-observability)
+        $PYTHON -m src.localai_observability "${@:2}"
         ;;
     cron-diario)
         $PYTHON -m src.enrichers.diario_oficial_worker "${@:2}"

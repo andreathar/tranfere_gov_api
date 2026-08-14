@@ -29,6 +29,7 @@ from src.api.routes import (
     financeiro,
     fnde,
     governadores,
+    localai,
     municipios,
     prefeitos,
     senadores,
@@ -86,6 +87,9 @@ app.include_router(auditoria.router, prefix="/api/v1/auditoria", tags=["auditori
 
 # Register RAG Efficiency routes
 app.include_router(rag_efficiency.router, prefix="/api/v1/rag-efficiency", tags=["rag", "efficiency"])
+
+# Register LocalAI observabilidade routes
+app.include_router(localai.router, prefix="/api/v1/localai", tags=["localai"])
 
 # Register diario oficial routes
 app.include_router(diario.router, prefix="/api/v1/diario", tags=["diario"])

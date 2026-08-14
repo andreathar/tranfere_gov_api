@@ -307,3 +307,45 @@ class TestRegistryV8:
         assert "**CLASSIFICAÇÃO**: GOVERNO" in dossier
         assert '"secoes"' not in dossier
         assert '"fatos"' not in dossier
+
+    def test_assemble_dossier_marca_qc_reprovado(self):
+        """Seção com QC reprovado precisa ficar visível no dossiê final —
+        sem isso um analista que falhou parece ter sido aprovado."""
+        from src.analysts import assemble_dossier
+        from src.analysts.base import AnalystResult
+
+        r = AnalystResult(
+            analyst_id="tematicas",
+            section_title="TEMÁTICAS",
+            content="texto gerado com valores",
+            quality_ok=False,
+            quality_score=15.0,
+        )
+        dossier = assemble_dossier([r])
+        assert "QC reprovado" in dossier
+        assert "15.0" in dossier or "15" in dossier
+
+    def test_calculate_global_score_todas_reprovadas(self):
+        """Nenhuma seção aprovada => dossiê não pode ser aprovado (0.0)."""
+        from src.analysts import calculate_global_score
+        from src.analysts.base import AnalystResult
+
+        r = AnalystResult(
+            analyst_id="votacao",
+            section_title="t",
+            content="x",
+            quality_ok=False,
+            quality_score=20.0,
+        )
+        score, ok = calculate_global_score([r])
+        assert not ok
+        assert score == 0.0
+
+    def test_taxa_invencao_deduplica_eco_repetido(self):
+        """Eco de tabela (mesmo R$ repetido N vezes) não pode inflar o
+        denominador: 1 valor real repetido + 1 inventado => 1/2 = 0.5."""
+        from src.analysts.base import taxa_invencao_rs
+
+        chunk = "[EMENDA] R$ 1.000,00"
+        out = "R$ 1.000,00 R$ 1.000,00 R$ 1.000,00 R$ 9.999,99"
+        assert taxa_invencao_rs(out, chunk) == 0.5

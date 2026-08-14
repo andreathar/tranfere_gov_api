@@ -758,6 +758,24 @@ class LocalAIClient:
             latency_ms=latency_ms,
             error=True,
         )
+        try:
+            from src.localai_observability import record_event
+            status_code = None
+            if isinstance(last_exc, httpx.HTTPStatusError) and last_exc.response is not None:
+                status_code = last_exc.response.status_code
+            record_event(
+                event_type="request",
+                level="error",
+                model=model_name,
+                method="POST",
+                path=endpoint,
+                status_code=status_code,
+                duration_ms=latency_ms,
+                summary=str(last_exc)[:300],
+                payload={"retries": LOCALAI_MAX_RETRIES},
+            )
+        except Exception:
+            pass
         raise last_exc  # type: ignore[misc]
 
     async def _apost(self, endpoint: str, payload: dict, ttl: int | None = None) -> dict:

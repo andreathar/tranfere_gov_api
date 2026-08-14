@@ -64,6 +64,11 @@ python3 -m src.enrichers.pipeline --fase all [--dry-run] [--limit N]
 ./run.sh rag-efficiency --politico-id 4291      # RAG Efficiency Metrics (Retrieval + Generation)
 ./run.sh logit-lens-runner --run-id 1           # Logit Lens Offline Panel (Emergence Layer)
 
+# Observabilidade LocalAI
+./run.sh localai-health                         # saúde do LocalAI (API, modelos, VRAM, circuit breaker)
+./run.sh localai-observability --since 1h       # cadeia de eventos (traces, backend-logs, anomalias)
+./run.sh localai-observability --model X --db   # persistir snapshot no banco
+
 # vLLM (engine alternativa ao LocalAI)
 ./run.sh vllm start|stop|status|chat            # gerencia server vLLM local (porta 8001)
 ./run.sh vllm-bench                             # benchmark comparativo vLLM vs LocalAI
@@ -391,6 +396,47 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 - **Checkpoint**: tabela `qdrant_index_checkpoint` no PostgreSQL armazena hash dos dados para detecção de mudanças.
 - **Diagnóstico**: `./run.sh qdrant-status` (vetores/cobertura por tipo) e `./run.sh qdrant-staleness` (deputados desatualizados vs checkpoint).
 
+### Observabilidade LocalAI (v2.0)
+
+**Arquitetura**: Cadeia de eventos persistida para diagnóstico pós-falha (500, connection refused, OOM, VRAM orfanada).
+
+- **Tabelas**:
+  - `localai_event_log` — Eventos cronológicos (request, backend, monitor, system, log) com model, backend, method, path, status_code, duration_ms, summary, payload
+  - `localai_chain_snapshot` — Snapshots da cadeia de eventos para comparação entre execuções (chain JSON, anomalies JSON)
+
+- **CLI (`src/localai_observability.py`)**:
+  - `./run.sh localai-observability --since 1h` — Cadeia de eventos das últimas 1 hora
+  - `./run.sh localai-observability --model Qwen2.5-Coder-7B-Instruct-GGUF --db` — Filtra por modelo e persiste snapshot
+  - `./run.sh localai-observability --json` — Saída JSON para integração
+
+- **API FastAPI** (`src/api/routes/localai.py`):
+  - `GET /api/v1/localai/events?limit=100&level=error&model=X&since=1h` — Listar eventos
+  - `GET /api/v1/localai/snapshots?limit=20` — Listar snapshots
+  - `GET /api/v1/localai/snapshot/{id}` — Snapshot completo com cadeia
+  - `GET /api/v1/localai/stats` — Estatísticas resumidas (total, errors, models, avg_duration)
+
+- **Auto-Hook (`src/localai_client.py`)**:
+  - Grava automaticamente falhas (HTTP 5xx, connection refused) no `localai_event_log` com contexto completo
+  - Acionado após esgotar retries no `_post()` method
+
+- **Fontes de Dados**:
+  - `/api/traces` — Request/response traces completos (headers, body, status_code)
+  - `/api/backend-traces` — LLM traces (model, backend, duration, summary)
+  - `/api/backend-logs/{model}` — Logs específicos por modelo
+  - `/system` — Modelos carregados + backends disponíveis
+  - `/metrics` — Prometheus metrics
+
+- **Detecção de Anomalias**:
+  - HTTP 5xx errors
+  - Connection refused
+  - OOM (CUDA out of memory)
+  - RPC errors (backend crashed)
+  - Backend missing (no grpc backend found)
+
+- **Integração com Dashboard**:
+  - Visualização no Swagger UI: `http://localhost:8000/docs` → LocalAI section
+  - Grafana/Prometheus (opcional): usar endpoint `/metrics` do LocalAI
+
 - **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v7 com **15 queries temáticas** (batch embedding) cobrindo todos os 23 chunk types + Reciprocal Rank Fusion (RRF, k=60):
 
   1. Padrão de votos, dissenso partidário e obstrução
@@ -470,6 +516,9 @@ Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSI�
 23. **Qdrant Indexação em Lote**: Ao rodar `./run.sh cron-qdrant --todos`, o script ignora a flag se o tipo for `deputado`. Para processar todos os deputados de uma vez, é OBRIGATÓRIO passar `--limit 600` (ou valor maior).
 24. **LocalAI GPU**: Modelos baixados da galeria (como `embeddinggemma-300m` e `gemma-4`) podem vir sem YAML local, caindo para CPU-fallback (`cpu-llama-cpp`). Para forçar aceleração via GPU, deve-se criar manualmente o YAML (ex: `embeddinggemma-300m.yaml`) definindo `backend: cuda13-llama-cpp` e `gpu_layers: 40`.
 25. **Integração API Câmara**: Os scripts `votacoes_camara.py` e `camara_discursos.py` buscam dados nativamente da API REST da Câmara (dadosabertos.camara.leg.br) para 2026, ignorando o proxy local do DuckDB (utilizado para dados históricos do TSE).
+26. **Cruzamento R$ Fabricados**: Analista `cruzamento` pode gerar valores R$ inventados no JSON. QC detecta e zera score. Fix: `src/analysts/cruzamento.py` injeta valores reais no prompt via `coletar_valores_rs()`.
+27. **LocalAI Backend Instável**: 500 "connection refused" e VRAM orfanada ocorrem intermitentemente. Usar `./run.sh localai-observability --since 1h` para diagnosticar. Restart Docker limpa VRAM: `docker restart localai-orchestrator`.
+28. **Observabilidade Hooks**: Falhas de request são auto-gravadas em `localai_event_log` via hook em `localai_client._post()`. Queries: `SELECT * FROM localai_event_log WHERE level='error' ORDER BY event_at DESC`.
 
 ---
 

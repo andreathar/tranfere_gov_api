@@ -130,7 +130,9 @@ def taxa_invencao_rs(output: str, chunks_text: str, tol: float = 0.02) -> float:
     # sem emenda do político (placeholder de tabela, não fabricação).
     # Contar zeros como invenção reprovava dossiers fieis (tematicas 82%).
     # Zeros são neutros: ignorados na contagem de falsos e no denominador.
-    relevantes = [v for v in out_vals if v > 0]
+    # Hardening 2026-08-14: eco de tabela (mesmo R$ repetido N vezes) não pode
+    # inflar o denominador — valores idênticos contam 1× para a taxa.
+    relevantes = list(dict.fromkeys(v for v in out_vals if v > 0))
     if not relevantes:
         return 0.0
     falsos = [v for v in relevantes if not fiel(v)]

@@ -21,7 +21,7 @@ uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
 
 ```
 src/api/
-├── app.py                  App FastAPI principal (CORS, GZip, 12 routers, static files)
+├── app.py                  App FastAPI principal (CORS, GZip, 13 routers, static files)
 ├── routes/
 │   ├── deputados.py        /api/v1/deputados/*     (13 endpoints: +discursos, +alertas, +emendas-discricionarias)
 │   ├── prefeitos.py        /api/v1/prefeitos/*     (6 endpoints)
@@ -35,6 +35,7 @@ src/api/
 │   ├── senadores.py        /api/v1/senadores/*     (4 endpoints)
 │   ├── financeiro.py       /api/v1/financeiro/*    (4 endpoints)
 │   ├── rag_efficiency.py   /api/v1/rag-efficiency/* (2 endpoints)
+│   ├── localai.py          /api/v1/localai/*       (4 endpoints: observabilidade LocalAI)
 │   └── municipios.py       /api/v1/municipios/*    (2 endpoints)
 ├── services/
 │   ├── db_service.py       Consultas PostgreSQL (psycopg2, 45+ funcoes, TTLCache 300s em agregados)
@@ -175,6 +176,15 @@ src/api/
 |--------|------|-----------|-------|
 | GET | `/api/v1/rag-efficiency/runs` | Historico de execucoes de eficiencia do RAG | DB (rag_efficiency_runs) |
 | GET | `/api/v1/rag-efficiency/runs/{run_id}/metrics` | Detalhamento das metricas por pergunta | DB (rag_efficiency_metrics) |
+
+### LocalAI Observabilidade (4)
+
+| Metodo | Rota | Descricao | Fonte |
+|--------|------|-----------|-------|
+| GET | `/api/v1/localai/events` | Listar eventos do LocalAI (cadeia de traces) | DB (localai_event_log) |
+| GET | `/api/v1/localai/snapshots` | Listar snapshots da cadeia de eventos | DB (localai_chain_snapshot) |
+| GET | `/api/v1/localai/snapshot/{id}` | Snapshot completo com cadeia de eventos | DB (localai_chain_snapshot) |
+| GET | `/api/v1/localai/stats` | Estatísticas resumidas (total, errors, models, avg_duration) | DB (localai_event_log) |
 
 ---
 

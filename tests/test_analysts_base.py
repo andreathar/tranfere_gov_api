@@ -68,3 +68,13 @@ def test_taxa_invencao_sem_r_no_output() -> None:
 def test_taxa_invencao_sem_r_no_chunk() -> None:
     """Sem valores no chunk, nao ha como acusar invencao."""
     assert taxa_invencao_rs("R$ 5.000,00", "[EMENDA] sem valores") == 0.0
+
+
+def test_briefing_fallback_nao_e_considerado_valido() -> None:
+    from src.analysts.preparer import PromptPreparer
+
+    fallback = PromptPreparer._build_fallback(["[EMENDA] R$ 1.000,00"])
+
+    assert fallback.raw_fallback is True
+    assert fallback.validation_pass is False
+    assert fallback.is_useful is False

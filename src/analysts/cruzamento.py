@@ -13,7 +13,7 @@ import logging
 import re
 
 from src.analysts import register_analyst
-from src.analysts.base import AnalystBase, Briefing, qc_estruturado
+from src.analysts.base import AnalystBase, Briefing, coletar_valores_rs, qc_estruturado
 
 log = logging.getLogger(__name__)
 
@@ -58,15 +58,21 @@ class CruzamentoDados(AnalystBase):
         if briefing and briefing.is_useful:
             ctx = self._format_briefing(briefing)
             origem = "BRIEFING SINTETIZADO (VISÃO 360°)"
+            source_text = briefing.texto or ""
         else:
             ctx = self._format_context(context)
             origem = "TODOS OS DADOS DISPONÍVEIS"
+            source_text = "\n".join(context)
+
+        rs_reais = sorted(set(coletar_valores_rs(source_text)), reverse=True)[:10]
+        rs_lista = ", ".join(f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") for v in rs_reais)
+        rs_block = f"\nVALORES REAIS (use APENAS estes no campo fatos): {rs_lista}" if rs_lista else ""
 
         return f"""Realize uma análise de pragmatismo político do deputado federal {nome}, cruzando TODAS as fontes disponíveis.
 
 === {origem} ===
 {ctx}
-========================================
+========================================{rs_block}
 
 INSTRUÇÕES:
 1. Compare o posicionamento em votações com o destino das emendas.

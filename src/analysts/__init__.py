@@ -418,6 +418,13 @@ def assemble_dossier(results: list[AnalystResult]) -> str:
         section = render_secoes_markdown(r.content).strip()
         if not section:
             section = "*Dados insuficientes para esta seção.*"
+        # Hardening 2026-08-14: QC reprovado fica visível no dossiê final —
+        # sem isso uma seção que falhou parece ter sido aprovada.
+        if not r.quality_ok:
+            section = (
+                f"> ⚠️ **QC reprovado** (score {r.quality_score:.1f}/100) — "
+                f"seção com qualidade insuficiente, valide antes de usar.\n\n{section}"
+            )
         parts.append(f"### {r.section_title}\n\n{section}")
 
     return "\n\n---\n\n".join(parts)
@@ -448,6 +455,11 @@ def calculate_global_score(results: list[AnalystResult]) -> tuple[float, bool]:
 
     score_total = 0.0
     peso_total = 0.0
+
+    # Hardening 2026-08-14: se NENHUMA seção passou no QC, o dossiê não pode
+    # ser aprovado — média de reprovados não deve virar "aprovação".
+    if results and not any(r.quality_ok for r in results):
+        return 0.0, False
 
     for r in results:
         peso = PESOS.get(r.analyst_id, 0.10)
