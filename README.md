@@ -42,7 +42,7 @@ O sistema implementa uma pipeline completa em 9 fases + RAG v7:
                                   │                │
                                   └────────┬───────┘
                                            ▼
-                              [ FastAPI Web App — Porta 8000 ]
+                              [ FastAPI Web App — Porta 8002 ]
 ```
 
 ---
@@ -268,12 +268,12 @@ python3 -m src.enrichers.senado            # Fase 8: Senadores (API Senado)
 ### 1. Painel Web de Inteligência Parlamentar (FastAPI)
 Interface RESTful e SPA com 43 endpoints para consulta de deputados, emendas, despesas CEAP, proposições, prefeitos, vereadores, compras, Diário Oficial e governadores.
 ```bash
-./run.sh web                          # Porta 8000 (http://localhost:8000)
+./run.sh web                          # Porta 8002 (http://localhost:8002)
 # Ou diretamente via uvicorn:
-# uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+# uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8002
 ```
-- **Interface Web**: [http://localhost:8000](http://localhost:8000)
-- **Documentação Swagger/ReDoc**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Interface Web**: [http://localhost:8002](http://localhost:8002)
+- **Documentação Swagger/ReDoc**: [http://localhost:8002/docs](http://localhost:8002/docs)
 
 ### 2. Plotly Dash & Servidor MCP Hub (Dash 4.3+)
 Dashboard analítico interativo com 74 gráficos (18 módulos) e Servidor MCP nativo integrado.

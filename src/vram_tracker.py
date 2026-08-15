@@ -36,39 +36,24 @@ class ModelVRAM:
 
 # Tamanho real dos GGUFs (bytes) + overhead estimado (MiB)
 # Overhead inclui: KV cache parcial + backend buffers + CUDA context
+# Atualizado 2026-08-15: removidos modelos sem YAML/GGUF (gemma-4-e2b-it,
+# zero-gemma4, agente-dossie-*, minicpm5, qwen3.5-9b, llama-3.1-8b-vulkan).
 MODEL_VRAM: dict[str, ModelVRAM] = {
-    # --- LLMs ---
+    # --- LLMs (GPU via cuda13-llama-cpp) ---
     "qwen2.5-1.5b-instruct-q4-k-m": ModelVRAM(1_100_000_000, 400, "qwen2.5-family"),
     "llama-3.2-3b-instruct:q4_k_m": ModelVRAM(1_900_000_000, 500, "llama3.2-family"),
     "llama-3.1-8b-q4-k-m": ModelVRAM(
         4_600_000_000, 400, "llama3.1-family"
-    ),  # no_kv_offloading=false, KV offload
-    "llama-3.1-8b-q4-k-m-vulkan": ModelVRAM(
-        4_600_000_000, 500, "llama3.1-family"
-    ),  # Vulkan, gpu_layers=8
-    "gemma-4-e2b-it": ModelVRAM(4_700_000_000, 800, "gemma-4-family"),  # Q8, huge KV cache
-    "zero-gemma4-e4b-openzero-q5-k-m": ModelVRAM(
-        4_300_000_000, 400, "zero-gemma-family"
-    ),  # Q5_K_M 5.6 GB, gpu_layers=40 → medido 3933 MiB
+    ),  # no_kv_offloading=false, KV offload to RAM
     "Qwen2.5-Coder-7B-Instruct-GGUF": ModelVRAM(4_400_000_000, 500, "coder-family"),
-    "agente-dossie-investigativo": ModelVRAM(
-        4_600_000_000, 400, "llama3.1-family"
-    ),  # shares GGUF with 8B
-    "agente-dossie-rapido": ModelVRAM(
-        1_100_000_000, 400, "qwen2.5-family"
-    ),  # shares GGUF with qwen
-    "minicpm5-1b-claude-opus-fable5-thinking": ModelVRAM(1_100_000_000, 300, "minicpm5-family"),
-    "qwen3.5-9b-dossie": ModelVRAM(6_000_000_000, 800, ""),
     # --- Embeddings (CPU puro via backend cpu-llama-cpp desde 2026-07-31) ---
     "embeddinggemma-300m": ModelVRAM(314_000_000, 0, "embedding-cpu"),
     "nomic-embed-text-v1.5": ModelVRAM(262_000_000, 0, "embedding-cpu"),
     "nomic-embed-text": ModelVRAM(262_000_000, 0, "embedding-cpu"),
 }
 
-# Modelos que não consomem VRAM (CPU puro via backend cpu-llama-cpp, cloud proxy)
-# Embeddings foram migrados para cpu-llama-cpp (2026-07-31): 0 VRAM.
+# Modelos que não consomem VRAM (CPU puro via backend cpu-llama-cpp)
 CPU_ONLY_MODELS = {
-    "minicpm5-1b-claude-opus-fable5-thinking",
     "embeddinggemma-300m",
     "nomic-embed-text-v1.5",
     "nomic-embed-text",
@@ -82,17 +67,11 @@ _OVERHEAD_ADDITIONAL_MIB = 150
 # ---------------------------------------------------------------------------
 
 AFFINITY_GROUPS: dict[str, list[str]] = {
-    "qwen2.5-family": ["qwen2.5-1.5b-instruct-q4-k-m", "agente-dossie-rapido"],
-    "llama3.1-family": [
-        "llama-3.1-8b-q4-k-m",
-        "llama-3.1-8b-q4-k-m-vulkan",
-        "agente-dossie-investigativo",
-    ],
-    "llama3.2-family": ["llama-3.2-3b-instruct:q4_k_m", "llama-3.2-3b-instruct:q8_0"],
-    "gemma-4-family": ["gemma-4-e2b-it"],
+    "qwen2.5-family": ["qwen2.5-1.5b-instruct-q4-k-m"],
+    "llama3.1-family": ["llama-3.1-8b-q4-k-m"],
+    "llama3.2-family": ["llama-3.2-3b-instruct:q4_k_m"],
     "coder-family": ["Qwen2.5-Coder-7B-Instruct-GGUF"],
-    "embedding-gpu": ["embeddinggemma-300m", "nomic-embed-text-v1.5", "nomic-embed-text"],
-    "minicpm5-family": ["minicpm5-1b-claude-opus-fable5-thinking"],
+    "embedding-cpu": ["embeddinggemma-300m", "nomic-embed-text-v1.5", "nomic-embed-text"],
 }
 
 

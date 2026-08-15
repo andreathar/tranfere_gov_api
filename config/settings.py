@@ -152,23 +152,27 @@ MODAL_VLLM_TOKEN = os.getenv("MODAL_VLLM_TOKEN", None)
 USE_MODAL_VLLM = os.getenv("USE_MODAL_VLLM", "false").lower() == "true"
 
 # Modelos categorizados por tarefa (validados via benchmark de qualidade/desempenho)
+# Atualizado 2026-08-15: removidos modelos sem YAML/GGUF (agente-dossie-*, zero-gemma4, gemma-4-e2b).
+# Todos os jobs agora usam Qwen2.5-Coder-7B (modelo único residente na GPU).
+#
+# Corrigido 2026-08-15: "analysis" e "fast" ainda apontavam para llama-3.1-8b e
+# qwen2.5-1.5b, contradizendo o comentário acima. Testado com GET /system
+# loaded_models: qualquer segundo modelo de chat na GPU (mesmo o pequeno de 1.1GB)
+# expulsa o Qwen2.5-Coder-7B da VRAM (6GB no total, sem espaço pra dois residentes).
+# Ver /mnt/data/Projects_SSD/docs/localai-models.json para os testes.
 LOCALAI_MODELS = {
     # Dossiê comportamental RAG (padrão; registry LocalAI local)
     "dossie": "Qwen2.5-Coder-7B-Instruct-GGUF",
-    # Análise profunda / auditoria pesada (agente customizado)
-    "analysis": "agente-dossie-investigativo",
-    # Tarefas ultra-rápidas / Triagem (agente rápido — 7.4s, 83.9 tok/s)
-    "fast": "agente-dossie-rapido",
-    # Modelo Gemma em PT-BR
-    "gemma": "zero-gemma4-e4b-openzero-q5-k-m",
+    # Análise profunda / auditoria pesada
+    "analysis": "Qwen2.5-Coder-7B-Instruct-GGUF",
+    # Tarefas ultra-rápidas / Triagem
+    "fast": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Código
     "code": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Uso geral
     "general": "Qwen2.5-Coder-7B-Instruct-GGUF",
     # Embeddings
     "embedding": "embeddinggemma-300m",
-    # Roteamento inteligente
-    "router": "intelligent-router",
 }
 
 # Modelo padrão para jobs de pipeline
@@ -208,10 +212,6 @@ LOCAL_VLLM_MODEL_MAP: dict[str, dict[str, str]] = {
         "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/llama-3.2-3b/llama-3.2-3b-instruct-q4_k_m.gguf",
         "tokenizer_id": "hugging-quants/Llama-3.2-3B-Instruct-GGUF",
     },
-    "gemma-4-e2b-it": {
-        "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/gemma-4/gemma-4-E2B-it-Q8_0.gguf",
-        "tokenizer_id": "google/gemma-4-e2b-it",
-    },
     "qwen2.5-1.5b-instruct-q4-k-m": {
         "gguf_path": f"{LOCAL_VLLM_MODELS_DIR}/localai/llm/qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf",
         "tokenizer_id": "Qwen/Qwen2.5-1.5B-Instruct",
@@ -223,18 +223,14 @@ LOCAL_VLLM_MODEL_MAP: dict[str, dict[str, str]] = {
 }
 
 # Timeouts por modelo (em segundos) — sobrescrevem LOCALAI_TIMEOUT geral
+# Atualizado 2026-08-15: removidos modelos inexistentes (agente-dossie-*, gemma-4, zero-gemma4).
 LOCALAI_MODEL_TIMEOUTS: dict[str, int] = {
     "llama-3.2-3b-instruct:q4_k_m": 120,  # 3B, rápido e estável
-    "agente-dossie-rapido": 60,  # Agente rápido, 7s
-    "agente-dossie-investigativo": 240,  # Agente investigativo profundo
-    "gemma-4-e2b-it": 300,  # 2B params, thinking model: load 60-90s + reasoning + briefing
-    "zero-gemma4-e4b-openzero-q5-k-m": 300,  # 4B reasoning, 21.9 tok/s: load + thinking + briefing
-    "qwen2.5-1.5b-instruct-q4-k-m": 180,  # 1.5B, prompt longo ~7k chars pode demorar >60s
-    "llama-3.1-8b-dossie": 300,  # 8B, denso
-    "Qwen2.5-Coder-7B-Instruct-GGUF": 180,  # 7B, código
+    "qwen2.5-1.5b-instruct-q4-k-m": 120,  # 1.5B, rápido
+    "llama-3.1-8b-q4-k-m": 300,  # 8B, denso
+    "Qwen2.5-Coder-7B-Instruct-GGUF": 300,  # 7B, código/RAG
     "nomic-embed-text-v1.5": 30,  # emb., rápido
     "embeddinggemma-300m": 30,  # 300M, rápido
-    "intelligent-router": 15,  # roteamento, simples
 }
 
 # ---------------------------------------------------------------------------

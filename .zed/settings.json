@@ -1,0 +1,9 @@
+{
+  "document_folding_ranges": "on",
+  "semantic_tokens": "combined",
+  "terminal": {
+    "shell": {
+      "program": "sh"
+    }
+  }
+}

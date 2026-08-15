@@ -773,7 +773,7 @@ class LocalAIManager:
         Se refcount chega a zero, modelo pode ser descarregado por LRU.
 
         Uso:
-            with manager.model_scope("gemma-4-e2b-it"):
+            with manager.model_scope("Qwen2.5-Coder-7B-Instruct-GGUF"):
                 # modelo garantido na GPU
                 client.chat(prompt)
         """
