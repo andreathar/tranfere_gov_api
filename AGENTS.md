@@ -78,7 +78,7 @@ python3 src/dash_app.py                    # http://localhost:8050 + http://loca
 python3 src/verify_graphs.py              # auditoria dos 74 gráficos
 
 # API
-uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8002
 
 # Followup
 python3 src/deputado_followup.py "AFONSO FLORENCE"    # por nome
@@ -434,7 +434,7 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
   - Backend missing (no grpc backend found)
 
 - **Integração com Dashboard**:
-  - Visualização no Swagger UI: `http://localhost:8000/docs` → LocalAI section
+  - Visualização no Swagger UI: `http://localhost:8002/docs` → LocalAI section
   - Grafana/Prometheus (opcional): usar endpoint `/metrics` do LocalAI
 
 - **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v7 com **15 queries temáticas** (batch embedding) cobrindo todos os 23 chunk types + Reciprocal Rank Fusion (RRF, k=60):

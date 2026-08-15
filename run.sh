@@ -31,7 +31,7 @@ Comandos:
   import             Importar JSONs para o banco PostgreSQL
   report             Relatórios do banco (resumo|estado|objeto|negados|emenda|top|sql)
   dashboard          Dashboard interativo HTML com gráficos Plotly
-  web                Painel Web interativo do Deputado (FastAPI, porta 8001)
+  web                Painel Web interativo do Deputado (FastAPI, porta 8002)
   enrich             Pipeline de enriquecimento (CNPJ + IBGE + Câmara)
   validate           Validar CNPJs via BrasilAPI
   ibge               Enriquecer municípios via IBGE
@@ -105,8 +105,8 @@ case "${1:-help}" in
         $PYTHON -m src.dash_app "${@:2}"
         ;;
     web)
-        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8001 ..."
-        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8001
+        echo "🌐 Iniciando Painel Web do Deputado em http://localhost:8002 ..."
+        $PYTHON -m uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8002
         ;;
     enrich)
         $PYTHON -m src.enrichers.pipeline "${@:2}"

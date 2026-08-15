@@ -56,7 +56,7 @@ def chart_sunburst_drilldown_recursos(ano_filter: str = "TODOS") -> go.Figure:
             ON bibge.municipio_id = mibge.municipio_id
         LEFT JOIN parlamentares p ON v.parlamentar_id = p.parlamentar_id
         LEFT JOIN parlamentares_dados pd ON (
-            p.nome = pd.nome OR p.nome_urna = pd.nome_urna
+            p.nome = pd.nome OR p.nome = pd.nome_urna
             OR (v.parlamentar_id IS NULL AND v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%'))
         )
         WHERE v.parlamentar_nome IS NOT NULL

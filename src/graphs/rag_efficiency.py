@@ -283,9 +283,9 @@ def chart_rag_eff_emergence_depth() -> go.Figure:
         SELECT emergence_layer, total_layers, target_token_prob, question,
                tipo_politico
         FROM rag_efficiency_metrics
-        WHERE run_id = (SELECT MAX(id) FROM rag_efficiency_runs)
-          AND emergence_layer IS NOT NULL
-        ORDER BY emergence_layer ASC
+        WHERE emergence_layer IS NOT NULL
+        ORDER BY id DESC
+        LIMIT 100
         """
     )
     if df.empty:

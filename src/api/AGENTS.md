@@ -8,12 +8,12 @@ distribuídos em 9 routers, suportada por 4 serviços e uma SPA vanilla com Plot
 ## Início Rápido
 
 ```bash
-uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8002
 ```
 
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-- **Frontend**: `http://localhost:8000/` (SPA vanilla)
+- **Swagger UI**: `http://localhost:8002/docs`
+- **ReDoc**: `http://localhost:8002/redoc`
+- **Frontend**: `http://localhost:8002/` (SPA vanilla)
 
 ---
 
@@ -306,7 +306,7 @@ CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"
 ENRICH_RATE_LIMIT = 0.2  # 5s entre requests (compartilhado com enrichers)
 
 # CORS (env var)
-CORS_ORIGINS = "http://localhost:8000,http://127.0.0.1:8000"
+CORS_ORIGINS = "http://localhost:8002,http://127.0.0.1:8002"
 ```
 
 Para a app completa, ver `AGENTS.md` na raiz do projeto.

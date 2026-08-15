@@ -31,7 +31,7 @@ def chart_eficiencia_partidos(uf_filter: str = "TODOS") -> go.Figure:
         FROM v_emendas_unificadas v
         LEFT JOIN parlamentares p ON v.parlamentar_id = p.parlamentar_id
         LEFT JOIN parlamentares_dados pd ON (
-            p.nome = pd.nome OR p.nome_urna = pd.nome_urna
+            p.nome = pd.nome OR p.nome = pd.nome_urna
             OR (v.parlamentar_id IS NULL AND v.parlamentar_nome ILIKE CONCAT('%%', pd.nome_urna, '%%'))
         )
         WHERE (%s = 'TODOS' OR pd.uf = %s)

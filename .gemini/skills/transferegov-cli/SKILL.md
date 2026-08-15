@@ -17,6 +17,6 @@ Você está encarregado de gerenciar as rotinas primárias de extração usando 
 3. **Extrair apenas Negados para CSV e DB**: `./run.sh negados --csv --db`
 4. **Relatório Geral**: `./run.sh report resumo`
 5. **Dashboard MCP**: `python3 src/dash_app.py`
-6. **Web App FastAPI**: `python3 -m uvicorn src.api.app:app --host 0.0.0.0 --port 8000`
+6. **Web App FastAPI**: `python3 -m uvicorn src.api.app:app --host 0.0.0.0 --port 8002`
 
 Se ocorrer erro de banco, cheque se o PostgreSQL local está rodando e aceitando conexões.

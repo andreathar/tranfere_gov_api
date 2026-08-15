@@ -42,11 +42,11 @@ def chart_vereadores_partidos(uf_filter: str = "Todas") -> go.Figure:
 
     query = f"""
         SELECT
-            sigla_partido AS partido,
+            partido,
             COUNT(*)      AS total_eleitos
         FROM v_vereadores_eleitos
         {where}
-        GROUP BY sigla_partido
+        GROUP BY partido
         ORDER BY total_eleitos DESC
         LIMIT 25
     """
@@ -111,7 +111,7 @@ def chart_vereadores_top_votos(uf_filter: str = "Todas") -> go.Figure:
             nome_urna,
             municipio_nome,
             uf,
-            sigla_partido AS partido,
+            partido,
             votos
         FROM v_vereadores_eleitos
         {where}

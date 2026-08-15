@@ -6,7 +6,7 @@ expõe a API REST para consulta de deputados, emendas, despesas,
 comissões, votações e proposições.
 
 Uso:
-    uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8000
+    uvicorn src.api.app:app --reload --host 0.0.0.0 --port 8002
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ app = FastAPI(
 )
 
 # CORS — configurable via env var; permissive only in dev
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8001,http://127.0.0.1:8001").split(
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:8002,http://127.0.0.1:8002").split(
     ","
 )
 allow_all = "*" in CORS_ORIGINS
