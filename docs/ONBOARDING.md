@@ -29,7 +29,7 @@ Siga as etapas abaixo para clonar o repositório, criar e ativar o ambiente virt
 
 ### 2.1. Clonar o Repositório
 ```bash
-git clone https://github.com/andretwl/tranfere_gov_api.git
+git clone https://github.com/andreathar/tranfere_gov_api.git
 cd tranfere_gov_api
 ```
 

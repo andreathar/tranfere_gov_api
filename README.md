@@ -4,7 +4,7 @@
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type Checking: MyPy](https://img.shields.io/badge/type%20checking-mypy-blue.svg)](https://mypy-lang.org/)
 [![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
-[![CI/CD](https://github.com/andretwl/tranfere_gov_api/actions/workflows/ci.yml/badge.svg)](https://github.com/andretwl/tranfere_gov_api/actions)
+[![CI/CD](https://github.com/andreathar/tranfere_gov_api/actions/workflows/ci.yml/badge.svg)](https://github.com/andreathar/tranfere_gov_api/actions)
 
 Projeto Python de engenharia de dados e inteligência parlamentar para extração, validação, enriquecimento e análise dos **Planos de Ação** do sistema **Transferegov.br** (Transferências Especiais / Emendas Pix do Governo Federal).
 
@@ -174,7 +174,7 @@ tranfere_gov_api/
 
 1. **Clonar o repositório:**
    ```bash
-   git clone https://github.com/andretwl/tranfere_gov_api.git
+   git clone https://github.com/andreathar/tranfere_gov_api.git
    cd tranfere_gov_api
    ```
 
