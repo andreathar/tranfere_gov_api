@@ -1,4 +1,4 @@
-herdr"""
+"""
 Conversão de funções Python → schema OpenAI function calling.
 """
 

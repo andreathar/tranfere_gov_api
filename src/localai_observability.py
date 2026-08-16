@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -46,7 +46,7 @@ def _parse_since(since: str) -> datetime:
     n, unit = int(m.group(1)), m.group(2)
     delta = {"s": timedelta(seconds=n), "m": timedelta(minutes=n),
              "h": timedelta(hours=n), "d": timedelta(days=n)}[unit]
-    return datetime.now(timezone.utc) - delta
+    return datetime.now(UTC) - delta
 
 
 def _get(path: str, params: dict | None = None) -> Any:
@@ -98,7 +98,7 @@ def _parse_timestamp(ts: str) -> datetime:
             ts = ts[:-1] + "+00:00"
         return datetime.fromisoformat(ts)
     except Exception:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
 
 def _ns_to_ms(ns: int) -> float:
@@ -286,7 +286,7 @@ def record_event(
 
 def render(chain: list[dict], anomalies: list[dict], model: str | None) -> str:
     lines = [
-        f"=== LocalAI Observability Chain ===",
+        "=== LocalAI Observability Chain ===",
         f"Modelo: {model or '(todos)'}",
         f"Eventos: {len(chain)}",
         f"Anomalias: {len(anomalies)}",

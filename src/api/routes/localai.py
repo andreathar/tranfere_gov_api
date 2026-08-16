@@ -1,8 +1,8 @@
 """LocalAI Observabilidade - Endpoints para visualizar cadeia de eventos."""
 
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 
 from src.db_utils import query_df
 
@@ -14,21 +14,21 @@ class Event(BaseModel):
     event_at: str
     event_type: str
     level: str
-    model: Optional[str]
-    backend: Optional[str]
-    method: Optional[str]
-    path: Optional[str]
-    status_code: Optional[int]
-    duration_ms: Optional[float]
-    summary: Optional[str]
+    model: str | None
+    backend: str | None
+    method: str | None
+    path: str | None
+    status_code: int | None
+    duration_ms: float | None
+    summary: str | None
 
 
 class ChainSnapshot(BaseModel):
     id: int
     taken_at: str
-    model: Optional[str]
+    model: str | None
     status: str
-    duration_hint: Optional[float]
+    duration_hint: float | None
     events_count: int
     anomalies_count: int
 
@@ -36,9 +36,9 @@ class ChainSnapshot(BaseModel):
 @router.get("/events", response_model=list[Event])
 def list_events(
     limit: int = 100,
-    level: Optional[str] = None,
-    model: Optional[str] = None,
-    since: Optional[str] = None,
+    level: str | None = None,
+    model: str | None = None,
+    since: str | None = None,
 ):
     """Listar eventos do LocalAI (cadeia de traces)."""
     sql = """

@@ -32,9 +32,9 @@ from src.api.routes import (
     localai,
     municipios,
     prefeitos,
+    rag_efficiency,
     senadores,
     vereadores,
-    rag_efficiency,
 )
 
 # ---------------------------------------------------------------------------

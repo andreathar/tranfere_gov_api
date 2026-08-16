@@ -1,9 +1,10 @@
 import contextlib
 import os
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+
+from mcp.client.stdio import stdio_client
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
 # Limpar variáveis de proxy que possam quebrar o httpx interno do fastmcp
 safe_env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
@@ -32,7 +33,9 @@ async def get_mcp_client() -> AsyncGenerator[ClientSession, None]:
         print(result)
     ```
     """
-    async with stdio_client(SERVER_PARAMS) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+    async with (
+        stdio_client(SERVER_PARAMS) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        yield session
