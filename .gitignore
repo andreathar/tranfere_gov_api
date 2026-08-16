@@ -44,6 +44,14 @@ node_modules/skills/
 google-cloud-sdk/
 *.tar.gz
 
+# Histórico local preservado durante a consolidação de submodules
+.git-submodule-backups/
+
+# Segredos do código incorporado
+references/mcp-brasil/.env
+references/mcp-brasil/.env.*
+!references/mcp-brasil/.env.example
+
 # Coverage
 .coverage
 .coverage.*

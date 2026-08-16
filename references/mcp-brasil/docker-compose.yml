@@ -1,0 +1,12 @@
+services:
+  mcp-brasil:
+    build: .
+    ports:
+      - "8061:8061"
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8061/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

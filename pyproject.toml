@@ -38,8 +38,11 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*", "config*"]
+where = [".", "references/mcp-brasil/src"]
+include = ["src*", "config*", "mcp_brasil*"]
+
+[tool.setuptools.package-dir]
+"mcp_brasil" = "references/mcp-brasil/src/mcp_brasil"
 
 [tool.ruff]
 target-version = "py311"

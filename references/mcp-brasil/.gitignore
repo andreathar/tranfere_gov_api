@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+plan/
+CLAUDE.md
+AGENTS.md
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Claude
+.claude/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp

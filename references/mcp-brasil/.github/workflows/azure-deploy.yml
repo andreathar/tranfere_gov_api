@@ -1,0 +1,96 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - "docker-entrypoint.sh"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/azure-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: azure-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RG: rg-mcp-brasil
+  ACR_NAME: mcpbrasilacra9d3b3
+  APP_NAME: api-mcp-brasil
+  IMAGE_NAME: mcp-brasil
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: ACR build
+        run: |
+          az acr build \
+            --registry "$ACR_NAME" \
+            --resource-group "$AZURE_RG" \
+            --image "$IMAGE_NAME:${{ steps.tag.outputs.tag }}" \
+            --image "$IMAGE_NAME:latest" \
+            --file Dockerfile .
+
+      - name: Capture current revision (for rollback)
+        id: prev
+        run: |
+          rev=$(az containerapp show -n "$APP_NAME" -g "$AZURE_RG" \
+            --query "properties.latestReadyRevisionName" -o tsv)
+          echo "revision=$rev" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy new revision
+        run: |
+          az containerapp update \
+            -n "$APP_NAME" -g "$AZURE_RG" \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME:${{ steps.tag.outputs.tag }}"
+
+      - name: Wait for new revision healthy
+        id: health
+        run: |
+          fqdn=$(az containerapp show -n "$APP_NAME" -g "$AZURE_RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "https://$fqdn/mcp" || echo "000")
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "401" ] || [ "$code" = "200" ] || [ "$code" = "406" ]; then
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.health.outputs.healthy != 'true' && steps.prev.outputs.revision != ''
+        run: |
+          echo "Rolling back to ${{ steps.prev.outputs.revision }}"
+          az containerapp revision activate \
+            -n "$APP_NAME" -g "$AZURE_RG" \
+            --revision "${{ steps.prev.outputs.revision }}"
+          az containerapp ingress traffic set \
+            -n "$APP_NAME" -g "$AZURE_RG" \
+            --revision-weight "${{ steps.prev.outputs.revision }}=100"

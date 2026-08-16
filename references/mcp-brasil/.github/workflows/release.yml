@@ -1,0 +1,128 @@
+name: Release to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Lint
+        run: uv run ruff check src/ tests/ && uv run ruff format --check src/ tests/
+
+      - name: Type check
+        run: uv run mypy src/mcp_brasil/
+
+      - name: Test
+        run: uv run pytest -v
+
+  publish:
+    name: Publish to PyPI
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Build package
+        run: uv build
+
+      - name: Smoke test
+        run: |
+          uv run --with ./dist/*.whl --no-project -- python -c "import mcp_brasil; print(mcp_brasil.__version__)"
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always
+
+  github-release:
+    name: Create GitHub Release
+    needs: [ci, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        run: gh release create ${{ github.ref_name }} --title "${{ github.ref_name }}" --notes-file RELEASE_NOTES.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  azure-deploy:
+    name: Deploy to Azure Container Apps
+    needs: [ci, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AZURE_RG: rg-mcp-brasil
+      ACR_NAME: mcpbrasilacra9d3b3
+      APP_NAME: api-mcp-brasil
+      IMAGE_NAME: mcp-brasil
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR build (versioned + latest)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          az acr build \
+            --registry "$ACR_NAME" \
+            --resource-group "$AZURE_RG" \
+            --image "$IMAGE_NAME:$VERSION" \
+            --image "$IMAGE_NAME:latest" \
+            --file Dockerfile .
+
+      - name: Deploy to Container App
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          az containerapp update \
+            -n "$APP_NAME" -g "$AZURE_RG" \
+            --image "$ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION"
