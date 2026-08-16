@@ -34,6 +34,12 @@ output/
 .omo/
 .playwright-mcp/
 
+# Skills (regra de ouro: nunca commitar cópias de skills de IA)
+.venv/skills/
+node_modules/skills/
+.skills-cache/
+.curator_backups/
+
 # External SDKs
 google-cloud-sdk/
 *.tar.gz
