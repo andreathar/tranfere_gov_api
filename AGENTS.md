@@ -3,7 +3,36 @@
 Projeto Python para extração, validação, enriquecimento e análise de Planos de Ação do
 sistema Transferegov (Transferências Especiais / Emendas Pix) do Governo Federal.
 
-**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI, TSE, Senado, FNDE, TCU, Discursos, Governadores) → RAG v7 (Qdrant + LocalAI, multi-analista) → Dashboard 74 gráficos + API 43 endpoints
+**Pipeline**: Extração → Validação (Pydantic) → PostgreSQL (upsert) → Enriquecimento (IBGE, BrasilAPI, Câmara, SICONFI, TSE, Senado, FNDE, TCU, Discursos, Governadores) → RAG v8 (Qdrant + LocalAI, multi-analista) → Dashboard 74 gráficos + API 43 endpoints
+
+## Regras para agentes de código
+
+- Antes de alterar código, leia este arquivo e o `AGENTS.md` mais próximo do caminho
+  alterado (por exemplo, `src/api/AGENTS.md` ou `src/enrichers/AGENTS.md`).
+- Em desenvolvimento local, execute Python sempre com `.venv/bin/python`; os comandos
+  históricos abaixo que mostram `python3` devem ser interpretados dessa forma. Em CI,
+  use o interpretador fornecido pelo workflow após ativar o ambiente.
+- Para validação rápida, prefira `.venv/bin/python -m pytest`, `ruff check .`,
+  `ruff format . --check` e `mypy src/ config/ tests/`; a suíte padrão é unitária e
+  não pressupõe PostgreSQL, Qdrant ou LocalAI ativos.
+- Não hardcode caminhos, URLs, credenciais, aliases de modelos ou parâmetros de serviço:
+  consulte `config/settings.py` e use as constantes existentes.
+- Preserve operações idempotentes e seguras para reexecução: use os upserts existentes,
+  `--dry-run` quando disponível e nunca aplique migrações fora da ordem documentada.
+- Ao diagnosticar dados, diferencie a fonte (banco local, API externa, MCP, Qdrant ou
+  LocalAI) e registre degradação graceful em vez de mascarar falhas externas.
+- A implementação atual do RAG é v8. Ignore descrições v7/v3 em documentação histórica;
+  consulte [`docs/RAG.md`](docs/RAG.md) e os módulos em `src/analysts/`.
+
+### Documentação canônica
+
+- Ambiente e serviços locais: [`docs/ONBOARDING.md`](docs/ONBOARDING.md)
+- Qualidade, Ruff, mypy e CI: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)
+- Schema e ordem das migrações: [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)
+- RAG e indexação: [`docs/RAG.md`](docs/RAG.md) e [`docs/PLAN_INDEXACAO_QDRANT.md`](docs/PLAN_INDEXACAO_QDRANT.md)
+- LocalAI e ponte MCP: [`docs/PLAN_MELHORIAS_LOCALAI.md`](docs/PLAN_MELHORIAS_LOCALAI.md) e [`docs/MCP_BRIDGE.md`](docs/MCP_BRIDGE.md)
+- Jobs agendados: [`docs/CRON_JOBS.md`](docs/CRON_JOBS.md)
+- Redator oficial: [`docs/REDATOR.md`](docs/REDATOR.md)
 
 ---
 
@@ -145,12 +174,15 @@ src/
 ├── modal_vllm_server.py      Server vLLM na nuvem Modal (GPU cloud, Llama-70B)
 ├── qdrant_status.py          Painel de status da indexação Qdrant
 ├── qdrant_staleness.py       Staleness do Qdrant vs checkpoint
-├── analysts/                 RAG v7: 7 analistas especialistas + PromptPreparer
+├── analysts/                 RAG v8: 6 analistas + PromptPreparer (multi-cargo)
 │   ├── base.py                 AnalystBase + AnalystResult (ABC)
-│   ├── router.py               Filtra chunks por analista (chunk types)
+│   ├── router.py               Filtra chunks por analista (chunk types) + mapeamento por cargo
+│   ├── cargo.py               Mapeamento tipo_politico → perfil/queries por cargo
 │   ├── preparer.py             PromptPreparer: sintetiza chunks → Briefing + Fact Table
-│   ├── classificador.py | perfil.py | tematicas.py | cruzamento.py
-│   └── alinhamento.py | discursos.py | anomalias.py
+│   ├── votacao.py              votacao (classificador+alinhamento fundidos)
+│   ├── perfil.py | tematicas.py | cruzamento.py
+│   ├── rede_politica.py        rede_politica (cross-esferas, NOVO v8)
+│   └── discursos.py | anomalias.py
 ├── mcp_tool_bridge.py        Ponte MCP ↔ modelos locais
 ├── rag_efficiency_collector.py Coleta de métricas (hit rate, faithfulness)
 ├── api/                      FastAPI (ver src/api/AGENTS.md)
@@ -183,7 +215,6 @@ output/                       Gitignored (xlsx, csv, json, logs)
 
 - **Endpoint**: `GET https://especiais.transferegov.sistema.gov.br/maisbrasil-transferencia-especial-backend/api/public/plano-acao/listagem`
 - **Detail**: `GET .../plano-acao/{planoAcaoId}` (mais campos: emendaParlamentarId, beneficiario, objeto, modalidade)
-- **Auth**: NENHUMA (público) | **IP**: pode bloquear fora do Brasil | **Timeout**: 60s, 3 retries
 - **Auth**: NENHUMA (público) | **IP**: pode bloquear fora do Brasil | **Timeout**: 60s, 3 retries
 - **Pagination**: `pageSize=100`, `pageNumber=1..N`, break when empty
 - **Response key**: `listaPlanosAcao` (NÃO `data`/`content`/`items`)
@@ -246,7 +277,7 @@ output/                       Gitignored (xlsx, csv, json, logs)
 | `compras_municipios` | Compras gov.br | Compras públicas por município |
 | `saude_municipios` | CNES/DATASUS | Indicadores de saúde municipal |
 | `educacao_municipios` | INEP/MEC | Indicadores de educação municipal |
-| `violencia_municipios` | ISP/青少年 | Indicadores de violência municipal |
+| `violencia_municipios` | ISP-RJ (DuckDB) + Atlas IPEA | Indicadores de violência municipal |
 | `diario_oficial_atos` | DOU (web) | Atos publicados no Diário Oficial da União |
 | `parlamentar_alertas` | Pipeline | Alertas gerados automaticamente para deputados |
 | `parlamentar_proposicoes` | Câmara API | Proposições legislativas dos deputados |
@@ -255,10 +286,9 @@ output/                       Gitignored (xlsx, csv, json, logs)
 | `parlamentares_personas_v2` | LocalAI + RAG | Personas analíticas geradas por IA |
 | `parlamentar_discursos` | Câmara API | Discursos de deputados em plenário/comissões |
 | `governadores_dados` | TSE 2022 (manual) | Governadores eleitos: votos 1º/2º turno, partido, coligação |
-| `violencia_municipios` | ISP-RJ (DuckDB) + Atlas IPEA | Indicadores de violência municipal |
 | `fnde_repasses` | FNDE/MEC | Repasses educacionais do FNDE |
 
-Schema completo: `data/schema.sql`, migrations: `data/migration_002-025*.sql` (ver `docs/MIGRATIONS.md`)
+Schema completo: `data/schema.sql`, migrations: `data/migration_002-046*.sql` (ver `docs/MIGRATIONS.md`)
 
 ---
 
@@ -355,7 +385,7 @@ Gera documentos seguindo Manual de Redação da Presidência 3ª edição. Tipos
 
 ---
 
-## RAG v7 & Integração LocalAI
+## RAG v8 & Integração LocalAI
 
 ### Arquitetura LocalAI
 
@@ -369,7 +399,7 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 
 | Alias | Modelo | Uso | Timeout |
 |-------|--------|-----|---------|
-| `dossie` | `llama-3.2-3b-instruct:q4_k_m` | **Padrão RAG v7** (dossiês, 100/100 benchmark) | 240s |
+| `dossie` | `Qwen2.5-Coder-7B-Instruct-GGUF` | **Padrão RAG v8** (dossiês) | 300s |
 | `analysis` | `agente-dossie-investigativo` | Análise investigativa profunda (agente customizado) | 300s |
 | `fast` | `agente-dossie-rapido` | Triagem rápida (83.9 tok/s) | 60s |
 | `gemma` | `zero-gemma4-e4b-openzero-q5-k-m` | Redação PT-BR, reasoning (21.9 tok/s, gpu_layers=40) | 180s |
@@ -377,14 +407,14 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
 | `general` | `llama-3.2-3b-instruct:q4_k_m` | Uso geral | 180s |
 | `embedding` | `embeddinggemma-300m` | Embeddings Qdrant (768d) | 30s |
 | `router` | `intelligent-router` | Roteamento inteligente | 15s |
-| `fallback` | `llama-3.2-3b-instruct:q4_k_m` | **Fallback RAG** (`RAG_FALLBACK_MODEL`, se QC reprovar) | 240s |
-| `preparer` | `zero-gemma4-e4b-openzero-q5-k-m` | PromptPreparer RAG v7 (`PREPARER_MODEL`, síntese de chunks) | 180s |
+| `fallback` | `Qwen2.5-Coder-7B-Instruct-GGUF` | **Fallback RAG** (`RAG_FALLBACK_MODEL`, se QC reprovar) | 300s |
+| `preparer` | `Qwen2.5-Coder-7B-Instruct-GGUF` | PromptPreparer RAG v8 (`PREPARER_MODEL`, síntese de chunks) | 300s |
 
 > `config/settings.py` agora carrega `.env` (`load_dotenv()`) e suporta **vLLM**: local (`USE_LOCAL_VLLM`, porta 8001) e nuvem Modal (`USE_MODAL_VLLM`, Llama-70B). `src/models_config.py` lê/altera as YAMLs reais de `/mnt/data/Projects_SSD/LocalAI/models/` (backend CPU/GPU, gpu_layers).
 
-### Pipeline RAG v7
+### Pipeline RAG v8
 
-- **Indexador (`src/enrichers/rag_qdrant_indexer.py`)**: Indexa dados de deputados no Qdrant com **23 tipos de chunks** (perfil, emenda, voto, proposicao, discurso_plenario, conexao_politica, risco_judicial, compras_municipio, demografia, indicadores sociais, FNDE, etc.). Modos:
+- **Indexador (`src/enrichers/rag_qdrant_indexer.py`)**: Indexa dados de políticos no Qdrant com **23 tipos de chunks** (perfil, emenda, voto, proposicao, discurso_plenario, conexao_politica, risco_judicial, compras_municipio, demografia, indicadores sociais, FNDE, etc.). **Multi-cargo**: `tipo_politico` (deputado/senador/governador/prefeito/vereador) + `politico_id` no payload. Modos:
   - `./run.sh cron-qdrant --limit 10` — indexa N deputados mais relevantes
   - `./run.sh cron-qdrant --nome "Nome"` — indexa deputado específico
   - `./run.sh cron-qdrant --diff --limit 50` — **modo incremental**: pula chunks com hash inalterado (mais rápido)
@@ -437,30 +467,34 @@ Três módulos para integração com modelos locais via API compatível OpenAI:
   - Visualização no Swagger UI: `http://localhost:8002/docs` → LocalAI section
   - Grafana/Prometheus (opcional): usar endpoint `/metrics` do LocalAI
 
-- **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v7 com **15 queries temáticas** (batch embedding) cobrindo todos os 23 chunk types + Reciprocal Rank Fusion (RRF, k=60):
+- **Persona (`src/enrichers/rag_persona.py`)**: Multi-Query RAG v8 com **31 queries temáticas** (batch embedding) cobrindo todos os 23 chunk types + Reciprocal Rank Fusion (RRF, k=60) + sparse BM25:
 
-  1. Padrão de votos, dissenso partidário e obstrução
-  2. Proposições legislativas (PLs, PECs, PDLs)
-  3. Emendas PIX por município e situação dos planos
-  4. Emendas discricionárias (Portal Transparência)
-  5. Resumo consolidado do deputado
-  6. Dados financeiros SICONFI dos municípios
-  7. Dados demográficos IBGE (população, PIB, IDHM)
-  8. Indicadores sociais (saúde + educação)
-  9. Repasses FNDE
-  10. Conexões políticas (TSE x Emendas — apadrinhamento/fisiologismo)
-  11. Risco judicial (DataJud)
-  12. Compras públicas municipais
-  13. Ideologia nos discursos de plenário
-  14. Tópicos recorrentes e bandeiras públicas
+  1-2. Padrão de votos, dissenso partidário, obstrução e alinhamento político
+  3-4. Proposições legislativas (PLs, PECs, PDLs) e produtividade
+  5-6. Emendas PIX por município e situação dos planos
+  7-8. Emendas discricionárias (Portal Transparência) e convênios
+  9-10. Resumo consolidado do deputado (totais, beneficiários)
+  11-12. Dados financeiros SICONFI municipais (receita, dívida, FPM, ICMS, ISS)
+  13-15. Dados financeiros estaduais SICONFI (ICMS, IPVA, ITCD, FPE, FUNDEB, RCL)
+  16-17. Dados demográficos IBGE (população, PIB, IDHM, área)
+  18-19. Indicadores sociais (saúde + educação, IDEB, leitos SUS)
+  20-21. Repasses FNDE (FUNDEB, PNAE, PNLD, PNATE)
+  22-23. Conexões políticas (TSE x Emendas — apadrinhamento/fisiologismo)
+  24-25. Risco judicial (DataJud)
+  26-27. Compras públicas municipais
+  28-29. Ideologia nos discursos de plenário
+  30-31. Tópicos recorrentes e bandeiras públicas
 
-- **7 analistas especialistas (`src/analysts/`)**: em vez de 1 prompt monolítico, cada analista recebe apenas os chunk types relevantes, com prompt focado, quality check próprio e tolerância a falhas:
-  - `classificador` (GOVERNO/OPOSIÇÃO/INDEPENDENTE) · `perfil` (bio-político) · `tematicas` (áreas + R$) · `cruzamento` (contradições, exige 3+ fontes) · `alinhamento` (% + pautas) · `discursos` (tags/ideologia) · `anomalias` (red flags/auditoria)
+- **6 analistas especialistas (`src/analysts/`)**: cada analista recebe apenas os chunk types relevantes, com prompt focado, quality check próprio e tolerância a falhas:
+  - `votacao` (classificador+alinhamento fundidos: GOVERNO/OPOSIÇÃO/INDEPENDENTE + % + pautas) · `perfil` (bio-político) · `tematicas` (áreas + R$) · `cruzamento` (contradições, exige 3+ fontes) · `rede_politica` (cross-esferas: deputado×prefeito×governador, NOVO v8) · `discursos` (tags/ideologia) · `anomalias` (red flags/auditoria)
   - Ativação adaptativa via `get_active_analysts()` — analistas sem dados suficientes são pulados
+  - Paralelização: `max_workers=2` se modelo suporta `parallel>=2`, senão serial (`max_workers=1`)
   - Assembly: `assemble_dossier()` concatena seções na ordem + `calculate_global_score()` (média ponderada 0-100, aprovação ≥ 70)
-- **PromptPreparer (`src/analysts/preparer.py`)**: sintetiza até 8 chunks brutos → **Briefing estruturado + Fact Table + Insights** usando modelo rápido (`PREPARER_MODEL`), com **validação de fidelidade numérica R$** pós-geração — reduz tokens do analista principal em 5-10x e preserva exatidão
+- **PromptPreparer (`src/analysts/preparer.py`)**: sintetiza até 8 chunks brutos → **Briefing estruturado + Fact Table + Insights** usando `PREPARER_MODEL`, com **validação de fidelidade numérica R$** pós-geração — reduz tokens do analista principal em 5-10x e preserva exatidão
+  - **PITFALL data-first**: briefing sintetizado INDUZ confabulação no 3B. `cruzamento`/`rede_politica`/`anomalias`/`discursos` usam SEMPRE chunks crus (ignora preparer)
 - **Retry com fallback**: se o modelo falhar ou reprovar no quality check, tenta automaticamente `RAG_FALLBACK_MODEL` (`RAG_MAX_RETRIES`)
-- Roda via: `./run.sh cron-dossie --lote 50` ou `./run.sh cron-dossie --nome "Nome" --modelo llama-3.2-3b-instruct:q4_k_m`
+- **Multi-cargo**: `tipo_politico` (deputado/senador/governador/prefeito/vereador) + `politico_id`; governador id=`-abs(hashtext(uf))`; `dossie_checkpoint` (tipo, politico_id, versao, status) para retomada de lote
+- Roda via: `./run.sh cron-dossie --lote 50` ou `./run.sh dossie --nome "Nome" --tipo deputado`
 
 ### RAG Efficiency & Logit Lens
 Métricas automáticas de performance do pipeline RAG:
@@ -469,7 +503,7 @@ Métricas automáticas de performance do pipeline RAG:
 3. **Groundedness via Logit Lens**: Pipeline offline (`scripts/logit_lens_runner.py`) usando HF `transformers` para medir em qual camada de atenção (emergence layer) o modelo sabe a resposta. Ajuda a distinguir grounding real de alucinação (guessing).
 - Registrado no DB (`rag_efficiency_runs` e `rag_efficiency_metrics`). Dashboard visual na aba de Auditoria.
 
-### Quality Check v7
+### Quality Check v8
 
 Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSIÇÃO/INDEPENDENTE), PERFIL, ÁREAS TEMÁTICAS, CRUZAMENTO DE DADOS, ALINHAMENTO POLÍTICO, ANOMALIAS E FISIOLOGISMO — cada uma validada pelo QC do seu analista + score global ponderado.
 
@@ -485,7 +519,7 @@ Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSI�
 |-----|---------|------------|-----------|
 | Diario Oficial | `./run.sh cron-diario` | Diaria | Baixa DOU e gera resumo de atos |
 | Qdrant Indexer | `./run.sh cron-qdrant` | Semanal | Indexa dados de deputados no Qdrant (23 chunk types) |
-| Dossie Persona | `./run.sh cron-dossie` | Sob demanda | Gera personas analiticas via Multi-Query RAG v7 |
+| Dossie Persona | `./run.sh cron-dossie` | Sob demanda | Gera personas analiticas via Multi-Query RAG v8 |
 
 ---
 
@@ -510,8 +544,8 @@ Seções obrigatórias no dossiê: **CLASSIFICAÇÃO POLÍTICA** (GOVERNO/OPOSI�
 17. Qdrant: atualizado para **v1.19.0**. Collection `deputados_perfis` requer embedding `embeddinggemma-300m` (768d) — não misturar dimensões (nomic-embed-text-v1.5 foi substituído)
 18. MCP Tool Bridge: `mcp_tool_bridge.py` depende de `localai_manager` — verificar GPU antes de invocar
 19. Diario Oficial: worker (`diario_oficial_worker.py`) faz scraping web — quebra se layout do DOU mudar
-20. RAG v7: `PREPARER_MODEL` (zero-gemma4, 21.9 tok/s) substituiu qwen2.5-1.5b no PromptPreparer — qwen dava timeout; cada analista tem QC próprio e ativação adaptativa (`get_active_analysts()`)
-21. Migrations 015-025: série `parlamentar_id` unifica a identidade do parlamentar (JOIN por ID em vez de nome/ILIKE) — novas queries devem usar `parlamentar_id` quando disponível
+20. RAG v8: `PREPARER_MODEL` agora `Qwen2.5-Coder-7B-Instruct-GGUF` (substituiu zero-gemma4 e qwen2.5-1.5b); cada analista tem QC próprio e ativação adaptativa (`get_active_analysts()`); `votacao` fundiu classificador+alinhamento; `rede_politica` é novo (cross-esferas)
+21. Migrations 015-046: série `parlamentar_id` unifica a identidade do parlamentar (JOIN por ID em vez de nome/ILIKE) — novas queries devem usar `parlamentar_id` quando disponível
 22. vLLM: `USE_LOCAL_VLLM`/`USE_MODAL_VLLM` no `.env`; local roda na porta 8001 (não conflitar com LocalAI :8080). `models_config.py` altera YAMLs do LocalAI em disco — revisar antes de `docker restart`
 23. **Qdrant Indexação em Lote**: Ao rodar `./run.sh cron-qdrant --todos`, o script ignora a flag se o tipo for `deputado`. Para processar todos os deputados de uma vez, é OBRIGATÓRIO passar `--limit 600` (ou valor maior).
 24. **LocalAI GPU**: Modelos baixados da galeria (como `embeddinggemma-300m` e `gemma-4`) podem vir sem YAML local, caindo para CPU-fallback (`cpu-llama-cpp`). Para forçar aceleração via GPU, deve-se criar manualmente o YAML (ex: `embeddinggemma-300m.yaml`) definindo `backend: cuda13-llama-cpp` e `gpu_layers: 40`.

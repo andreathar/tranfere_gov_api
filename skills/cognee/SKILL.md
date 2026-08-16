@@ -2,6 +2,19 @@
 
 This skill connects your AI agent to Cognee Cloud for persistent knowledge graph memory.
 
+## This project's dataset (set 2026-08-16)
+
+The Claude Code plugin here is scoped to its own dataset via `.claude/settings.json`'s
+`COGNEE_PLUGIN_DATASET=claude_project_tranfere_gov_api` (not the shared `agent_sessions` bucket
+every other project used to fall into — see `/mnt/data/Projects_SSD/docs/cognee-architecture.json`
+for the full per-project scheme). A matching ontology is registered on the plugin's local server
+under `ontology_key=tranfere_gov_api` (`/mnt/data/Projects_SSD/cognee/ontologies/tranfere_gov_api.ttl`).
+Automatic session/tool-trace capture does NOT apply this ontology (a plugin limitation — its hooks
+never pass `ontology_key`). For a deliberate "remember this project fact" call that should be
+ontology-guided, POST directly to `http://localhost:8011/api/v1/remember` with
+`datasetName=claude_project_tranfere_gov_api` and `ontology_key=tranfere_gov_api` instead of going
+through the shell wrapper.
+
 ## First — is memory already automatic here?
 
 If the Cognee Claude Code plugin or an MCP server is installed, memory works on its own: relevant context is recalled into your prompt each turn, and your turns are captured and converted to long-term memory for you. When that is the case:

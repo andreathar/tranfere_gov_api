@@ -1,0 +1,5 @@
+{
+  "env": {
+    "COGNEE_PLUGIN_DATASET": "claude_project_tranfere_gov_api"
+  }
+}

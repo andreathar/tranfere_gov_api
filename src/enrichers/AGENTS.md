@@ -63,7 +63,7 @@ Scripts auxiliares rodam fora do pipeline: `completar_deputados.py`, `discricion
 | `governadores.py` | TSE 2022 (mapeamento manual) | `governadores_dados` | Governadores eleitos: votos 1º/2º turno, partido, coligação (27 UFs) |
 | `violencia.py` | ISP-RJ (DuckDB) + Atlas da Violência (IPEA) | `violencia_municipios` | Indicadores criminais por município (RJ + demais UFs) |
 | `rag_qdrant_indexer.py` | PostgreSQL -> Qdrant | Qdrant (colecao vetorial) | Indexa dados de deputados no Qdrant para busca semantica (RAG) |
-| `rag_persona.py` | Qdrant + LocalAI | `parlamentares_personas_v2` | Gera dossies/ personas analiticas de deputados via RAG v7 (multi-analista) |
+| `rag_persona.py` | Qdrant + LocalAI | `parlamentares_personas_v2` | Gera dossiês/personas analíticas via RAG v8 (multi-analista) |
 
 ---
 
@@ -79,9 +79,9 @@ Modelo de embeddings: `embeddinggemma-300m` (768d) | Metrica: Cosine | Checkpoin
 
 Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types voto,emenda`, `--rebuild`, `--checkpoint`. Cada chunk type é isolado em try/except — falha em um não aborta os demais. **NOTA**: Para indexar TODOS os deputados, não use `--todos` (ele é ignorado para deputados), use `--limit 600`.
 
-### Gerador de Personas (`rag_persona.py`) — RAG v7 Multi-Analista
+### Gerador de Personas (`rag_persona.py`) — RAG v8 Multi-Analista
 
-**15 queries tematicas** (batch embedding, cobrindo todos os 23 chunk types) + Reciprocal Rank Fusion (k=60):
+**31 queries temáticas** (batch embedding, cobrindo os 23 chunk types) + Reciprocal Rank Fusion (k=60):
 
 1. Padrão de votos, dissenso partidário e obstrução
 2. Proposições legislativas (PLs, PECs, PDLs)
@@ -98,11 +98,11 @@ Modos: `--limit N`, `--nome "NOME"`, `--diff` (incremental por hash), `--types v
 13. Ideologia nos discursos de plenário
 14. Tópicos recorrentes e bandeiras públicas
 
-**7 analistas especialistas** (`src/analysts/`): `classificador`, `perfil`, `tematicas`, `cruzamento`, `alinhamento`, `discursos`, `anomalias` — cada um com prompt focado, subconjunto de chunks (`router.py`) e quality check próprio. Ativação adaptativa (`get_active_analysts()`): analistas sem dados suficientes são pulados. Falha de um analista não aborta os demais.
+**Analistas especialistas** (`src/analysts/`): `votacao`, `perfil`, `tematicas`, `cruzamento`, `rede_politica`, `discursos`, `anomalias` — cada um com prompt focado, subconjunto de chunks (`router.py`) e quality check próprio. Ativação adaptativa (`get_active_analysts()`): analistas sem dados suficientes são pulados. Falha de um analista não aborta os demais.
 
-**PromptPreparer** (`src/analysts/preparer.py`): sintetiza até 8 chunks → Briefing + Fact Table + Insights com `PREPARER_MODEL` (zero-gemma4-e4b-openzero-q5-k-m), com validação de fidelidade numérica R$ pós-geração.
+**PromptPreparer** (`src/analysts/preparer.py`): sintetiza até 8 chunks → Briefing + Fact Table + Insights com `PREPARER_MODEL`, com validação de fidelidade numérica R$ pós-geração. Analistas de cruzamento, rede política, anomalias e discursos usam chunks crus para reduzir confabulação.
 
-Fluxo: busca Qdrant (15 queries x top-k) -> PromptPreparer (briefing) -> 7 analistas (paralelo opcional) -> `assemble_dossier()` -> `calculate_global_score()` (≥ 70 aprova) -> salva no DB com contexto_rag, fontes_usadas e versao_prompt.
+Fluxo: busca Qdrant (31 queries x top-k) -> PromptPreparer (briefing) -> analistas ativos (paralelo opcional) -> `assemble_dossier()` -> `calculate_global_score()` (≥ 70 aprova) -> salva no DB com contexto_rag, fontes_usadas e versao_prompt.
 
 Uso:
 ```bash
@@ -212,7 +212,7 @@ python3 -m src.enrichers.rag_persona [--nome NOME] [--regerar] [--lote N]
 20. `fnde.py` depende de APIs OData v4 do FNDE (Olinda) -- se indisponiveis, nao ha fallback e a fase retorna vazio
 21. `diario_oficial_worker.py` usa MCP para busca + LLM para NER -- dupla dependencia externa (MCP server + LocalAI)
 22. `rag_qdrant_indexer.py` requer Qdrant ativo em `QDRANT_URL` (versão v1.19.0+) e modelo `embeddinggemma-300m` carregado no LocalAI -- sem esses, indexacao falha (nomic-embed-text-v1.5 foi substituído). Verifique se o modelo possui YAML configurado para acelerar via GPU (`backend: cuda13-llama-cpp`).
-23. `rag_persona.py` usa Multi-Query RAG v7 (15 queries + 7 analistas + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona e gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
+23. `rag_persona.py` usa Multi-Query RAG v8 (31 queries + analistas adaptativos + PromptPreparer) -- se Qdrant retornar poucos chunks (< `RAG_MIN_CHUNKS`), a persona é gerada com dados insuficientes; analistas sem dados são pulados via `get_active_analysts()`
 24. `tcu_compras.py` e auditoria/consulta (nao enriquecimento) -- nao escreve tabelas novas, usa MCP para consultas sob demanda
 25. `tse_deputados.py` sincroniza dados eleitorais do TSE com `parlamentares_dados` -- requer que `camara.py` (fase 2) tenha rodado antes para popular a tabela base
 26. `governadores.py` usa mapeamento manual (TSE 2022) -- atualizar dados exige editar a lista `GOVERNADORES_2022` no script
