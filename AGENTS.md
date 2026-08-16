@@ -31,6 +31,7 @@ sistema Transferegov (Transferências Especiais / Emendas Pix) do Governo Federa
 - Schema e ordem das migrações: [`docs/MIGRATIONS.md`](docs/MIGRATIONS.md)
 - RAG e indexação: [`docs/RAG.md`](docs/RAG.md) e [`docs/PLAN_INDEXACAO_QDRANT.md`](docs/PLAN_INDEXACAO_QDRANT.md)
 - LocalAI e ponte MCP: [`docs/PLAN_MELHORIAS_LOCALAI.md`](docs/PLAN_MELHORIAS_LOCALAI.md) e [`docs/MCP_BRIDGE.md`](docs/MCP_BRIDGE.md)
+- Centro de comando e governança multi-agente: [`docs/AGENT_COMMAND_CENTER.md`](docs/AGENT_COMMAND_CENTER.md)
 - Jobs agendados: [`docs/CRON_JOBS.md`](docs/CRON_JOBS.md)
 - Redator oficial: [`docs/REDATOR.md`](docs/REDATOR.md)
 
@@ -138,6 +139,16 @@ psql -U cognee -h 127.0.0.1 -d transferegov_db
 - **Paths**: usar `config.settings.OUTPUT_*` para saídas
 - **DB**: `upsert_plano_acao()` para import idempotente
 - **Commit**: mensagens PT-BR, sem emoji
+
+## Topologia de Skills (Agentes)
+
+As skills de IA (Claude Code, Hermes, OpenCode, Gemini CLI) seguem o modelo **fonte única + symlinks**:
+
+- **Compartilhadas (família Cloudflare ×11)**: fonte canônica em `~/.agents/skills/`. Neste repositório NÃO há cópias — `.claude/skills/` e `.hermes/skills/` contêm symlinks para `/home/athar/.agents/skills/` (máquina-local; symlinks quebram em clone).
+- **Específicas do projeto** (commitadas no git):
+  - `.gemini/skills/` — 6 skills Gemini CLI (plotlydash-*, transferegov-*, localai-batch-processing)
+  - `skills/cognee/` — skill Cognee Cloud Memory (dataset `claude_project_tranfere_gov_api`)
+- **Regra de ouro**: NUNCA copiar skill compartilhada para dentro do repo — usar symlink; skill específica de projeto nunca vai para o user-level. Auditoria do ecossistema: `.omo/plans/skills-ecosystem-consolidation.md`.
 
 ---
 
