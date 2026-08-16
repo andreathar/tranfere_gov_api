@@ -148,7 +148,14 @@ As skills de IA (Claude Code, Hermes, OpenCode, Gemini CLI) seguem o modelo **fo
 - **Específicas do projeto** (commitadas no git):
   - `.gemini/skills/` — 6 skills Gemini CLI (plotlydash-*, transferegov-*, localai-batch-processing)
   - `skills/cognee/` — skill Cognee Cloud Memory (dataset `claude_project_tranfere_gov_api`)
-- **Regra de ouro**: NUNCA copiar skill compartilhada para dentro do repo — usar symlink; skill específica de projeto nunca vai para o user-level. Auditoria do ecossistema: `.omo/plans/skills-ecosystem-consolidation.md`.
+- **Regra de ouro — árvore de decisão para qualquer skill nova**:
+  1. É conteúdo de upstream/plugin/vendor? → NUNCA copiar; usar direto da fonte (ex.: dlt, antigravity, remotion).
+  2. É compartilhada entre agentes (família Cloudflare)? → canônica em `~/.agents/skills/` + symlink nos stores de cada agente.
+  3. É específica de um agente (plannotator, hermes-*, gemini-*)? → store do agente com `agent-specific: true` no frontmatter.
+  4. É específica de um projeto (transferegov-*, cognee)? → commit no repo do projeto (`.gemini/skills/` ou `skills/`), nunca no user-level.
+  5. NUNCA copiar skill que já existe em user-level/plugin para dentro de repo → symlink (máquina local) ou lockfile SHA256 (repos).
+  6. `.gitignore` ignora `.venv/skills`, `node_modules/skills` e caches de skill.
+- Auditoria do ecossistema: `scripts/skills_audit.sh` (md5/symlinks/git-tracked) + `.omo/plans/skills-ecosystem-consolidation.md`.
 
 ---
 
