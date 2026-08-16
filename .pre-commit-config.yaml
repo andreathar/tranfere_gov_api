@@ -1,6 +1,7 @@
-# Diretórios vendorizados/gerados (skills de referência, .vllm, egg-info) ficam
-# fora do escopo dos hooks — evita modificação colateral a cada run.
-exclude: ^(\.agents/skills/|agent/skills/|\.vllm/|transferegov_api\.egg-info/)
+# Diretórios vendorizados/gerados (.vllm, egg-info) ficam fora do escopo dos
+# hooks — evita modificação colateral a cada run. Skills Cloudflare são
+# symlinks para ~/.agents/skills (ver AGENTS.md → Topologia de Skills).
+exclude: ^(\.vllm/|transferegov_api\.egg-info/)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
