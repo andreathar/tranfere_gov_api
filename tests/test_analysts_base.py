@@ -78,3 +78,24 @@ def test_briefing_fallback_nao_e_considerado_valido() -> None:
     assert fallback.raw_fallback is True
     assert fallback.validation_pass is False
     assert fallback.is_useful is False
+
+
+def test_cruzamento_build_prompt_com_briefing_util() -> None:
+    """Regressão: cruzamento.py:61 usava briefing.texto (atributo inexistente na
+    dataclass Briefing, que define .text) — AttributeError sempre que
+    briefing.is_useful era True. Achado na revisão de processo de 2026-08-17
+    (docs/decision_reviews.md)."""
+    from src.analysts.cruzamento import CruzamentoDados
+    from src.analysts.preparer import Briefing
+
+    briefing = Briefing(
+        text="Deputado destinou R$ 1.000,00 em emendas.",
+        raw_fallback=False,
+        validation_pass=True,
+    )
+    assert briefing.is_useful is True
+
+    analyst = CruzamentoDados()
+    prompt = analyst.build_prompt(context=[], nome="Fulano", briefing=briefing)
+
+    assert "R$ 1.000,00" in prompt

@@ -42,6 +42,17 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 037 | migration_037_pix_sync_fix.sql | Fix upsert_plano_acao: RETURNING beneficiario_id; emendas PIX sincronizadas | 002, 024 |
 | 038 | migration_038_frontend_perf.sql | Índices de performance do frontend: vereadores (uf, partido, situação), discursos (parlamentar, data), emendas discricionárias (parlamentar, ano), votações (data) | 015, 019, 024, 034 |
 | 039 | migration_039_upsert_parlamentar_resolve.sql | upsert_plano_acao resolve parlamentar_id canônico por NOME antes de gravar | 024, 037 |
+| 040 | migration_040_parlamentares_personas_v2.sql | Tabela parlamentares_personas_v2 para personas RAG v8 com suporte multi-cargo | 002, 035 |
+| 041 | migration_041_vereadores_migracao.sql | Migração de dados de vereadores para schema unificado com parlamentar_id | 015, 024 |
+| 042 | migration_042_dossie_checkpoint.sql | Tabela dossie_checkpoint para controle de progresso de geração de dossiês | 002 |
+| 043 | migration_043_estados_financeiro_fix.sql | Correção de tipos de dados em estados_financeiro (valores numéricos) | 025 |
+| 044 | migration_044_localai_event_log.sql | Tabela localai_event_log para observabilidade de chamadas LocalAI | 002 |
+| 045 | migration_045_localai_chain_snapshot.sql | Tabela localai_chain_snapshot para snapshots da cadeia de eventos LocalAI | 044 |
+| 046 | migration_046_parlamentar_alertas.sql | Tabela parlamentar_alertas para alertas automáticos gerados pelo pipeline | 002, 024 |
+| 047 | migration_047_distrito_federal.sql | Tabelas do Distrito Federal: df_regioes_administrativas, df_deputados_federais_atuais, df_deputados_distritais_cldf, df_eleicoes_resumo, df_votacao_presidencia + views | 002 |
+| 048 | migration_048_df_deputados_enriched.sql | Enriquecimento Deputados Distritais DF: colunas biográficas (sexo, cor_raca, data_nascimento, etc.), gastos de campanha, bens declarados, suplentes, resultado completo 2022 (578 candidatos) + 3 tabelas novas (bens, suplentes, resultado) | 047 |
+| 049 | migration_049_cldf_enrichment.sql | Enriquecimento CLDF via Portal Dados Abertos: 5 tabelas (cldf_emendas, cldf_proposicoes, cldf_despesas, cldf_empenhos, cldf_verbas_indenizatorias) + 4 views + enriquecimento (`src/enrichers/cldf_enrichment.py`) | 047, 048 |
+| 050 | migration_050_df_ra_geo.sql | Coordenadas geográficas (latitude/longitude) das 35 Regiões Administrativas do DF + 8 gráficos Mapbox geográficos (`src/graphs/df_regioes_administrativas.py`) | 047 |
 
 ## Execução
 

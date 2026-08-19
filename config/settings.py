@@ -138,6 +138,11 @@ BRASILAPI_BASE = "https://brasilapi.com.br/api"
 IBGE_API_BASE = "https://servicodados.ibge.gov.br/api/v1"
 CAMARA_API_BASE = "https://dadosabertos.camara.leg.br/api/v2"
 SENADO_API_BASE = "https://legis.senado.leg.br/dadosabertos"
+REASONING_SERVICES_URL = os.getenv("REASONING_SERVICES_URL", "https://reasoning.services/mcp")
+REASONING_SERVICES_API_KEY = os.getenv(
+    "RS_API_KEY",
+    os.getenv("RSVC_API_KEY", os.getenv("REASONING_SERVICES_API_KEY", "")),
+)
 
 # ---------------------------------------------------------------------------
 # LocalAI — Modelos locais via API compatível OpenAI

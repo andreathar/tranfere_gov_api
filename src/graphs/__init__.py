@@ -34,6 +34,8 @@ import src.graphs.siconfi  # noqa: F401, E501
 import src.graphs.socioeconomico  # noqa: F401, E501
 import src.graphs.vereadores  # noqa: F401, E501
 import src.graphs.votacoes  # noqa: F401, E501
+import src.graphs.df_deputados_distritais  # noqa: F401, E501
+import src.graphs.df_regioes_administrativas  # noqa: F401, E501
 from src.graphs.registry import (
     CHART_REGISTRY,
     ChartSpec,

@@ -94,6 +94,50 @@ CHUNK_TYPE_DESCRIPTIONS: dict[str, str] = {
 # Qdrant helpers
 # ---------------------------------------------------------------------------
 
+# Fonte única de verdade para os payload indexes esperados — usada por
+# ensure_collection() (aplica) e check_payload_index_health() (audita). Manter
+# os dois em sincronia é o que a revisão de 2026-08-17 (docs/decision_reviews.md)
+# encontrou quebrado: politico_id/tipo_politico sem índice apesar de usados em
+# toda busca, e municipio_ibge_id indexado com o tipo errado (KEYWORD em vez de
+# INTEGER, nunca casava com nenhum ponto).
+PAYLOAD_INDEXES: list[tuple[str, "qdrant_models.PayloadSchemaType"]] = [
+    ("deputado_id", qdrant_models.PayloadSchemaType.INTEGER),
+    ("politico_id", qdrant_models.PayloadSchemaType.INTEGER),
+    ("tipo_politico", qdrant_models.PayloadSchemaType.KEYWORD),
+    ("type", qdrant_models.PayloadSchemaType.KEYWORD),
+    ("uf", qdrant_models.PayloadSchemaType.KEYWORD),
+    ("municipio_ibge_id", qdrant_models.PayloadSchemaType.INTEGER),
+    ("nivel_relevancia", qdrant_models.PayloadSchemaType.INTEGER),
+]
+
+
+def check_payload_index_health(client: QdrantClient) -> list[str]:
+    """Compara os payload indexes esperados (PAYLOAD_INDEXES) contra o estado
+    real da coleção. Retorna uma lista de problemas (vazia = tudo certo).
+
+    Detecta as duas classes de bug achadas na revisão de 2026-08-17: campo
+    usado em busca sem nenhum índice, e índice existente com tipo diferente do
+    declarado (o que faz o índice nunca casar com os dados reais — ver
+    municipio_ibge_id: criado como KEYWORD, dados são INTEGER, 0 pontos
+    indexados apesar de milhares de pontos com o campo populado).
+    """
+    info = client.get_collection(QDRANT_COLLECTION)
+    schema = info.payload_schema or {}
+    problemas: list[str] = []
+    for field, tipo_esperado in PAYLOAD_INDEXES:
+        atual = schema.get(field)
+        if atual is None:
+            problemas.append(f"'{field}': sem índice (esperado {tipo_esperado.value})")
+            continue
+        tipo_real = str(getattr(atual, "data_type", "")).lower()
+        esperado_str = str(tipo_esperado.value).lower()
+        if tipo_real != esperado_str:
+            problemas.append(
+                f"'{field}': índice tipo '{tipo_real}', esperado '{esperado_str}' "
+                f"(mismatch de tipo — índice nunca vai casar com os dados reais)"
+            )
+    return problemas
+
 
 def ensure_collection(client: QdrantClient, recreate: bool = False) -> None:
     """Cria ou recria a coleção Qdrant com configurações otimizadas e payload indexes."""
@@ -129,15 +173,11 @@ def ensure_collection(client: QdrantClient, recreate: bool = False) -> None:
             )
             log.info("Coleção criada com sucesso.")
 
-        # Garantir payload indexes para busca filtrada ultra-rápida (deputado_id, type, uf, relevancia)
+        # Garantir payload indexes para busca filtrada ultra-rápida.
+        # Ver PAYLOAD_INDEXES (fonte única de verdade, também usada por
+        # check_payload_index_health() para auditar a coleção depois).
         log.info("Garantindo payload indexes no Qdrant...")
-        for field, ftype in [
-            ("deputado_id", qdrant_models.PayloadSchemaType.INTEGER),
-            ("type", qdrant_models.PayloadSchemaType.KEYWORD),
-            ("uf", qdrant_models.PayloadSchemaType.KEYWORD),
-            ("municipio_ibge_id", qdrant_models.PayloadSchemaType.KEYWORD),
-            ("nivel_relevancia", qdrant_models.PayloadSchemaType.INTEGER),
-        ]:
+        for field, ftype in PAYLOAD_INDEXES:
             client.create_payload_index(
                 collection_name=QDRANT_COLLECTION,
                 field_name=field,

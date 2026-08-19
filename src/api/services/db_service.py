@@ -297,23 +297,59 @@ def get_dossie_deputado(deputado_id: int) -> dict | None:
     return get_dossie_politico("deputado", deputado_id)
 
 
-def get_dossie_politico(tipo_politico: str, politico_id: int) -> dict | None:
-    """Retorna o dossiê comportamental (RAG) mais recente de um político.
+def dossie_existe_mas_reprovado(tipo_politico: str, politico_id: int) -> bool:
+    """True se existe ao menos um dossiê para o político, mas nenhum aprovado no QC.
 
-    Fase 3 (2026-08-10): multi-cargo — deputado/senador/governador/prefeito/
-    vereador. Deputados têm politico_id = deputado_id (fallback preservado).
+    Usado só para diferenciar a mensagem de erro quando get_dossie_politico()
+    retorna None: "nunca gerado" (pipeline nunca rodou) vs. "gerado mas
+    reprovado" (pipeline rodou, QC recusou) são causas bem diferentes e
+    pediam ações diferentes — antes desta função os dois casos davam o mesmo
+    404 "é necessário rodar o pipeline", o que é enganoso no segundo caso.
     """
     with _get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-                SELECT analise_gerada, data_analise, duracao_segundos,
-                       versao_prompt, fontes_usadas
+                SELECT COUNT(*) FILTER (WHERE qualidade_ok IS NOT FALSE) AS aprovados,
+                       COUNT(*) AS total
                 FROM parlamentares_personas
                 WHERE tipo_politico = %s
                   AND (
                         politico_id = %s
                         OR (tipo_politico = 'deputado' AND deputado_id = %s)
                   )
+            """,
+            (tipo_politico, politico_id, politico_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        aprovados, total = row
+        return bool(total) and not aprovados
+
+
+def get_dossie_politico(tipo_politico: str, politico_id: int) -> dict | None:
+    """Retorna o dossiê comportamental (RAG) mais recente e aprovado no QC de um político.
+
+    Fase 3 (2026-08-10): multi-cargo — deputado/senador/governador/prefeito/
+    vereador. Deputados têm politico_id = deputado_id (fallback preservado).
+
+    Exclui dossiês com qualidade_ok = FALSE (reprovados no QC): antes deste filtro,
+    um dossiê reprovado só carregava um aviso inline no markdown, sem bloqueio
+    estrutural — servido ao usuário final do mesmo jeito. qualidade_ok NULL (sem
+    avaliação de QC registrada) continua sendo servido.
+    """
+    with _get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+                SELECT analise_gerada, data_analise, duracao_segundos,
+                       versao_prompt, fontes_usadas, qualidade_ok
+                FROM parlamentares_personas
+                WHERE tipo_politico = %s
+                  AND (
+                        politico_id = %s
+                        OR (tipo_politico = 'deputado' AND deputado_id = %s)
+                  )
+                  AND qualidade_ok IS NOT FALSE
                 ORDER BY data_analise DESC
                 LIMIT 1
             """,

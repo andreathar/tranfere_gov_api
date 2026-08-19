@@ -13,6 +13,7 @@ from qdrant_client.http import models
 
 from config.settings import QDRANT_COLLECTION, QDRANT_URL
 from src.db_utils import get_connection
+from src.enrichers.rag_qdrant_indexer import check_payload_index_health
 
 
 def main():
@@ -24,6 +25,17 @@ def main():
     # Total
     count_all = qdrant.count(QDRANT_COLLECTION)
     print(f"📊 Qdrant: {count_all.count:,} vetores")
+
+    # Saúde dos payload indexes — pega índice ausente ou com tipo errado
+    # (achado real 2026-08-17: municipio_ibge_id indexado como KEYWORD com
+    # dados INTEGER, nunca casava com nenhum ponto; docs/decision_reviews.md)
+    problemas_index = check_payload_index_health(qdrant)
+    if problemas_index:
+        print("\n⚠️  Payload index com problema:")
+        for p in problemas_index:
+            print(f"  {p}")
+    else:
+        print("✅ Payload indexes: todos presentes e com o tipo certo")
 
     # Por tipo
     chunk_types = [

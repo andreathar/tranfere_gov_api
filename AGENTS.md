@@ -148,6 +148,7 @@ As skills de IA (Claude Code, Hermes, OpenCode, Gemini CLI) seguem o modelo **fo
 - **Específicas do projeto** (commitadas no git):
   - `.gemini/skills/` — 6 skills Gemini CLI (plotlydash-*, transferegov-*, localai-batch-processing)
   - `skills/cognee/` — skill Cognee Cloud Memory (dataset `claude_project_tranfere_gov_api`)
+  - `skills/decision-review/` — revisão estruturada de decisões via `graph-of-thought` (reasoning.services), log em `docs/decision_reviews.md`
 - **Regra de ouro — árvore de decisão para qualquer skill nova**:
   1. É conteúdo de upstream/plugin/vendor? → NUNCA copiar; usar direto da fonte (ex.: dlt, antigravity, remotion).
   2. É compartilhada entre agentes (família Cloudflare)? → canônica em `~/.agents/skills/` + symlink nos stores de cada agente.

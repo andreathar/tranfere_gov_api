@@ -58,7 +58,7 @@ class CruzamentoDados(AnalystBase):
         if briefing and briefing.is_useful:
             ctx = self._format_briefing(briefing)
             origem = "BRIEFING SINTETIZADO (VISÃO 360°)"
-            source_text = briefing.texto or ""
+            source_text = briefing.text or ""
         else:
             ctx = self._format_context(context)
             origem = "TODOS OS DADOS DISPONÍVEIS"

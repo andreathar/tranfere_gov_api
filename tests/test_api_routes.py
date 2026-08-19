@@ -327,13 +327,36 @@ class TestDeputadosRoutes:
         assert capturado == {"tipo": "senador", "pid": 5001}
 
     def test_dossie_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Dossiê não encontrado → 404."""
+        """Dossiê nunca gerado → 404 com mensagem de 'rodar o pipeline'."""
         from src.api.routes import deputados
 
         monkeypatch.setattr(deputados.db_service, "get_dossie_politico", lambda tipo, pid: None)
+        monkeypatch.setattr(
+            deputados.db_service, "dossie_existe_mas_reprovado", lambda tipo, pid: False
+        )
 
         resp = client.get("/api/v1/deputados/99999/dossie")
         assert resp.status_code == 404
+        assert "rodar o pipeline" in resp.json()["detail"]
+
+    def test_dossie_reprovado_no_qc_da_mensagem_diferente(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regressão 2026-08-17 (docs/decision_reviews.md): dossiê gerado mas
+        reprovado no QC não pode dar a mesma mensagem de 'nunca gerado' —
+        são causas diferentes que pedem ações diferentes."""
+        from src.api.routes import deputados
+
+        monkeypatch.setattr(deputados.db_service, "get_dossie_politico", lambda tipo, pid: None)
+        monkeypatch.setattr(
+            deputados.db_service, "dossie_existe_mas_reprovado", lambda tipo, pid: True
+        )
+
+        resp = client.get("/api/v1/deputados/204560/dossie")
+        assert resp.status_code == 404
+        detail = resp.json()["detail"]
+        assert "reprovado" in detail.lower()
+        assert "rodar o pipeline" not in detail
 
     def test_full_report_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GET /api/v1/deputados/{id}/full_report — MCP lote.

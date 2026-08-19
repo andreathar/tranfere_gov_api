@@ -3,6 +3,48 @@
 Documentacao tecnica do pipeline RAG v2/v3: indexacao vetorial, recuperacao multi-query,
 geracao adaptativa via LLM local e persistencia de personas de parlamentares.
 
+> ⚠️ **Desatualizado (2026-08-17).** Este documento descreve a arquitetura v2/v3
+> (6 fontes, 5 queries tematicas, `gemma-4-e2b-it`, sem QC, sem multi-cargo). O
+> sistema real hoje é a v7/v8 (`src/enrichers/rag_persona.py`, `src/analysts/`):
+> **23 tipos de chunk** (não 6), **15 queries temáticas** com hybrid search
+> dense+BM25+RRF (não 5, não busca simples), **7 analistas especialistas** com QC
+> ponderado por seção (`src/analysts/`, não um único prompt adaptativo), suporte
+> **multi-cargo** (deputado/senador/governador/prefeito/vereador, não só
+> deputado), e um `PromptPreparer` de síntese em 6 estágios
+> (`src/analysts/preparer.py`) entre a recuperação e os analistas. Reescrita
+> completa é um projeto à parte — não feita nesta sessão. O que mudou
+> concretamente hoje (2026-08-17) está documentado abaixo e em
+> [decision_reviews.md](decision_reviews.md). Para o estado real do sistema,
+> leia o código diretamente: `src/enrichers/rag_persona.py`,
+> `src/enrichers/rag_qdrant_indexer.py`, `src/analysts/__init__.py`.
+
+## Atualização 2026-08-17 (revisão de processo + correções)
+
+Achados e correções da revisão documentada em [decision_reviews.md](decision_reviews.md)
+(4 entradas, sessão de confiabilidade/qualidade):
+
+- **`QUERY_CHUNK_FILTER` (mapa query→chunk_type) estava desalinhado em 7 dos 15
+  índices** — cada query filtrava um tipo de chunk semanticamente diferente do
+  que ela própria buscava. Corrigido e **refatorado estruturalmente**: as 15
+  queries e seus filtros agora vivem numa única lista de pares
+  (`_QUERIES_TEMATICAS_E_FILTROS` em `rag_persona.py`) em vez de duas listas
+  paralelas mantidas por posição — a classe de bug (desalinhar duas listas
+  editadas separadamente) fica estruturalmente impossível agora.
+- **Payload indexes do Qdrant desatualizados em relação ao próprio design
+  multi-cargo**: `politico_id`/`tipo_politico` (usados em toda busca desde a
+  Fase 3) não tinham índice; `municipio_ibge_id` tinha índice do tipo errado
+  (`KEYWORD` com dados `INTEGER`, nunca casava com nenhum ponto). Corrigido no
+  código (`PAYLOAD_INDEXES` em `rag_qdrant_indexer.py`) e na coleção viva. Nova
+  função `check_payload_index_health()`, integrada em `./run.sh qdrant-status`,
+  audita isso automaticamente a partir de agora.
+- **Dossiê reprovado no QC (`qualidade_ok=FALSE`) não era mais bloqueado
+  estruturalmente** — `get_dossie_politico()` (API) e o dashboard Dash
+  (`src/dash_app.py`) agora filtram `qualidade_ok IS NOT FALSE`; o 404 da API
+  distingue "nunca gerado" de "gerado mas reprovado" (mensagens diferentes,
+  `db_service.dossie_existe_mas_reprovado()`).
+- Bug real corrigido em `src/analysts/cruzamento.py:61`: `briefing.texto`
+  (atributo inexistente) → `briefing.text`.
+
 ---
 
 ## Sumario
@@ -73,15 +115,21 @@ Servidor vetorial para armazenamento e busca por similaridade coseno.
 
 Configuracao HNSW da colecao:
 
-- `m = 16` (conexoes por no)
+- `m = 32` (conexoes por no)
 - `ef_construct = 200` (precisao na insercao)
 - `full_scan_threshold = 10000`
 
-Payload indexes (para busca filtrada):
+Payload indexes (para busca filtrada) — fonte única de verdade em
+`PAYLOAD_INDEXES` (`src/enrichers/rag_qdrant_indexer.py`), auditável via
+`./run.sh qdrant-status`:
 
-- `deputado_id`: INTEGER (filtro por deputado)
+- `deputado_id`: INTEGER (filtro por deputado, cargo="deputado")
+- `politico_id`: INTEGER (filtro canônico multi-cargo, todos os cargos)
+- `tipo_politico`: KEYWORD (deputado/senador/governador/prefeito/vereador — usado em toda busca)
 - `type`: KEYWORD (filtro por tipo de chunk)
 - `uf`: KEYWORD (filtro por UF)
+- `municipio_ibge_id`: INTEGER (código IBGE do município — corrigido 2026-08-17, era KEYWORD)
+- `nivel_relevancia`: INTEGER (relevância de atos do diário oficial)
 
 Instalacao do Qdrant:
 

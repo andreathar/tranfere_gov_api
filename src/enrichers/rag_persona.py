@@ -90,77 +90,117 @@ RAG_MAX_TOKENS = 32000 if USE_MODAL_VLLM else 7000
 EMBEDDING_DIM = 768  # Dimensao do embeddinggemma-300m
 
 # ---------------------------------------------------------------------------
-# Mapa: query_tematica_index -> chunk_types para filtro no Qdrant
-# Cada query busca apenas chunks do tipo relevante, melhorando o recall
-# e reduzindo ruido no RRF fusion.
+# Multi-Query RAG -- queries tematicas pareadas com o filtro de chunk_type
+# que cada uma deve aplicar no Qdrant (cobrindo todos os 23 chunk types).
+#
+# FIX 2026-08-17 (revisão de processo, docs/decision_reviews.md): antes,
+# QUERIES_TEMATICAS (lista) e QUERY_CHUNK_FILTER (dict) eram duas estruturas
+# paralelas mantidas por posição — 7 dos 15 índices ficaram desalinhados
+# (cada query filtrando um tipo de chunk semanticamente diferente do que ela
+# própria buscava, ex: query sobre "risco judicial" filtrando
+# COMPRAS_MUNICIPIO), verificado mecanicamente, não só por leitura. Unificado
+# num único par por entrada para que esse desalinhamento fique estruturalmente
+# impossível — não tem mais como editar um lado sem o outro. QUERIES_TEMATICAS
+# e QUERY_CHUNK_FILTER abaixo são apenas derivados desta lista; todo o resto
+# do módulo continua usando os dois nomes normalmente.
+#
+# FIX 2026-07-31: antes, 7 dos 23 chunk types (perfil, beneficiario,
+# diario_oficial, senador, indicadores_municipal, parlamentar_alertas,
+# persona_existente) NUNCA eram buscados pelas queries tematicas — ficavam
+# fora do contexto do dossier mesmo quando indexados. Agora todos os tipos
+# sao alcancaveis por pelo menos uma query (ver test_rag_persona_query_filter.py).
 # ---------------------------------------------------------------------------
 
-QUERY_CHUNK_FILTER: dict[int, list[str]] = {
-    0: ["VOTO"],
-    1: ["PROPOSICAO"],
-    2: ["EMENDA", "BENEFICIARIO"],
-    3: ["EMENDA_DISCRICIONARIA"],
-    4: ["PARLAMENTAR_RESUMO", "PERFIL", "PERSONA_EXISTENTE"],
-    5: ["MUNICIPIO_FINANCEIRO"],
-    6: ["DEMOGRAFIA_MUNICIPIO"],
-    7: ["INDICADORES_SOCIAIS", "INDICADORES_MUNICIPAL"],
-    8: ["FNDE_REPASSES"],
-    9: ["CONEXAO_POLITICA", "PREFEITO", "VEREADORES_RESUMO", "SENADOR"],
-    10: ["RISCO_JUDICIAL", "DIARIO_OFICIAL", "PARLAMENTAR_ALERTAS"],
-    11: ["COMPRAS_MUNICIPIO", "BENEFICIARIO"],
-    12: ["DISCURSO_PLENARIO"],
-    13: ["DISCURSO_PLENARIO"],
-    # FIX 2026-07-31: antes, 7 dos 22 chunk types (perfil, beneficiario,
-    # diario_oficial, senador, indicadores_municipal, parlamentar_alertas,
-    # persona_existente) NUNCA eram buscados pelas queries tematicas — ficavam
-    # fora do contexto do dossier mesmo quando indexados. Agora todos os tipos
-    # sao alcancaveis por pelo menos uma query.
-}
-
-# ---------------------------------------------------------------------------
-# Multi-Query RAG -- 14 queries tematicas (cobrindo todos os 22 chunk types)
-# ---------------------------------------------------------------------------
-
-QUERIES_TEMATICAS = [
+_QUERIES_TEMATICAS_E_FILTROS: list[tuple[str, list[str]]] = [
     # === Comportamento Legislativo ===
-    "Padrao de voto e alinhamento politico do deputado em votacoes nominais, "
-    "dissenso partidario, obstrucao e abstencao no plenario",
-    "Proposicoes legislativas apresentadas: PLs, PECs, PDLs, areas tematicas, "
-    "produtividade legislativa e coerencia com emendas",
+    (
+        "Padrao de voto e alinhamento politico do deputado em votacoes nominais, "
+        "dissenso partidario, obstrucao e abstencao no plenario",
+        ["VOTO"],
+    ),
+    (
+        "Proposicoes legislativas apresentadas: PLs, PECs, PDLs, areas tematicas, "
+        "produtividade legislativa e coerencia com emendas",
+        ["PROPOSICAO"],
+    ),
     # === Emendas e Transferencias ===
-    "Emendas parlamentares Pix: municipios beneficiarios, valores transferidos, "
-    "situacao dos planos de acao, objetos de execucao",
-    "Emendas discricionarias e transferencias convencionais do Portal Transparencia: "
-    "convenios, status de execucao orcamentaria, beneficiarios CNPJ",
-    "Resumo consolidado do deputado: total de emendas, beneficiarios unicos, "
-    "municipios atendidos e valor global alocado",
+    (
+        "Emendas parlamentares Pix: municipios beneficiarios, valores transferidos, "
+        "situacao dos planos de acao, objetos de execucao",
+        ["EMENDA", "BENEFICIARIO"],
+    ),
+    (
+        "Emendas discricionarias e transferencias convencionais do Portal Transparencia: "
+        "convenios, status de execucao orcamentaria, beneficiarios CNPJ",
+        ["EMENDA_DISCRICIONARIA"],
+    ),
+    (
+        "Resumo consolidado do deputado: total de emendas, beneficiarios unicos, "
+        "municipios atendidos e valor global alocado",
+        ["PARLAMENTAR_RESUMO", "PERFIL", "PERSONA_EXISTENTE"],
+    ),
     # === Contexto Municipal/Estadual Financeiro e Demografico ===
-    "Dados financeiros municipais SICONFI: receita orcamentaria, despesas totais, "
-    "divida passiva, arrecadacao FPM, ICMS e ISS dos municipios receptores",
-    "Dados financeiros do governo estadual SICONFI: receitas, despesas, resultado "
-    "orcamentario, divida, ICMS, IPVA, ITCD, IRRF, FPE, FUNDEB e RCL do estado "
-    "onde o deputado atua",
-    "Dados demograficos IBGE dos municipios receptores: populacao, PIB per capita, "
-    "IDHM, area territorial, densidade demografica",
+    (
+        "Dados financeiros municipais SICONFI: receita orcamentaria, despesas totais, "
+        "divida passiva, arrecadacao FPM, ICMS e ISS dos municipios receptores",
+        ["MUNICIPIO_FINANCEIRO"],
+    ),
+    (
+        "Dados financeiros do governo estadual SICONFI: receitas, despesas, resultado "
+        "orcamentario, divida, ICMS, IPVA, ITCD, IRRF, FPE, FUNDEB e RCL do estado "
+        "onde o deputado atua",
+        ["ESTADO_FINANCEIRO"],
+    ),
+    (
+        "Dados demograficos IBGE dos municipios receptores: populacao, PIB per capita, "
+        "IDHM, area territorial, densidade demografica",
+        ["DEMOGRAFIA_MUNICIPIO"],
+    ),
     # === Indicadores Sociais e Transparencia ===
-    "Indicadores de saude e educacao nos municipios: leitos SUS, hospitais, UBS, "
-    "IDEB anos iniciais e finais, taxa de aprovacao e matriculas escolares",
-    "Repasses FNDE e programas educacionais (FUNDEB, PNAE, PNLD, PNATE) "
-    "nos municipios receptores de emendas parlamentares",
+    (
+        "Indicadores de saude e educacao nos municipios: leitos SUS, hospitais, UBS, "
+        "IDEB anos iniciais e finais, taxa de aprovacao e matriculas escolares",
+        ["INDICADORES_SOCIAIS", "INDICADORES_MUNICIPAL"],
+    ),
+    (
+        "Repasses FNDE e programas educacionais (FUNDEB, PNAE, PNLD, PNATE) "
+        "nos municipios receptores de emendas parlamentares",
+        ["FNDE_REPASSES"],
+    ),
     # === Rede Politica e Riscos ===
-    "Conexao politica local: partido dos prefeitos beneficiados, relacao partidaria, "
-    "vereadores aliados, apadrinhamento eleitoral, fisiologismo municipal",
-    "Risco judicial e compliance: processos judiciais dos beneficiarios via DataJud, "
-    "fraudes, irregularidades e acoes contra entidades receptoras",
+    (
+        "Conexao politica local: partido dos prefeitos beneficiados, relacao partidaria, "
+        "vereadores aliados, apadrinhamento eleitoral, fisiologismo municipal",
+        ["CONEXAO_POLITICA", "PREFEITO", "VEREADORES_RESUMO", "SENADOR"],
+    ),
+    (
+        "Risco judicial e compliance: processos judiciais dos beneficiarios via DataJud, "
+        "fraudes, irregularidades e acoes contra entidades receptoras",
+        ["RISCO_JUDICIAL", "DIARIO_OFICIAL", "PARLAMENTAR_ALERTAS"],
+    ),
     # === Compras, Beneficiarios e Transparencia ===
-    "Compras publicas e licitacoes nos municipios receptores, fornecedores, "
-    "contratos homologados e beneficiarios diretos com CNPJ",
+    (
+        "Compras publicas e licitacoes nos municipios receptores, fornecedores, "
+        "contratos homologados e beneficiarios diretos com CNPJ",
+        ["COMPRAS_MUNICIPIO", "BENEFICIARIO"],
+    ),
     # === Discursos e Retorica ===
-    "Ideologia e posicionamento politico do deputado nos discursos de plenario: "
-    "pautas de costumes, conservadorismo, progressismo, polarizacao, retorica partidaria",
-    "Topicos recorrentes, palavras-chave e bandeiras publicas do deputado nos "
-    "discursos: saude, educacao, seguranca, economia, corrupcao, direitos humanos, meio ambiente",
+    (
+        "Ideologia e posicionamento politico do deputado nos discursos de plenario: "
+        "pautas de costumes, conservadorismo, progressismo, polarizacao, retorica partidaria",
+        ["DISCURSO_PLENARIO"],
+    ),
+    (
+        "Topicos recorrentes, palavras-chave e bandeiras publicas do deputado nos "
+        "discursos: saude, educacao, seguranca, economia, corrupcao, direitos humanos, meio ambiente",
+        ["DISCURSO_PLENARIO"],
+    ),
 ]
+
+QUERIES_TEMATICAS: list[str] = [q for q, _tipos in _QUERIES_TEMATICAS_E_FILTROS]
+QUERY_CHUNK_FILTER: dict[int, list[str]] = {
+    i: tipos for i, (_q, tipos) in enumerate(_QUERIES_TEMATICAS_E_FILTROS)
+}
 
 # Secoes obrigatorias que a analise gerada deve conter (v6 com CLASSIFICAÇÂO)
 SECOES_OBRIGATORIAS = [

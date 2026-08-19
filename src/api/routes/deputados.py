@@ -173,6 +173,18 @@ async def get_dossie(deputado_id: int, tipo: str = "deputado"):
     """
     dossie = db_service.get_dossie_politico(tipo, deputado_id)
     if not dossie:
+        # Diferencia "nunca gerado" de "gerado mas reprovado no QC" — antes os
+        # dois casos davam a mesma mensagem, enganosa no segundo caso (o
+        # pipeline rodou, não precisa rodar de novo, precisa de revisão).
+        if db_service.dossie_existe_mas_reprovado(tipo, deputado_id):
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Dossiê foi gerado mas reprovado na verificação de qualidade (QC) "
+                    "e não é servido automaticamente. Requer revisão manual, não uma "
+                    "nova execução do pipeline."
+                ),
+            )
         raise HTTPException(
             status_code=404,
             detail="Dossiê não encontrado. É necessário rodar o pipeline RAG.",

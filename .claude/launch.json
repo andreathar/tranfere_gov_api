@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dash-app",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["src/dash_app.py"],
+      "port": 8050
+    }
+  ]
+}

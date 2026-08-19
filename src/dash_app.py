@@ -17,6 +17,7 @@ from dash.mcp import configure_mcp_server
 
 from src.db_utils import fig_has_data
 from src.graph_factory import CHART_REGISTRY, aplicar_tema
+from src.graphs import df_deputados_distritais as cldf_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("dash_app")
@@ -234,8 +235,13 @@ def build_layout():
         from src.db_utils import get_connection
 
         with get_connection() as conn, conn.cursor() as cur:
+            # qualidade_ok IS NOT FALSE: mesmo filtro de get_dossie_deputado() —
+            # sem isso, o dropdown listava deputados cujo único dossiê é
+            # reprovado no QC, que depois viravam "não encontrado" ao selecionar.
             cur.execute(
-                "SELECT DISTINCT pp.deputado_id, pd.nome FROM parlamentares_personas pp JOIN parlamentares_dados pd ON pp.deputado_id = pd.deputado_id ORDER BY pd.nome"
+                "SELECT DISTINCT pp.deputado_id, pd.nome FROM parlamentares_personas pp "
+                "JOIN parlamentares_dados pd ON pp.deputado_id = pd.deputado_id "
+                "WHERE pp.qualidade_ok IS NOT FALSE ORDER BY pd.nome"
             )
             deputados_rag = cur.fetchall()
             options_rag = [{"label": nome, "value": str(dep_id)} for dep_id, nome in deputados_rag]
@@ -335,6 +341,12 @@ def build_layout():
             },
         )
     )
+    # --- Nova Aba: CLDF Bancada Distrital ---
+    try:
+        tabs.append(cldf_module.build_cldf_tab())
+        log.info("CLDF Bancada Distrital tab carregada com sucesso.")
+    except Exception as _cldf_err:
+        log.error("Erro ao construir aba CLDF: %s", _cldf_err)
     # ---------------------------------
 
     children.append(dcc.Tabs(tabs, style={"marginBottom": "2rem"}))
@@ -371,6 +383,13 @@ log.info(
     "Registrados %d gráficos interativos e resilientes no Dash MCP Server!", len(CHART_REGISTRY)
 )
 
+# Register CLDF tab callbacks
+try:
+    cldf_module.register_callbacks()
+    log.info("CLDF callbacks registrados.")
+except Exception as _e:
+    log.error("Erro ao registrar callbacks CLDF: %s", _e)
+
 
 @callback(
     Output("rag-output-container", "children"),
@@ -382,20 +401,18 @@ def update_rag_dossie(deputado_id):
         return "Nenhum deputado selecionado."
 
     try:
-        from src.db_utils import get_connection
+        # Reusa get_dossie_deputado() (src/api/services/db_service.py) em vez de
+        # uma query própria — essa função já filtra qualidade_ok IS NOT FALSE,
+        # excluindo dossiês reprovados no QC. Antes desta correção (2026-08-17,
+        # docs/decision_reviews.md), este dashboard tinha sua própria query sem
+        # esse filtro e continuava servindo dossiês reprovados mesmo depois do
+        # fix ter sido aplicado na API.
+        from src.api.services import db_service
 
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT analise_gerada FROM parlamentares_personas WHERE deputado_id = %s ORDER BY data_analise DESC LIMIT 1",
-                (deputado_id,),
-            )
-            result = cur.fetchone()
-            if result:
-                return result[0]
-            else:
-                return (
-                    "Dossiê não encontrado para este deputado. É necessário rodar o pipeline RAG."
-                )
+        dossie = db_service.get_dossie_deputado(deputado_id)
+        if dossie:
+            return dossie["analise_gerada"]
+        return "Dossiê não encontrado para este deputado. É necessário rodar o pipeline RAG."
     except Exception as e:
         log.error(f"Erro ao buscar Dossiê RAG: {e}")
         return f"Erro ao buscar dossiê: {e}"
