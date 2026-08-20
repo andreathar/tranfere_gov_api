@@ -126,6 +126,36 @@ PG_PASS = os.environ.get("PGPASSWORD", "cognee")
 DATABASE_URL = f"postgresql://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}"
 
 # ---------------------------------------------------------------------------
+# CARTO — connection helpers for Carto agents (read-only)
+# ---------------------------------------------------------------------------
+# Carto agents require a read-only Postgres connection. Set these in the
+# Carto/agent environment or secrets store. Defaults reuse the main PG host/db.
+CARTO_PG_HOST = os.getenv("CARTO_PG_HOST", PG_HOST)
+CARTO_PG_PORT = int(os.getenv("CARTO_PG_PORT", str(PG_PORT)))
+CARTO_PG_DB = os.getenv("CARTO_PG_DB", PG_DB)
+CARTO_PG_USER = os.getenv("CARTO_PG_USER", "carto_reader")
+CARTO_PG_PASS = os.getenv("CARTO_PG_PASS", "")
+# Example connection string for Carto agents (set CARTO_PG_USER/CARTO_PG_PASS securely):
+CARTO_DATABASE_URL = f"postgresql://{CARTO_PG_USER}:{CARTO_PG_PASS}@{CARTO_PG_HOST}:{CARTO_PG_PORT}/{CARTO_PG_DB}"
+
+# --- CARTO platform API (register this DB as a Connection in CARTO Workspace) ---
+# https://docs.carto.com/carto-user-manual/developers/managing-credentials/api-base-url
+# Region/deployment-specific, e.g. https://gcp-us-east1.api.carto.com (Cloud US)
+# or https://your-carto-tenant-domain.com/api (Self-Hosted).
+CARTO_API_BASE_URL = os.getenv("CARTO_API_BASE_URL", "")
+# M2M OAuth client (Workspace > Developers > Credentials > OAuth Clients).
+# Used to obtain a Bearer token via the client_credentials grant against
+# https://auth.carto.com/oauth/token — required by the Connections API,
+# which does NOT accept plain API Access Tokens.
+CARTO_OAUTH_CLIENT_ID = os.getenv("CARTO_OAUTH_CLIENT_ID", "")
+CARTO_OAUTH_CLIENT_SECRET = os.getenv("CARTO_OAUTH_CLIENT_SECRET", "")
+CARTO_OAUTH_TOKEN_URL = os.getenv("CARTO_OAUTH_TOKEN_URL", "https://auth.carto.com/oauth/token")
+CARTO_OAUTH_AUDIENCE = os.getenv("CARTO_OAUTH_AUDIENCE", "carto-cloud-native-api")
+# Name the connection will be registered under in CARTO Workspace.
+CARTO_CONNECTION_NAME = os.getenv("CARTO_CONNECTION_NAME", "transferegov_db")
+
+
+# ---------------------------------------------------------------------------
 # Enriquecimento (mcp-brasil como biblioteca Python)
 # ---------------------------------------------------------------------------
 ENRICH_ENABLED = os.getenv("ENRICH_ENABLED", "true").lower() == "true"

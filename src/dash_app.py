@@ -18,6 +18,7 @@ from dash.mcp import configure_mcp_server
 from src.db_utils import fig_has_data
 from src.graph_factory import CHART_REGISTRY, aplicar_tema
 from src.graphs import df_deputados_distritais as cldf_module
+from src.graphs import campanha_caiafa as campanha_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("dash_app")
@@ -349,6 +350,14 @@ def build_layout():
         log.error("Erro ao construir aba CLDF: %s", _cldf_err)
     # ---------------------------------
 
+    # --- Nova Aba: Campanha Ricardo Caiafa 27027 ---
+    try:
+        tabs.append(campanha_module.build_campanha_tab())
+        log.info("Campanha Caiafa tab carregada com sucesso.")
+    except Exception as _camp_err:
+        log.error("Erro ao construir aba Campanha: %s", _camp_err)
+    # -----------------------------------------------
+
     children.append(dcc.Tabs(tabs, style={"marginBottom": "2rem"}))
 
     return html.Div(
@@ -389,6 +398,13 @@ try:
     log.info("CLDF callbacks registrados.")
 except Exception as _e:
     log.error("Erro ao registrar callbacks CLDF: %s", _e)
+
+# Register Campanha Caiafa callbacks
+try:
+    campanha_module.register_callbacks()
+    log.info("Campanha Caiafa callbacks registrados.")
+except Exception as _e:
+    log.error("Erro ao registrar callbacks Campanha: %s", _e)
 
 
 @callback(
