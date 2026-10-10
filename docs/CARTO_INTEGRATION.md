@@ -96,6 +96,64 @@ Quick steps
      .venv/bin/python scripts/register_carto_connection.py (see section 6b).
    - Create datasets/widgets in Carto using the sample SQL above.
 
+9) Mapas por RA do DF (polígonos) — tabela transferegov_df_ra_poligonos
+   - Tabela BigQuery no CARTO DW (dataset privado):
+     carto-dw-ac-xx7br32v.private_andreabenathar_a5f83fac.transferegov_df_ra_poligonos
+   - Schema: ra_codigo INT64, nome_ra STRING, populacao_est INT64,
+     area_km2 FLOAT64, densidade FLOAT64, latitude FLOAT64, longitude FLOAT64,
+     geom GEOGRAPHY.
+   - Fonte dos polígonos: camada oficial GDF/IBRAM 2025
+     "Territorio/Regioes_Administrativas_DF_2025" (ArcGIS REST, 35 RAs),
+     baixada em f=geojson e cacheada em data/carto_exports/ra_boundaries_raw.geojson.
+     Data da extração: 2026-08-21.
+   - Demografia: tabela local df_regioes_administrativas (PostgreSQL), casamento
+     por nome normalizado + aliases (Sobradinho I -> Sobradinho;
+     Sol Nascente/Pôr do Sol -> Sol Nascente e Pôr do Sol; Setor de Industrias -> SIA).
+   - Cobertura atual: 35 linhas, todas com geom e demografia — exceto Água
+     Quente (RA institucionalizada após o Censo 2022, sem contagem própria;
+     ver migration_052_df_ra_data_fix.sql). df_regioes_administrativas foi
+     corrigida (migration_052) para casar 1:1 com as 35 RAs oficiais: removidas
+     6 linhas indevidas (municípios de Goiás e duplicatas — Águas Lindas de
+     Goiás, Novo Gama, Iguatemi, Miguel Couto, Ponte Alta, Sobradinho I) e
+     adicionadas as 6 RAs oficiais que faltavam (Brazlândia, Arniqueira, SCIA,
+     Riacho Fundo II, Varjão, Água Quente), com área/centroide calculados a
+     partir do próprio polígono oficial (ST_AREA/ST_CENTROID) e população do
+     Censo 2022 IBGE/Codeplan.
+   - Regeneração (idempotente, CREATE OR REPLACE):
+     .venv/bin/python scripts/push_ra_poligonos_carto.py [--dry-run]
+     Requer CARTO_API_KEY no .env. Retry automático para falhas transitórias de rede.
+   - SQL de exemplo para Builder/choropleth:
+     SELECT nome_ra, populacao_est, densidade, area_km2, geom
+     FROM `carto-dw-ac-xx7br32v.private_andreabenathar_a5f83fac.transferegov_df_ra_poligonos`
+     ORDER BY populacao_est DESC
+   - Viewer 3D standalone (deck.gl + MapLibre, sem build): abra
+     data/carto_exports/mapa_ra_3d.html no navegador. A chave é solicitada na
+     primeira abertura e guardada em localStorage ('carto_api_key'); botão 🔑 troca a chave.
+
+10) Mapas cruzados: RA × Deputados Distritais (CLDF) — transferegov_df_ra_deputados_cldf
+    - Tabela BigQuery no CARTO DW (dataset privado):
+      carto-dw-ac-xx7br32v.private_andreabenathar_a5f83fac.transferegov_df_ra_deputados_cldf
+    - Estende a tabela de polígonos (seção 9) com resumo de emendas
+      orçamentárias da CLDF por RA (total_emendas, vl_emenda, vl_empenhado,
+      vl_liquidado) e os 5 deputados distritais mais atuantes por RA
+      (dep1..dep5: nome, partido, total de proposições), calculados por
+      total_deputados_atuantes.
+    - Fonte: tabelas cldf_deputado_ra_impacto e cldf_ra_emendas_resumo,
+      populadas por .venv/bin/python -m src.enrichers.deputado_ra_impacto
+      (casamento de cldf_proposicoes.regiao_admin / autor_nome e
+      cldf_emendas.nome_uo com df_regioes_administrativas). Rodar o enricher
+      ANTES deste script sempre que cldf_proposicoes/cldf_emendas forem
+      atualizadas.
+    - Regeneração (idempotente, CREATE OR REPLACE):
+      .venv/bin/python -m src.enrichers.deputado_ra_impacto
+      .venv/bin/python scripts/push_ra_deputados_carto.py [--dry-run]
+    - Viewer 3D standalone: data/carto_exports/mapa_ra_deputados_3d.html —
+      toggle Emendas/Liquidado/Deputados Atuantes/População, tooltip lista os
+      deputados mais atuantes por RA com partido e nº de proposições.
+    - Gráficos no dashboard Dash (`src/graphs/df_ra_deputados_cldf.py`):
+      df_ra_mapa_emendas_cldf, df_ra_ranking_deputados_cldf,
+      df_ra_tabela_emendas_deputados.
+
 Contact
 -------
 For help, run: .venv/bin/python src/db_report.py to preview views and sample rows, or open an issue in the repo.

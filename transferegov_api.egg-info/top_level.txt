@@ -1,2 +1,4 @@
 config
+mcp_brasil
+scripts
 src

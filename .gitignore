@@ -70,3 +70,9 @@ coverage.xml
 id_rsa*
 id_ed25519*
 *.pgpass
+
+# local agent state
+.hermes/
+
+# credenciais de MCP ficam fora do git (use variáveis de ambiente)
+.mcp.json

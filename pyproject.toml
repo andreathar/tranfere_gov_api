@@ -39,7 +39,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = [".", "references/mcp-brasil/src"]
-include = ["src*", "config*", "mcp_brasil*"]
+include = ["src*", "config*", "mcp_brasil*", "scripts*"]
 
 [tool.setuptools.package-dir]
 "mcp_brasil" = "references/mcp-brasil/src/mcp_brasil"

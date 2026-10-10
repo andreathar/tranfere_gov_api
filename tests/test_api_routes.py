@@ -195,6 +195,7 @@ class TestDeputadosRoutes:
         """Deputado inexistente → 404."""
         from src.api.routes import deputados
 
+        monkeypatch.setattr(deputados.db_service, "get_parlamentar_id", lambda _: None)
         monkeypatch.setattr(deputados.db_service, "get_nome_by_id", lambda _: None)
         monkeypatch.setattr(
             deputados.camara_service, "buscar_deputado", AsyncMock(return_value=None)

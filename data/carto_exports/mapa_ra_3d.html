@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mapa 3D — Regiões Administrativas do DF</title>
+<script src="https://unpkg.com/deck.gl@9/dist.min.js"></script>
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet"/>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#0b0d12;
+    font-family:'Segoe UI',system-ui,sans-serif; color:#e8eaf0; overflow:hidden; }
+  #map { width:100vw; height:100vh; }
+  .painel { position:fixed; top:16px; left:16px; z-index:10; background:rgba(13,17,26,.92);
+    border:1px solid #2a3040; border-radius:10px; padding:14px 18px; max-width:420px;
+    box-shadow:0 6px 24px rgba(0,0,0,.5); backdrop-filter:blur(6px); }
+  .painel h1 { font-size:15px; margin:0 0 2px; letter-spacing:.3px; }
+  .painel .sub { font-size:11px; color:#8b93a5; margin-bottom:10px; }
+  .metricas { display:flex; gap:6px; flex-wrap:wrap; }
+  .metricas button { background:#1a2030; color:#cdd4e2; border:1px solid #333c52;
+    border-radius:6px; padding:6px 12px; font-size:12px; cursor:pointer; transition:.15s; }
+  .metricas button:hover { border-color:#5b8def; }
+  .metricas button.ativo { background:#2563eb; border-color:#2563eb; color:#fff; font-weight:600; }
+  .legenda { font-size:10px; color:#8b93a5; margin-top:10px; line-height:1.5; }
+  #erro { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:20; background:#3b1220; border:1px solid #ef4444; color:#fecaca;
+    padding:18px 24px; border-radius:10px; font-size:13px; max-width:460px; text-align:center; }
+  #erro button { margin-top:10px; background:#ef4444; border:none; color:#fff;
+    padding:6px 14px; border-radius:6px; cursor:pointer; }
+  #carregando { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:10;
+    background:rgba(13,17,26,.92); border:1px solid #2a3040; border-radius:20px;
+    padding:8px 18px; font-size:12px; color:#8b93a5; }
+  #chave { position:fixed; bottom:18px; right:18px; z-index:10; background:rgba(13,17,26,.92);
+    border:1px solid #2a3040; border-radius:8px; padding:6px 12px; font-size:11px;
+    color:#8b93a5; cursor:pointer; }
+  .deck-tooltip { background:rgba(13,17,26,.95) !important; border:1px solid #333c52 !important;
+    border-radius:8px !important; padding:10px 14px !important; font-size:12px !important;
+    color:#e8eaf0 !important; }
+  .tt-nome { font-weight:700; font-size:13px; margin-bottom:4px; }
+  .tt-linha { color:#aab2c4; } .tt-linha b { color:#fff; float:right; margin-left:14px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="painel">
+  <h1>Regiões Administrativas do DF</h1>
+  <div class="sub">35 RAs · limites GDF/IBRAM 2025 · demografia local · CARTO DW</div>
+  <div class="metricas" id="metricas"></div>
+  <div class="legenda">Altura e cor proporcionais à métrica selecionada.<br/>
+  Passe o mouse sobre uma RA para detalhes.</div>
+</div>
+
+<div id="erro"></div>
+<div id="carregando">Carregando polígonos do CARTO DW…</div>
+<button id="chave" title="Trocar chave da API">🔑 Chave API</button>
+
+<script>
+const TABELA = 'carto-dw-ac-xx7br32v.private_andreabenathar_a5f83fac.transferegov_df_ra_poligonos';
+const SQL_URL = 'https://gcp-us-east1.api.carto.com/v3/sql/carto_dw/query';
+
+const METRICAS = {
+  populacao_est: { rotulo: 'População', escala: 'log',
+    fmt: v => Math.round(v).toLocaleString('pt-BR') + ' hab' },
+  densidade: { rotulo: 'Densidade', escala: 'log',
+    fmt: v => v.toLocaleString('pt-BR', {maximumFractionDigits:0}) + ' hab/km²' },
+  area_km2: { rotulo: 'Área', escala: 'log',
+    fmt: v => v.toLocaleString('pt-BR', {maximumFractionDigits:1}) + ' km²' },
+};
+let metricaAtual = 'populacao_est';
+
+// --- Gestão da chave (nunca hardcoded; fica em localStorage) ---
+function obterChave() {
+  let k = localStorage.getItem('carto_api_key');
+  if (!k) {
+    k = prompt('Informe sua CARTO_API_KEY (conta CARTO com acesso ao dataset privado):');
+    if (k) localStorage.setItem('carto_api_key', k.trim());
+  }
+  return k ? k.trim() : null;
+}
+document.getElementById('chave').onclick = () => {
+  const k = prompt('Nova CARTO_API_KEY:', localStorage.getItem('carto_api_key') || '');
+  if (k !== null) { k ? localStorage.setItem('carto_api_key', k.trim())
+                      : localStorage.removeItem('carto_api_key'); location.reload(); }
+};
+
+function mostrarErro(msg, sugerirChave) {
+  const el = document.getElementById('erro');
+  el.innerHTML = '<b>Falha ao carregar dados</b><br/>' + msg +
+    (sugerirChave ? '<br/><button onclick="location.reload()">Recarregar</button>' : '');
+  el.style.display = 'block';
+}
+
+// --- Escalas de cor/altura ---
+function interpolar(t, c1, c2) {
+  return [0,1,2].map(i => Math.round(c1[i] + t * (c2[i] - c1[i])));
+}
+function corParaValor(v, min, max, escala) {
+  if (v == null || v <= 0 || max <= min) return [70, 80, 100];
+  let t;
+  if (escala === 'log') {
+    const lv = Math.log10(Math.max(v, 1)), lmin = Math.log10(Math.max(min, 1)),
+          lmax = Math.log10(Math.max(max, 2));
+    t = Math.min(1, Math.max(0, (lv - lmin) / (lmax - lmin)));
+  } else {
+    t = Math.min(1, Math.max(0, (v - min) / (max - min)));
+  }
+  // Azul -> amarelo -> vermelho
+  return t < 0.5 ? interpolar(t * 2, [44,123,182], [255,255,191])
+                 : interpolar((t - 0.5) * 2, [255,255,191], [215,25,32]);
+}
+
+async function carregarDados() {
+  const chave = obterChave();
+  if (!chave) { mostrarErro('Chave da API não informada.', false); return null; }
+  const resp = await fetch(SQL_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + chave, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      q: 'SELECT ra_codigo, nome_ra, populacao_est, area_km2, densidade, ' +
+         'latitude, longitude, geom FROM `' + TABELA + '`'
+    })
+  });
+  if (resp.status === 401 || resp.status === 403) {
+    localStorage.removeItem('carto_api_key');
+    throw new Error('Chave inválida ou sem acesso ao dataset privado (HTTP ' +
+      resp.status + '). Clique em 🔑 para trocar.');
+  }
+  if (!resp.ok) throw new Error('SQL API HTTP ' + resp.status);
+  const json = await resp.json();
+  return json.rows.map(r => ({ ...r,
+    poligono: typeof r.geom === 'string' ? JSON.parse(r.geom) : r.geom }));
+}
+
+function construirCamadas(dados) {
+  const cfg = METRICAS[metricaAtual];
+  const valores = dados.map(d => d[metricaAtual]).filter(v => v != null && v > 0);
+  const min = Math.min(...valores), max = Math.max(...valores);
+  return [new deck.PolygonLayer({
+    id: 'ras-df',
+    data: dados,
+    pickable: true,
+    extruded: true,
+    wireframe: true,
+    filled: true,
+    getPolygon: d => d.poligono.coordinates,
+    getFillColor: d => corParaValor(d[metricaAtual], min, max, cfg.escala),
+    getLineColor: [232, 234, 240, 90],
+    getElevation: d => d[metricaAtual] == null || d[metricaAtual] <= 0 ? 0 :
+      300 + 7200 * (cfg.escala === 'log'
+        ? (Math.log10(Math.max(d[metricaAtual], 1)) - Math.log10(Math.max(min, 1))) /
+          (Math.log10(max) - Math.log10(Math.max(min, 1)))
+        : (d[metricaAtual] - min) / (max - min)),
+    opacity: 0.92,
+    material: { ambient: 0.5, diffuse: 0.6, shininess: 24, specularColor: [120, 140, 180] },
+    transitions: { getElevation: 400, getFillColor: 400 },
+  })];
+}
+
+function tooltip(info) {
+  if (!info.picked) return null;
+  const d = info.object;
+  const linha = (rotulo, valor, fmt) =>
+    '<div class="tt-linha">' + rotulo + ' <b>' +
+    (valor == null ? 's/ dados' : fmt(valor)) + '</b></div>';
+  return {
+    html: '<div class="tt-nome">' + d.nome_ra + '</div>' +
+      linha('População', d.populacao_est, METRICAS.populacao_est.fmt) +
+      linha('Densidade', d.densidade, METRICAS.densidade.fmt) +
+      linha('Área', d.area_km2, METRICAS.area_km2.fmt),
+    style: { fontSize: '12px' }
+  };
+}
+
+const deckgl = new deck.DeckGL({
+  container: 'map',
+  mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  initialViewState: { latitude: -15.78, longitude: -47.87, zoom: 9.6,
+                      pitch: 48, bearing: -18, maxPitch: 85 },
+  controller: true,
+  getTooltip: tooltip,
+  layers: [],
+});
+
+// Botões de métrica
+const cont = document.getElementById('metricas');
+Object.entries(METRICAS).forEach(([chave, cfg]) => {
+  const btn = document.createElement('button');
+  btn.textContent = cfg.rotulo;
+  btn.dataset.metrica = chave;
+  if (chave === metricaAtual) btn.classList.add('ativo');
+  btn.onclick = () => {
+    metricaAtual = chave;
+    cont.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('ativo', b.dataset.metrica === chave));
+    deckgl.setProps({ layers: construirCamadas(window.__dadosDF || []) });
+  };
+  cont.appendChild(btn);
+});
+
+carregarDados().then(dados => {
+  document.getElementById('carregando').style.display = 'none';
+  if (!dados) return;
+  window.__dadosDF = dados;
+  deckgl.setProps({ layers: construirCamadas(dados) });
+}).catch(err => {
+  document.getElementById('carregando').style.display = 'none';
+  mostrarErro(err.message, true);
+});
+</script>
+</body>
+</html>

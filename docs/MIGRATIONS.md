@@ -53,6 +53,8 @@ Aplicar na ordem abaixo. Todas usam `CREATE TABLE IF NOT EXISTS` (idempotente).
 | 048 | migration_048_df_deputados_enriched.sql | Enriquecimento Deputados Distritais DF: colunas biográficas (sexo, cor_raca, data_nascimento, etc.), gastos de campanha, bens declarados, suplentes, resultado completo 2022 (578 candidatos) + 3 tabelas novas (bens, suplentes, resultado) | 047 |
 | 049 | migration_049_cldf_enrichment.sql | Enriquecimento CLDF via Portal Dados Abertos: 5 tabelas (cldf_emendas, cldf_proposicoes, cldf_despesas, cldf_empenhos, cldf_verbas_indenizatorias) + 4 views + enriquecimento (`src/enrichers/cldf_enrichment.py`) | 047, 048 |
 | 050 | migration_050_df_ra_geo.sql | Coordenadas geográficas (latitude/longitude) das 35 Regiões Administrativas do DF + 8 gráficos Mapbox geográficos (`src/graphs/df_regioes_administrativas.py`) | 047 |
+| 051 | migration_051_deputado_ra_impacto.sql | Tabelas cldf_deputado_ra_impacto e cldf_ra_emendas_resumo (impacto legislativo/orçamentário dos deputados distritais por RA, populadas por `src/enrichers/deputado_ra_impacto.py`) | 047, 049 |
+| 052 | migration_052_df_ra_data_fix.sql | Corrige df_regioes_administrativas para casar 1:1 com as 35 RAs oficiais (camada GDF/IBRAM 2025): remove 6 linhas indevidas (municípios de GO + duplicatas) e adiciona as 6 RAs oficiais faltantes (Brazlândia, Arniqueira, SCIA, Riacho Fundo II, Varjão, Água Quente) com população Censo 2022/Codeplan | 047 |
 
 ## Execução
 

@@ -66,42 +66,67 @@ class _PooledConnection:
     mutating the C-extension object.
     """
 
-    __slots__ = ("_conn", "_pool", "_released")
+    __slots__ = ("_conn", "_pool", "_released", "_release_lock")
 
     def __init__(self, conn: psycopg2.extensions.connection, pool: ThreadedConnectionPool) -> None:
         object.__setattr__(self, "_conn", conn)
         object.__setattr__(self, "_pool", pool)
-        object.__setattr__(self, "_released", [False])
+        object.__setattr__(self, "_released", False)
+        object.__setattr__(self, "_release_lock", threading.RLock())
 
-    def _release(self) -> None:
-        if self._released[0]:
-            return
-        self._released[0] = True
-        try:
-            self._conn.close()
-        except Exception:
-            pass
-        self._pool.putconn(self._conn)
+    def _release(self, *, discard: bool = False) -> None:
+        with self._release_lock:
+            if self._released:
+                return
+            try:
+                # O pool reverte transações pendentes e descarta conexões quebradas.
+                self._pool.putconn(self._conn, close=discard)
+            except Exception:
+                if not discard:
+                    # Um rollback malsucedido não pode deixar uma conexão em uso no pool.
+                    self._pool.putconn(self._conn, close=True)
+                    object.__setattr__(self, "_released", True)
+                raise
+            object.__setattr__(self, "_released", True)
 
     def close(self) -> None:
         self._release()
 
     def __enter__(self):
+        self._check_open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        result = self._conn.__exit__(exc_type, exc_val, exc_tb)
-        self._release()
-        return result
+        with self._release_lock:
+            if self._released:
+                return None
+            try:
+                result = self._conn.__exit__(exc_type, exc_val, exc_tb)
+            except BaseException:
+                try:
+                    self._release(discard=True)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Falha ao descartar conexão após erro ao encerrar transação"
+                    )
+                raise
+            self._release()
+            return result
+
+    def _check_open(self) -> None:
+        if self._released:
+            raise psycopg2.InterfaceError("Conexão já devolvida ao pool")
 
     def __getattr__(self, name: str):
+        self._check_open()
         return getattr(self._conn, name)
 
     def __setattr__(self, name: str, value):
+        self._check_open()
         setattr(self._conn, name, value)
 
     def __repr__(self):
-        return f"<PooledConnection released={self._released[0]} conn={self._conn!r}>"
+        return f"<PooledConnection released={self._released} conn={self._conn!r}>"
 
 
 def get_connection() -> _PooledConnection:
@@ -112,6 +137,7 @@ def get_connection() -> _PooledConnection:
     """
     pool = _get_pool()
     conn = pool.getconn()
+    conn.cursor_factory = psycopg2.extensions.cursor
     return _PooledConnection(conn, pool)
 
 

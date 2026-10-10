@@ -17,11 +17,11 @@ import io
 import logging
 import re
 import time
+from collections.abc import Callable
 from datetime import datetime
 
 import httpx
 
-from config.settings import OUTPUT_DIR
 from src.db_utils import get_connection
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -73,6 +73,13 @@ PROPOSICOES_CKAN_RESOURCES: dict[int, str] = {
 
 # PLE API (alternativa para proposições mais recentes)
 PLE_API_BASE = "https://ple.cl.df.gov.br/pleservico/api/public"
+
+# Janela de anos consultada na PLE API (9ª legislatura em diante).
+PLE_ANO_INICIO = 2023
+PLE_ANO_FIM = 2026
+# Itens por página. A API quebra (HTTP 500) quando page*size >= 10000, então o
+# tamanho precisa dividir o maior ano (~9.3k) sem estourar esse teto.
+PLE_PAGE_SIZE = 500
 
 # Mapeamento de meses
 MESES_MAP = {
@@ -135,6 +142,20 @@ def _safe_int(valor: str) -> int | None:
         return int(valor.strip())
     except (ValueError, TypeError, AttributeError):
         return None
+
+
+def _limpar_multivalor(valor: str | None) -> str:
+    """Normaliza campos multivalorados do PLE, delimitados por '#'.
+
+    A API devolve listas como '#Meio Ambiente#Urbanismo#' e valores simples como
+    '#REGIÃO X - GUARÁ#'.  Um `.strip("#")` cru deixa os separadores internos no
+    texto, o que quebra JOIN/agrupamento por região administrativa e por tema.
+    Aqui os itens viram uma lista separada por '; '.
+    """
+    if not valor:
+        return ""
+    partes = [p.strip() for p in valor.split("#") if p.strip()]
+    return "; ".join(partes)
 
 
 def _safe_date(valor: str) -> str | None:
@@ -427,113 +448,140 @@ def sync_verbas(*, ano: int | None = None, dry_run: bool = False) -> int:
 # 5. Proposições CLDF (PLE API)
 # ---------------------------------------------------------------------------
 
-def sync_proposicoes_ple(*, limit: int = 200, dry_run: bool = False) -> int:
-    """Busca proposições via PLE API (POST /proposicao/filter) e insere."""
-    inseridos = 0
-    page = 1
-    per_page = 50
+def _ple_upsert_item(cur, item: dict, *, dry_run: bool) -> bool:
+    """Grava um item da PLE API em cldf_proposicoes. Retorna True se gravou."""
+    prop_id = str(item.get("id", ""))
+    if not prop_id:
+        return False
+
+    # Mapear campos do PLE API (Spring Boot format)
+    tipo = item.get("tipoProposicao", "") or ""
+    numero_ano = item.get("siglaNumeroAno", "") or ""
+    ementa = item.get("ementa", "") or ""
+    tema = _limpar_multivalor(item.get("temaNome"))
+    autor = item.get("autoria", "") or ""
+    data_apres = _safe_date(item.get("dataLeitura", "") or "")
+    situacao = item.get("situacaoProposicao", "") or item.get("etapa", "") or ""
+    ra = _limpar_multivalor(item.get("regiaoAdministrativaNome"))
+
+    # Extrair numero e ano de siglaNumeroAno (ex: "IND 10977/2026")
+    numero = 0
+    ano = 0
+    if "/" in numero_ano:
+        parts = numero_ano.split("/")
+        nums = parts[0].strip().split()
+        if len(nums) > 1:
+            try:
+                numero = int(nums[-1])
+            except ValueError:
+                pass
+        try:
+            ano = int(parts[1].strip())
+        except (ValueError, IndexError):
+            pass
+
+    if not dry_run:
+        cur.execute(
+            """
+            INSERT INTO cldf_proposicoes (
+                proposicao_id, tipo, numero, ano, ementa,
+                regiao_admin, tema, autor_nome,
+                data_apresentacao, situacao_atual
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (proposicao_id) DO UPDATE SET
+                tipo = EXCLUDED.tipo,
+                numero = EXCLUDED.numero,
+                ano = EXCLUDED.ano,
+                ementa = EXCLUDED.ementa,
+                regiao_admin = EXCLUDED.regiao_admin,
+                tema = EXCLUDED.tema,
+                autor_nome = EXCLUDED.autor_nome,
+                data_apresentacao = EXCLUDED.data_apresentacao,
+                situacao_atual = EXCLUDED.situacao_atual,
+                updated_at = NOW()
+            """,
+            (
+                prop_id, tipo, numero, ano, ementa[:1000],
+                ra, tema, autor, data_apres, situacao,
+            ),
+        )
+    return True
+
+
+def _ple_fetch_ano(cur, ano: int, *, restante: int | None, dry_run: bool) -> int:
+    """Pagina um único ano da PLE API. Retorna quantos registros gravou."""
+    gravados = 0
+    page = 0
+
+    while restante is None or gravados < restante:
+        try:
+            resp = httpx.post(
+                f"{PLE_API_BASE}/proposicao/filter",
+                json={"ano": ano},
+                params={"page": page, "size": PLE_PAGE_SIZE},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            log.error("Erro PLE API (ano %d, pag %d): %s", ano, page, e)
+            break
+
+        # PLE API usa formato Spring Boot paginado: {content, totalPages, ...}
+        if isinstance(data, list):
+            items = data
+            total_pages = None
+        else:
+            items = data.get("content") or data.get("items") or data.get("data") or []
+            total_pages = data.get("totalPages")
+
+        if not items:
+            break
+
+        for item in items:
+            if restante is not None and gravados >= restante:
+                break
+            if _ple_upsert_item(cur, item, dry_run=dry_run):
+                gravados += 1
+
+        page += 1
+        if total_pages is not None and page >= total_pages:
+            break
+        time.sleep(0.5)  # Rate limit
+
+    log.info("Proposições PLE %d: %d registros", ano, gravados)
+    return gravados
+
+
+def sync_proposicoes_ple(
+    *, ano: int | None = None, limit: int | None = None, dry_run: bool = False
+) -> int:
+    """Busca proposições via PLE API (POST /proposicao/filter) e insere.
+
+    PITFALLS da API (validados em 2026-08-20):
+
+    1. A paginação é lida da QUERY STRING (`?page=&size=`), NÃO do corpo JSON.
+       Enviar `offset`/`limit` no payload devolve sempre a página 0 — o loop relê
+       os mesmos registros para sempre e nada novo é gravado. `page` é 0-indexado
+       e `totalPages` vem na resposta.
+    2. A paginação profunda quebra: `page * size >= 10000` devolve HTTP 500.
+       Por isso consultamos ANO A ANO (nenhum ano passa de ~9.3k proposições).
+    3. O filtro do corpo é `ano` (singular). `anoInicio`/`anoFim` são IGNORADOS
+       silenciosamente e retornam a base inteira (~156k).
+    """
+    anos = [ano] if ano else list(range(PLE_ANO_INICIO, PLE_ANO_FIM + 1))
+    total = 0
 
     with get_connection() as conn, conn.cursor() as cur:
-        while inseridos < limit:
-            payload = {
-                "regiaoAdministrativa": "",
-                "tema": "",
-                "tipoProposicao": "",
-                "numeroProposicao": "",
-                "anoInicio": 2023,
-                "anoFim": 2026,
-                "situacaoProposicao": "",
-                "offset": (page - 1) * per_page,
-                "limit": per_page,
-            }
-
-            try:
-                resp = httpx.post(
-                    f"{PLE_API_BASE}/proposicao/filter",
-                    json=payload,
-                    timeout=30,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                log.error("Erro PLE API (pag %d): %s", page, e)
+        for a in anos:
+            if limit is not None and total >= limit:
                 break
+            restante = None if limit is None else limit - total
+            total += _ple_fetch_ano(cur, a, restante=restante, dry_run=dry_run)
 
-            # PLE API usa formato Spring Boot paginado: {content, totalElements, ...}
-            items = (
-                data.get("content")           # Spring Boot Page format
-                or data.get("items", [])      # alternativa
-                or data.get("data", [])       # alternativa
-                or (data if isinstance(data, list) else [])
-            )
-            if not items:
-                break
-
-            for item in items:
-                if inseridos >= limit:
-                    break
-
-                prop_id = str(item.get("id", ""))
-                if not prop_id:
-                    continue
-
-                # Verificar duplicata
-                cur.execute("SELECT 1 FROM cldf_proposicoes WHERE proposicao_id = %s", (prop_id,))
-                if cur.fetchone():
-                    continue
-
-                # Mapear campos do PLE API (Spring Boot format)
-                tipo = item.get("tipoProposicao", "") or ""
-                numero_ano = item.get("siglaNumeroAno", "") or ""
-                ementa = item.get("ementa", "") or ""
-                tema = (item.get("temaNome", "") or "").strip("#")
-                autor = item.get("autoria", "") or ""
-                data_apres = _safe_date(item.get("dataLeitura", "") or "")
-                situacao = item.get("situacaoProposicao", "") or item.get("etapa", "") or ""
-                ra = (item.get("regiaoAdministrativaNome", "") or "").strip("#")
-                descricao = item.get("descricaoProposicao", "") or ""
-
-                # Extrair numero e ano de siglaNumeroAno (ex: "IND 10977/2026")
-                numero = 0
-                ano = 0
-                if "/" in numero_ano:
-                    parts = numero_ano.split("/")
-                    nums = parts[0].strip().split()
-                    if len(nums) > 1:
-                        try:
-                            numero = int(nums[-1])
-                        except ValueError:
-                            pass
-                    try:
-                        ano = int(parts[1].strip())
-                    except (ValueError, IndexError):
-                        pass
-
-                if not dry_run:
-                    cur.execute(
-                        """
-                        INSERT INTO cldf_proposicoes (
-                            proposicao_id, tipo, numero, ano, ementa,
-                            regiao_admin, tema, autor_nome,
-                            data_apresentacao, situacao_atual
-                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        ON CONFLICT (proposicao_id) DO UPDATE SET
-                            situacao_atual = EXCLUDED.situacao_atual,
-                            updated_at = NOW()
-                        """,
-                        (
-                            prop_id, tipo, numero, ano, ementa[:1000],
-                            ra, tema, autor, data_apres, situacao,
-                        ),
-                    )
-                inseridos += 1
-
-            page += 1
-            time.sleep(0.5)  # Rate limit
-
-    log.info("Proposições PLE: %d registros %s", inseridos,
+    log.info("Proposições PLE: %d registros %s", total,
              "(dry-run)" if dry_run else "inseridos")
-    return inseridos
+    return total
 
 
 def sync_proposicoes_ckan(*, ano: int | None = None, dry_run: bool = False) -> int:
@@ -639,15 +687,33 @@ def sync_proposicoes_ckan(*, ano: int | None = None, dry_run: bool = False) -> i
 
 
 # ---------------------------------------------------------------------------
+# 6. Wrapper: Proposições (CKAN + PLE)
+# ---------------------------------------------------------------------------
+
+
+def sync_proposicoes(
+    *, ano: int | None = None, limit: int | None = None, dry_run: bool = False
+) -> int:
+    """Executa ingestão de proposições via CKAN e PLE API."""
+
+    total = sync_proposicoes_ckan(ano=ano, dry_run=dry_run)
+    total += sync_proposicoes_ple(ano=ano, limit=limit, dry_run=dry_run)
+    return total
+
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
-FASES = {
+# Cada fase tem uma assinatura própria (ano/limit/dry_run em combinações
+# diferentes), então o valor é tipado como Callable[..., int] — run_pipeline
+# despacha os kwargs corretos por fase.
+FASES: dict[str, tuple[str, Callable[..., int]]] = {
     "emendas": ("Emendas Parlamentares", sync_emendas),
     "despesas": ("Despesas por UO", sync_despesas),
     "empenhos": ("Empenhos Detalhados", sync_empenhos),
     "verbas": ("Verbas Indenizatórias", sync_verbas),
-    "proposicoes": ("Proposições CLDF (CKAN CSV)", sync_proposicoes_ckan),
+    "proposicoes": ("Proposições CLDF (CKAN + PLE)", sync_proposicoes),
 }
 
 
@@ -681,7 +747,7 @@ def run_pipeline(
 
         try:
             if f == "proposicoes":
-                count = func(ano=ano, dry_run=dry_run)
+                count = func(ano=ano, limit=limit, dry_run=dry_run)
             elif f == "empenhos":
                 count = func(dry_run=dry_run, limit=limit)
             elif f in ("emendas", "verbas"):

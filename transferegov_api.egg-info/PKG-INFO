@@ -15,6 +15,7 @@ Requires-Dist: duckdb>=1.1
 Requires-Dist: beautifulsoup4>=4.12
 Requires-Dist: lxml>=5.0
 Requires-Dist: psycopg2-binary>=2.9
+Requires-Dist: qdrant-client>=1.2
 Requires-Dist: plotly>=5.18
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"

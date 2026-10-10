@@ -291,11 +291,22 @@ class TestMunicipiosIndicadores:
 
 
 class TestPerformanceHeaders:
-    def test_gzip_compressao(self) -> None:
+    def test_gzip_compressao(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Respostas JSON grandes são comprimidas com gzip."""
+        from src.api.routes import financeiro
+
+        dados = [
+            {"uf": "SP", "exercicio": ano, "despesas_totais": 1000000.0}
+            for ano in range(2000, 2030)
+        ]
+        monkeypatch.setattr(
+            financeiro.db_service, "get_financeiro_estados", lambda exercicio=None: dados
+        )
+
         resp = client.get("/api/v1/financeiro/estados", headers={"Accept-Encoding": "gzip"})
         assert resp.status_code == 200
         assert resp.headers.get("content-encoding") == "gzip"
+        assert resp.json() == dados
 
     def test_static_cache_immutable(self) -> None:
         """Estáticos servidos com Cache-Control imutável (cache-busting via ?v=)."""
